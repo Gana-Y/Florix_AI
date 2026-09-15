@@ -1,0 +1,44 @@
+# Environment variables & secrets
+.env
+*.env
+.env.*
+!.env.example
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+florix.db
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Node dependencies
+node_modules/
+dist/
+build/
+.next/
+
+# Python cache & temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+scratch/
+.tempmediaStorage/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+graphify-out/

@@ -18,17 +18,49 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, info) {
     console.error('[Florix AI Error Boundary]', error, info);
     this.setState({ errorInfo: info });
+
+    // Auto-recovery for stale cache, module loading, or dispatcher mismatches
+    const errorStr = (error?.message || error?.toString() || '').toLowerCase();
+    const isRecoverableError =
+      errorStr.includes('usestate') ||
+      errorStr.includes('dispatcher') ||
+      errorStr.includes('chunk') ||
+      errorStr.includes('loading') ||
+      errorStr.includes('null (reading') ||
+      errorStr.includes('dynamically imported');
+
+    const hasRecovered = sessionStorage.getItem('florix_auto_recovered');
+    if (isRecoverableError && !hasRecovered) {
+      sessionStorage.setItem('florix_auto_recovered', 'true');
+      try {
+        if ('caches' in window) {
+          caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
+        }
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
+        }
+      } catch (e) {}
+      window.location.reload();
+    }
   }
 
   handleReload = () => {
     this.setState({ hasError: false, error: null, errorInfo: null });
+    try {
+      sessionStorage.removeItem('florix_auto_recovered');
+    } catch (e) {}
     window.location.reload();
   };
 
   handleHardReload = () => {
     try {
-      localStorage.clear();
       sessionStorage.clear();
+      if ('caches' in window) {
+        caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
+      }
     } catch (e) {}
     window.location.href = window.location.origin + window.location.pathname + '?_t=' + Date.now();
   };

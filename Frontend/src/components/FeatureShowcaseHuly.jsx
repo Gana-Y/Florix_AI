@@ -18,7 +18,7 @@ const IN_PROGRESS_ITEMS = [
     ],
     time: '2.4 hrs',
     date: '12 Mar',
-    avatar: 'N',
+    avatar: 'F',
     avatarColor: 'from-indigo-500 to-purple-600',
   },
   {
@@ -32,7 +32,7 @@ const IN_PROGRESS_ITEMS = [
     ],
     time: '1.8 hrs',
     date: '12 Mar',
-    avatar: 'N',
+    avatar: 'F',
     avatarColor: 'from-purple-500 to-pink-600',
   },
   {
@@ -45,7 +45,7 @@ const IN_PROGRESS_ITEMS = [
     ],
     time: '45 min',
     date: '11 Mar',
-    avatar: 'N',
+    avatar: 'F',
     avatarColor: 'from-cyan-500 to-blue-600',
   },
   {
@@ -59,7 +59,7 @@ const IN_PROGRESS_ITEMS = [
     ],
     time: '30 min',
     date: '10 Mar',
-    avatar: 'N',
+    avatar: 'F',
     avatarColor: 'from-emerald-500 to-teal-600',
   },
 ];
@@ -75,7 +75,7 @@ const UNDER_REVIEW_ITEMS = [
     ],
     time: '1.5 hrs',
     date: '08 Mar',
-    avatar: 'N',
+    avatar: 'F',
     avatarColor: 'from-zinc-600 to-zinc-800',
   },
   {
@@ -88,7 +88,7 @@ const UNDER_REVIEW_ITEMS = [
     ],
     time: '50 min',
     date: '07 Mar',
-    avatar: 'N',
+    avatar: 'F',
     avatarColor: 'from-zinc-600 to-zinc-800',
   },
 ];

@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Loader2, CheckCircle2, Bug, Sparkles, CreditCard, MessageSquare, Send, Mail } from 'lucide-react';
 import api from '../utils/api';
@@ -67,6 +67,19 @@ const ProvideFeedbackModal = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  // Lock background scroll and pause Lenis while modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+    window.__lenis?.stop();
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+      window.__lenis?.start();
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const currentConfig = FEEDBACK_TYPES.find((t) => t.id === selectedType) || FEEDBACK_TYPES[0];
@@ -102,8 +115,14 @@ const ProvideFeedbackModal = ({ isOpen, onClose }) => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm">
+      <div 
+        data-lenis-prevent
+        onWheel={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm"
+      >
         <motion.div
+          data-lenis-prevent
+          onWheel={(e) => e.stopPropagation()}
           initial={{ opacity: 0, scale: 0.95, y: 16 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 16 }}
@@ -149,7 +168,13 @@ const ProvideFeedbackModal = ({ isOpen, onClose }) => {
               </p>
             </motion.div>
           ) : (
-            <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar space-y-5 pr-1">
+            <form 
+              data-lenis-prevent
+              onWheel={(e) => e.stopPropagation()}
+              onSubmit={handleSubmit} 
+              className="flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar space-y-5 pr-1 overscroll-contain"
+              style={{ overscrollBehavior: 'contain' }}
+            >
               {/* Feedback Type Selection */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 block mb-2.5">

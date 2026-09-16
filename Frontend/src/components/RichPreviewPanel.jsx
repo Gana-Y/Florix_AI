@@ -360,10 +360,17 @@ const RichPreviewPanel = ({ type, content, onClose }) => {
       initial="hidden"
       animate="visible"
       exit="exit"
+      data-lenis-prevent
+      onWheel={(e) => e.stopPropagation()}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-slate-900/50 dark:bg-black/70 backdrop-blur-md"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-5xl h-[90vh] max-h-[800px] bg-white dark:bg-zinc-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-zinc-800 flex flex-col overflow-hidden">
+      <div 
+        data-lenis-prevent
+        onWheel={(e) => e.stopPropagation()}
+        className="w-full max-w-5xl h-[90vh] max-h-[800px] bg-white dark:bg-zinc-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-zinc-800 flex flex-col overflow-hidden overscroll-contain"
+        style={{ overscrollBehavior: 'contain' }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800 shrink-0">
           <div className="flex items-center gap-2">

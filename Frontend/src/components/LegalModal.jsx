@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -18,23 +18,40 @@ import {
 
 export default function LegalModal({ isOpen, onClose, initialTab = 'terms' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
+  const scrollContainerRef = useRef(null);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab]);
 
-  // Close on Escape key
+  // Reset scroll position when switching tabs
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [activeTab]);
+
+  // Close on Escape key & cleanly lock background scroll / pause Lenis
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
     };
+
     if (isOpen) {
       document.addEventListener('keydown', handleKeyDown);
+      // Pause Lenis smooth scroll so wheel events do not bleed to the background
+      window.__lenis?.stop();
+      // Lock root document and body
+      document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
     }
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
+      // Resume Lenis smooth scroll
+      window.__lenis?.start();
     };
   }, [isOpen, onClose]);
 
@@ -43,15 +60,19 @@ export default function LegalModal({ isOpen, onClose, initialTab = 'terms' }) {
   return (
     <AnimatePresence>
       <div 
+        data-lenis-prevent
         className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md"
         onClick={onClose}
+        onWheel={(e) => e.stopPropagation()}
       >
         <motion.div
+          data-lenis-prevent
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
           onClick={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
           className="bg-[#0c101d] border border-white/10 rounded-3xl w-full max-w-3xl shadow-2xl shadow-indigo-950/40 relative overflow-hidden flex flex-col max-h-[88vh]"
         >
           {/* Top ambient glow */}
@@ -87,7 +108,7 @@ export default function LegalModal({ isOpen, onClose, initialTab = 'terms' }) {
           </div>
 
           {/* Navigation Tabs */}
-          <div className="px-6 md:px-8 pt-4 pb-2 border-b border-white/5 flex gap-2 bg-[#0a0d18]/60 shrink-0">
+          <div className="px-6 md:px-8 pt-4 pb-2 border-b border-white/5 flex flex-wrap sm:flex-nowrap gap-2 bg-[#0a0d18]/60 shrink-0">
             <button
               onClick={() => setActiveTab('terms')}
               className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
@@ -121,7 +142,13 @@ export default function LegalModal({ isOpen, onClose, initialTab = 'terms' }) {
           </div>
 
           {/* Modal Body / Content */}
-          <div className="p-6 md:p-8 overflow-y-auto flex-1 text-sm text-zinc-300 space-y-6 leading-relaxed custom-scrollbar">
+          <div 
+            ref={scrollContainerRef}
+            data-lenis-prevent
+            onWheel={(e) => e.stopPropagation()}
+            className="p-6 md:p-8 overflow-y-auto flex-1 text-sm text-zinc-300 space-y-6 leading-relaxed custom-scrollbar overscroll-contain"
+            style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+          >
             {/* ── Tab: Terms of Service ── */}
             {activeTab === 'terms' && (
               <div className="space-y-6">

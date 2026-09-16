@@ -241,33 +241,28 @@ function ChronometerCTA() {
                       </linearGradient>
                     </defs>
 
-                    {/* 1. Outer Electric Blue Guideline Circle (R=158) */}
+                    {/* 1. Outer Electric Blue Guideline Circle (R=158) - Full Precision Orbit */}
                     <circle 
                       cx="200" cy="200" r="158" 
                       fill="none" 
                       stroke="url(#outerGuideGrad)" 
-                      strokeWidth="1.8" 
-                      strokeLinecap="round"
-                      strokeDasharray="210 280"
-                      transform="rotate(65 200 200)"
-                      opacity="0.85"
+                      strokeWidth="1.4" 
+                      opacity="0.5"
                     />
 
-                    {/* 2. Inner Red/Crimson Trajectory Ring (R=136) */}
+                    {/* 2. Inner Red/Crimson Trajectory Ring (R=136) - Full Precision Orbit */}
                     <circle 
                       cx="200" cy="200" r="136" 
                       fill="none" 
                       stroke="url(#innerRedGrad)" 
-                      strokeWidth="1.4" 
-                      strokeLinecap="round"
-                      strokeDasharray="350 200"
-                      transform="rotate(110 200 200)"
-                      opacity="0.65"
+                      strokeWidth="1.2" 
+                      opacity="0.4"
                     />
 
                     {/* 
                       3. MAIN ROTATING HIGH-ENERGY PHOTON BEAM & COMET HEAD
-                      Center is 200, 200 — Rotates directly with scroll!
+                      Proper Full 360° Circle (Radius=142, Center=200, 200)
+                      Rotates directly with scroll!
                     */}
                     <motion.g 
                       style={{ 
@@ -276,38 +271,35 @@ function ChronometerCTA() {
                         willChange: 'transform'
                       }}
                     >
-                      {/* Layer 1: Volumetric Atmospheric Plasma Glow */}
-                      <path 
-                        d="M 83.7 281.4 A 142 142 0 0 1 325.4 133.3" 
+                      {/* Layer 1: Volumetric Atmospheric Plasma Glow (Full 360° Circle) */}
+                      <circle 
+                        cx="200" cy="200" r="142" 
                         fill="none" 
                         stroke="url(#photonArcGrad)" 
                         strokeWidth="12" 
-                        strokeLinecap="round"
                         filter="url(#hyperLaserGlow)"
                         opacity="0.85"
                       />
 
-                      {/* Layer 2: Vivid Neon Core Ribbon */}
-                      <path 
-                        d="M 83.7 281.4 A 142 142 0 0 1 325.4 133.3" 
+                      {/* Layer 2: Vivid Neon Core Ribbon (Full 360° Circle) */}
+                      <circle 
+                        cx="200" cy="200" r="142" 
                         fill="none" 
                         stroke="url(#photonArcGrad)" 
-                        strokeWidth="5.5" 
-                        strokeLinecap="round"
+                        strokeWidth="5" 
                         filter="url(#hyperLaserGlow)"
                         opacity="0.95"
                       />
 
-                      {/* Layer 3: Ultra-Intense Pure White Hot Filament */}
-                      <path 
-                        d="M 83.7 281.4 A 142 142 0 0 1 325.4 133.3" 
+                      {/* Layer 3: Ultra-Intense Pure White Hot Filament (Full 360° Circle) */}
+                      <circle 
+                        cx="200" cy="200" r="142" 
                         fill="none" 
                         stroke="url(#coreBeamGrad)" 
-                        strokeWidth="2.6" 
-                        strokeLinecap="round"
+                        strokeWidth="2.4" 
                       />
 
-                      {/* 4. BRILLIANT COMET PLASMA HEAD (at tip x=325.4, y=133.3) */}
+                      {/* 4. BRILLIANT COMET PLASMA HEAD (Orbiting at radius 142 on the ring) */}
                       {/* Ambient amber light spill */}
                       <circle cx="325.4" cy="133.3" r="28" fill="#ea580c" opacity="0.45" filter="url(#hyperLaserGlow)" />
                       {/* Concentrated plasma burst */}

@@ -287,7 +287,7 @@ const LandingPage = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#060713] text-white overflow-x-hidden relative select-none">
+    <div className="min-h-screen bg-[#060713] text-white relative select-none">
 
       {/* ── Global Cursor Spotlight (GPU-Composited, Zero Reflow) ── */}
       <motion.div
@@ -299,11 +299,10 @@ const LandingPage = () => {
           top: 0,
           translateX: '-50%',
           translateY: '-50%',
-          width: 500,
-          height: 500,
-          background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)',
-          filter: 'blur(20px)',
-          mixBlendMode: 'screen',
+          width: 550,
+          height: 550,
+          background: 'radial-gradient(circle, rgba(99,102,241,0.14) 0%, rgba(99,102,241,0.04) 45%, transparent 70%)',
+          pointerEvents: 'none',
           willChange: 'transform',
         }}
       />

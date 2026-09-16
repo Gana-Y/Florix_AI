@@ -22,22 +22,19 @@ export default function SmoothScroll({ children }) {
   const lenisRef = useRef(null);
 
   useEffect(() => {
-    // 1. Initialize Lenis instance with optimal physics
+    // 1. Initialize Lenis instance with optimal 60fps/120fps inertia interpolation
     const lenis = new Lenis({
-      duration: 1.15,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // Exponential deceleration
-      orientation: 'vertical',
-      gestureOrientation: 'vertical',
+      lerp: 0.085, // Snappy mouse response with silky, zero-lag deceleration
+      wheelMultiplier: 0.95, // Natural scroll distance per wheel click
       smoothWheel: true,
-      wheelMultiplier: 1.0,
-      touchMultiplier: 1.5,
-      infinite: false,
+      syncTouch: false, // Don't hijack native mobile/touchpad momentum
+      autoResize: true,
     });
 
     lenisRef.current = lenis;
     window.__lenis = lenis;
 
-    // 2. Single Global RequestAnimationFrame loop
+    // 2. Master RequestAnimationFrame loop
     let rafId;
     function raf(time) {
       lenis.raf(time);
@@ -45,27 +42,29 @@ export default function SmoothScroll({ children }) {
     }
     rafId = requestAnimationFrame(raf);
 
-    // 3. Keep Lenis synchronized with Framer Motion and native listeners
-    const onScroll = () => {
-      // Dispatches a lightweight window scroll update so Framer Motion useScroll stays frame-accurate
-      window.dispatchEvent(new Event('scroll'));
-    };
-    lenis.on('scroll', onScroll);
-
-    // 4. Cleanup on unmount
+    // 3. Cleanup on unmount
     return () => {
       cancelAnimationFrame(rafId);
-      lenis.off('scroll', onScroll);
       lenis.destroy();
       lenisRef.current = null;
       window.__lenis = null;
     };
   }, []);
 
-  // 5. Scroll to top immediately on route transitions
+  // 4. Intelligently activate Lenis ONLY where needed (Landing Page)
+  // On Dashboard and Auth pages with internal panels, stop Lenis so it never fights nested scroll
   useEffect(() => {
-    if (lenisRef.current) {
-      lenisRef.current.scrollTo(0, { immediate: true });
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+
+    const isDashboard = location.pathname.startsWith('/dashboard');
+    const isAuth = ['/login', '/signup', '/forgot-password', '/onboarding', '/welcome'].includes(location.pathname);
+
+    if (isDashboard || isAuth) {
+      lenis.stop();
+    } else {
+      lenis.start();
+      lenis.scrollTo(0, { immediate: true });
     }
   }, [location.pathname]);
 

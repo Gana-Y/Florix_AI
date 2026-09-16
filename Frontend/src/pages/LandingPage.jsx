@@ -177,8 +177,8 @@ const testimonials = [
 const trustedBy = ['PDF Documents', 'YouTube Videos', 'Web Articles', 'Audio Recordings', 'Screenshots & Images'];
 
 const STATS = [
-  { value: 10000, label: 'Students',  suffix: '+',  icon: Users,    isDecimal: false },
-  { value: 50000, label: 'Documents', suffix: '+',  icon: FileText, isDecimal: false },
+  { value: 1500,  label: 'Students',  suffix: '+',  icon: Users,    isDecimal: false },
+  { value: 1500,  label: 'Documents', suffix: '+',  icon: FileText, isDecimal: false },
   { value: 99,    label: 'Accuracy',  suffix: '%',  icon: Award,    isDecimal: false },
   { value: 4.9,   label: 'Rating',    suffix: '★',  icon: Star,     isDecimal: true  },
 ];

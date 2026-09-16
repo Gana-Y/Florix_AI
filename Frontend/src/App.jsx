@@ -260,24 +260,45 @@ function AppInner() {
                 </motion.div>
               } />
               <Route path="/login" element={
-                <div key="login-container" className="fixed inset-0 w-full h-full flex items-center justify-center p-4 sm:p-6 md:p-8 z-50 overflow-y-auto bg-transparent">
-                  <motion.div key="login" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full max-w-md my-auto flex justify-center">
-                    <Login />
-                  </motion.div>
+                <div
+                  key="login-container"
+                  data-lenis-prevent="true"
+                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain"
+                  style={{ WebkitOverflowScrolling: 'touch' }}
+                >
+                  <div className="min-h-full w-full flex items-center justify-center p-4 sm:p-6 md:p-8 py-10">
+                    <motion.div key="login" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full max-w-md my-auto flex justify-center">
+                      <Login />
+                    </motion.div>
+                  </div>
                 </div>
               } />
               <Route path="/signup" element={
-                <div key="signup-container" className="fixed inset-0 w-full h-full flex items-center justify-center p-4 sm:p-6 md:p-8 z-50 overflow-y-auto bg-transparent">
-                  <motion.div key="signup" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full max-w-md my-auto flex justify-center">
-                    <Signup />
-                  </motion.div>
+                <div
+                  key="signup-container"
+                  data-lenis-prevent="true"
+                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain"
+                  style={{ WebkitOverflowScrolling: 'touch' }}
+                >
+                  <div className="min-h-full w-full flex items-center justify-center p-4 sm:p-6 md:p-8 py-10">
+                    <motion.div key="signup" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full max-w-md my-auto flex justify-center">
+                      <Signup />
+                    </motion.div>
+                  </div>
                 </div>
               } />
               <Route path="/forgot-password" element={
-                <div key="forgot-container" className="fixed inset-0 w-full h-full flex items-center justify-center p-4 sm:p-6 md:p-8 z-50 overflow-y-auto bg-transparent">
-                  <motion.div key="forgot" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full max-w-md my-auto flex justify-center">
-                    <ForgotPasswordPage onBack={() => navigate('/login')} />
-                  </motion.div>
+                <div
+                  key="forgot-container"
+                  data-lenis-prevent="true"
+                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain"
+                  style={{ WebkitOverflowScrolling: 'touch' }}
+                >
+                  <div className="min-h-full w-full flex items-center justify-center p-4 sm:p-6 md:p-8 py-10">
+                    <motion.div key="forgot" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full max-w-md my-auto flex justify-center">
+                      <ForgotPasswordPage onBack={() => navigate('/login')} />
+                    </motion.div>
+                  </div>
                 </div>
               } />
               <Route path="*" element={<Navigate to="/" />} />

@@ -133,6 +133,7 @@ const Signup = () => {
       variants={containerVariants} 
       initial="hidden" 
       animate="show" 
+      data-lenis-prevent="true"
       className="w-full max-w-md px-4"
     >
       <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-3xl border border-slate-200/50 dark:border-zinc-900/50 rounded-[28px] p-8 sm:p-10 shadow-2xl transition-all duration-300">

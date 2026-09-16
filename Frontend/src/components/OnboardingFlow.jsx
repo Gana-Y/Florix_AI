@@ -226,7 +226,7 @@ const OnboardingFlow = ({ onComplete }) => {
       </div>
 
       {/* ── RIGHT HALF: 3 ONBOARDING QUESTIONS ── */}
-      <div className="flex-1 h-full flex flex-col justify-between p-6 sm:p-10 lg:p-12 overflow-y-auto custom-scrollbar relative z-10 bg-[#04060e]">
+      <div data-lenis-prevent="true" className="flex-1 h-full flex flex-col justify-between p-6 sm:p-10 lg:p-12 overflow-y-auto custom-scrollbar relative z-10 bg-[#04060e]">
         
         {/* Top Progress & Header */}
         <div className="max-w-xl w-full mx-auto">

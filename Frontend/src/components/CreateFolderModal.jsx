@@ -11,7 +11,8 @@ import {
   ICON_CATEGORIES,
   FOLDER_COLORS,
   getFolderColorConfig,
-  renderFolderIcon
+  renderFolderIcon,
+  getSmartFolderThemeForTitle
 } from '../utils/folderIcons';
 
 const QUICK_SUGGESTIONS = [
@@ -38,6 +39,9 @@ export default function CreateFolderModal({
   const [activeCategory, setActiveCategory] = useState('academic');
   const [customEmojiInput, setCustomEmojiInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [userModifiedIcon, setUserModifiedIcon] = useState(false);
+  const [userModifiedColor, setUserModifiedColor] = useState(false);
+  const [autoMatchedBadge, setAutoMatchedBadge] = useState('');
 
   // Initialize or reset when opened
   useEffect(() => {
@@ -47,6 +51,9 @@ export default function CreateFolderModal({
         setFolderDescription(editingFolder.description || '');
         setSelectedIcon(editingFolder.icon || 'Folder');
         setSelectedColor(editingFolder.color || 'indigo');
+        setUserModifiedIcon(true);
+        setUserModifiedColor(true);
+        setAutoMatchedBadge('');
         if (editingFolder.color?.startsWith('#')) {
           setCustomHex(editingFolder.color);
         } else {
@@ -59,6 +66,9 @@ export default function CreateFolderModal({
         setSelectedColor('indigo');
         setCustomHex('');
         setCustomEmojiInput('');
+        setUserModifiedIcon(false);
+        setUserModifiedColor(false);
+        setAutoMatchedBadge('');
       }
     }
   }, [isOpen, editingFolder]);
@@ -66,6 +76,84 @@ export default function CreateFolderModal({
   if (!isOpen) return null;
 
   const colorConfig = getFolderColorConfig(customHex || selectedColor);
+
+  // Dynamic Title Change with Smart Logo and Color matching
+  const handleTitleChange = (val) => {
+    setFolderName(val);
+    if (!val.trim()) {
+      // If user clears the input, reset modified flag so new titles trigger auto-matching again
+      setUserModifiedIcon(false);
+      setUserModifiedColor(false);
+      setAutoMatchedBadge('');
+      return;
+    }
+
+    const match = getSmartFolderThemeForTitle(val);
+    if (match.matched) {
+      if (!userModifiedIcon) {
+        setSelectedIcon(match.icon);
+        setActiveCategory(match.category);
+        setCustomEmojiInput('');
+      }
+      if (!userModifiedColor && !customHex) {
+        setSelectedColor(match.color);
+      }
+      setAutoMatchedBadge(match.matchedKeyword || 'matched');
+    } else {
+      if (!userModifiedIcon) {
+        setSelectedIcon('Folder');
+      }
+      setAutoMatchedBadge('');
+    }
+  };
+
+  // When user explicitly selects or changes the icon manually
+  const handleSelectIconManually = (iconKey) => {
+    setSelectedIcon(iconKey);
+    setUserModifiedIcon(true);
+  };
+
+  // When user types custom emoji
+  const handleCustomEmojiChange = (emojiVal) => {
+    setCustomEmojiInput(emojiVal);
+    if (emojiVal.trim()) {
+      setSelectedIcon(emojiVal.trim());
+      setUserModifiedIcon(true);
+    }
+  };
+
+  // When user selects a color palette manually
+  const handleSelectColorManually = (colorId) => {
+    setSelectedColor(colorId);
+    setCustomHex('');
+    setUserModifiedColor(true);
+  };
+
+  // When user picks a custom hex color
+  const handleCustomHexChange = (hexVal) => {
+    setCustomHex(hexVal);
+    setUserModifiedColor(true);
+  };
+
+  // Reset to auto-matched logo if user changed their mind
+  const handleResetToAuto = () => {
+    setUserModifiedIcon(false);
+    setUserModifiedColor(false);
+    const match = getSmartFolderThemeForTitle(folderName);
+    if (match.matched) {
+      setSelectedIcon(match.icon);
+      setActiveCategory(match.category);
+      setSelectedColor(match.color);
+      setCustomHex('');
+      setCustomEmojiInput('');
+      setAutoMatchedBadge(match.matchedKeyword || 'matched');
+    } else {
+      setSelectedIcon('Folder');
+      setSelectedColor('indigo');
+      setCustomHex('');
+      setAutoMatchedBadge('');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -136,14 +224,9 @@ export default function CreateFolderModal({
               {renderFolderIcon(selectedIcon, { size: 22 })}
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-black tracking-tight text-slate-900 dark:text-white">
-                  {editingFolder ? 'Edit Folder & Workspace' : 'Create New Folder'}
-                </h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  All Users Unlocked
-                </span>
-              </div>
+              <h3 className="text-base sm:text-lg font-black tracking-tight text-slate-900 dark:text-white">
+                {editingFolder ? 'Edit Folder & Workspace' : 'Create New Folder'}
+              </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400">
                 Organize subchats, study sessions, and master decks in one cockpit.
               </p>
@@ -219,7 +302,7 @@ export default function CreateFolderModal({
               required
               maxLength={50}
               value={folderName}
-              onChange={(e) => setFolderName(e.target.value)}
+              onChange={(e) => handleTitleChange(e.target.value)}
               placeholder="e.g. Data Structures & Algorithms, Neurobiology 2026..."
               className="w-full text-sm px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-800/90 rounded-xl border border-slate-200 dark:border-zinc-700/80 text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-medium"
             />
@@ -229,7 +312,7 @@ export default function CreateFolderModal({
                 <button
                   key={sug}
                   type="button"
-                  onClick={() => setFolderName(sug)}
+                  onClick={() => handleTitleChange(sug)}
                   className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                 >
                   {sug}
@@ -271,7 +354,7 @@ export default function CreateFolderModal({
                   <button
                     key={c.id}
                     type="button"
-                    onClick={() => { setSelectedColor(c.id); setCustomHex(''); }}
+                    onClick={() => handleSelectColorManually(c.id)}
                     className={`group relative w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
                       isSelected
                         ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-zinc-900 scale-110 shadow-lg'
@@ -291,7 +374,7 @@ export default function CreateFolderModal({
                   <input
                     type="color"
                     value={customHex || '#6366f1'}
-                    onChange={(e) => setCustomHex(e.target.value)}
+                    onChange={(e) => handleCustomHexChange(e.target.value)}
                     className="w-8 h-8 rounded-xl cursor-pointer opacity-0 absolute inset-0 z-10"
                     title="Pick custom hex color"
                   />
@@ -307,7 +390,7 @@ export default function CreateFolderModal({
                 {customHex && (
                   <button
                     type="button"
-                    onClick={() => setCustomHex('')}
+                    onClick={() => { setCustomHex(''); setUserModifiedColor(false); }}
                     className="text-[10px] text-slate-400 hover:text-slate-600 underline"
                   >
                     Reset
@@ -320,10 +403,31 @@ export default function CreateFolderModal({
           {/* Logo & Icon Library */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 dark:text-zinc-200">
-                Choose Folder Logo & Discipline Icon
-              </label>
-              <div className="flex items-center gap-1 text-[10px] text-slate-400">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs font-bold text-slate-700 dark:text-zinc-200">
+                  Choose Folder Logo & Discipline Icon
+                </label>
+                {/* Auto-matched indicator */}
+                {autoMatchedBadge && !userModifiedIcon && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 animate-in fade-in">
+                    <Sparkles size={10} />
+                    <span>Auto-selected</span>
+                  </span>
+                )}
+                {/* User modified tag + option to reset to auto */}
+                {userModifiedIcon && folderName.trim() && (
+                  <button
+                    type="button"
+                    onClick={handleResetToAuto}
+                    className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    title="Re-run smart auto-detection for current title"
+                  >
+                    <span>(Modified)</span>
+                    <span className="underline decoration-dotted">Reset to auto-logo</span>
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-[10px] text-slate-400 shrink-0">
                 <span>Selected:</span>
                 <span className="font-bold text-slate-700 dark:text-zinc-200">
                   {selectedIcon}
@@ -357,7 +461,7 @@ export default function CreateFolderModal({
                   <button
                     key={ic}
                     type="button"
-                    onClick={() => setSelectedIcon(ic)}
+                    onClick={() => handleSelectIconManually(ic)}
                     className={`h-10 rounded-xl flex items-center justify-center transition-all ${
                       isSelected
                         ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30 scale-105 ring-2 ring-indigo-400'
@@ -378,10 +482,7 @@ export default function CreateFolderModal({
                 type="text"
                 maxLength={4}
                 value={customEmojiInput}
-                onChange={(e) => {
-                  setCustomEmojiInput(e.target.value);
-                  if (e.target.value.trim()) setSelectedIcon(e.target.value.trim());
-                }}
+                onChange={(e) => handleCustomEmojiChange(e.target.value)}
                 placeholder="e.g. 🪐"
                 className="w-16 text-center text-sm py-1 bg-slate-50 dark:bg-zinc-800 rounded-lg border border-slate-200 dark:border-zinc-700 outline-none focus:ring-1 focus:ring-indigo-500"
               />

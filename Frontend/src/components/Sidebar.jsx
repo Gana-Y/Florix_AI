@@ -498,9 +498,6 @@ const Sidebar = ({
                     </div>
                     <span>New Folder</span>
                   </div>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
-                    Free
-                  </span>
                 </motion.button>
               </div>
 

@@ -403,11 +403,11 @@ const LandingPage = () => {
       <section className="relative z-10 w-full min-h-[calc(100vh-80px)] flex flex-col justify-center items-center py-16 md:py-24">
         {/* ── Layer 4: 1080p Reflect-Style Black Hole Eclipse (Positioned to frame hero, non-blocking) ── */}
         <div
-          className="absolute top-[115px] sm:top-[138px] md:top-[158px] lg:top-[178px] left-1/2 -translate-x-1/2 w-[950px] sm:w-[1220px] md:w-[1480px] lg:w-[1720px] pointer-events-none z-0 select-none mix-blend-screen overflow-hidden"
+          className="absolute top-[115px] sm:top-[138px] md:top-[158px] lg:top-[178px] left-1/2 -translate-x-1/2 w-[950px] sm:w-[1220px] md:w-[1480px] lg:w-[1720px] pointer-events-none z-0 select-none opacity-88 mix-blend-screen overflow-hidden"
           style={{
-            maskImage: 'radial-gradient(ellipse 85% 55% at 50% 40%, black 30%, rgba(0,0,0,0.85) 55%, transparent 80%)',
-            WebkitMaskImage: 'radial-gradient(ellipse 85% 55% at 50% 40%, black 30%, rgba(0,0,0,0.85) 55%, transparent 80%)',
-            filter: 'brightness(1.22) contrast(1.16) saturate(1.25)',
+            maskImage: 'radial-gradient(ellipse 80% 50% at 50% 40%, black 20%, rgba(0,0,0,0.65) 45%, transparent 75%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 80% 50% at 50% 40%, black 20%, rgba(0,0,0,0.65) 45%, transparent 75%)',
+            filter: 'brightness(1.05)',
           }}
         >
           <video

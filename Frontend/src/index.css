@@ -318,6 +318,11 @@ body {
   }
 }
 
+.animate-spin-clockwise {
+  animation: spin-clockwise 8s linear infinite;
+  will-change: transform;
+}
+
 /* High-voltage electric lightning / plasma discharge animations */
 @keyframes electric-plasma-crackle {
   0%, 100% {

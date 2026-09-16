@@ -93,83 +93,61 @@ const UNDER_REVIEW_ITEMS = [
   },
 ];
 
-// ── High-Voltage Electric Lightning & Solar Plasma Beam Gradients ──
-const ELECTRIC_PLASMA_LASER_GRADIENT = `conic-gradient(
+// ── Clean 2-Beam Orbit (Cyan & Solar Amber) with Extended Trail ──
+const TWO_BEAM_LASER_GRADIENT = `conic-gradient(
   from 0deg,
-  rgba(255, 255, 255, 0.07) 0deg,
-  rgba(255, 255, 255, 0.07) 38deg,
-  /* Electric Lightning Bolt Arc: Hyper-Cyan / Violet Ionization / Pure White-Hot Core */
-  rgba(147, 51, 234, 0.35) 48deg,
-  #0284c7 60deg,
-  #00f0ff 70deg,
-  #ffffff 75deg,
-  #e0f2fe 78deg,
-  #00f0ff 83deg,
-  #38bdf8 94deg,
-  rgba(14, 165, 233, 0.4) 106deg,
-  rgba(255, 255, 255, 0.07) 118deg,
-  /* Secondary Crackling Spark / Electric Tendril */
-  rgba(255, 255, 255, 0.07) 150deg,
-  rgba(0, 240, 255, 0.75) 157deg,
-  #ffffff 161deg,
-  rgba(56, 189, 248, 0.75) 165deg,
-  rgba(255, 255, 255, 0.07) 174deg,
-  /* Solar Plasma Lightning Flare: Ionized Amber / Crimson / Pure White-Hot Core */
-  rgba(255, 255, 255, 0.07) 218deg,
-  rgba(220, 38, 38, 0.35) 230deg,
-  #ea580c 242deg,
-  #ff6a00 252deg,
-  #ffffff 257deg,
-  #fef3c7 260deg,
-  #ffaa00 265deg,
-  #f59e0b 276deg,
-  rgba(249, 115, 22, 0.4) 288deg,
-  rgba(255, 255, 255, 0.07) 300deg,
-  /* Secondary Solar Plasma Discharge Spark */
-  rgba(255, 255, 255, 0.07) 332deg,
-  rgba(255, 106, 0, 0.75) 338deg,
-  #ffffff 342deg,
-  rgba(245, 158, 11, 0.75) 347deg,
-  rgba(255, 255, 255, 0.07) 360deg
+  rgba(255, 255, 255, 0.06) 0deg,
+  rgba(255, 255, 255, 0.06) 92deg,
+  /* ── Beam 1: Solar Amber / Orange Arc (88°) ── */
+  rgba(154, 52, 18, 0.25) 96deg,
+  #c2410c 108deg,
+  #ea580c 120deg,
+  #ff6a00 132deg,
+  #ffffff 140deg,
+  #ff6a00 148deg,
+  #ea580c 158deg,
+  #9a3412 170deg,
+  rgba(154, 52, 18, 0.2) 184deg,
+  rgba(255, 255, 255, 0.06) 190deg,
+  rgba(255, 255, 255, 0.06) 272deg,
+  /* ── Beam 2: Electric Cyan / Sky Blue Arc (88°) ── */
+  rgba(30, 64, 175, 0.25) 276deg,
+  #0284c7 288deg,
+  #00f0ff 302deg,
+  #38bdf8 312deg,
+  #ffffff 320deg,
+  #00f0ff 328deg,
+  #38bdf8 338deg,
+  #1d4ed8 350deg,
+  rgba(30, 64, 175, 0.2) 364deg
 )`;
 
-const ELECTRIC_PLASMA_AMBIENT_GRADIENT = `conic-gradient(
+const TWO_BEAM_AMBIENT_GRADIENT = `conic-gradient(
   from 0deg,
   transparent 0deg,
-  transparent 38deg,
-  /* Electric Lightning Bolt Arc Ambient Bloom */
-  rgba(147, 51, 234, 0.35) 48deg,
-  #0284c7 60deg,
-  #00f0ff 70deg,
-  #ffffff 75deg,
-  #e0f2fe 78deg,
-  #00f0ff 83deg,
-  #38bdf8 94deg,
-  rgba(14, 165, 233, 0.4) 106deg,
-  transparent 118deg,
-  /* Secondary Crackling Spark Ambient */
-  transparent 150deg,
-  rgba(0, 240, 255, 0.75) 157deg,
-  #ffffff 161deg,
-  rgba(56, 189, 248, 0.75) 165deg,
-  transparent 174deg,
-  /* Solar Plasma Lightning Flare Ambient Bloom */
-  transparent 218deg,
-  rgba(220, 38, 38, 0.35) 230deg,
-  #ea580c 242deg,
-  #ff6a00 252deg,
-  #ffffff 257deg,
-  #fef3c7 260deg,
-  #ffaa00 265deg,
-  #f59e0b 276deg,
-  rgba(249, 115, 22, 0.4) 288deg,
-  transparent 300deg,
-  /* Secondary Solar Plasma Discharge Spark Ambient */
-  transparent 332deg,
-  rgba(255, 106, 0, 0.75) 338deg,
-  #ffffff 342deg,
-  rgba(245, 158, 11, 0.75) 347deg,
-  transparent 360deg
+  transparent 92deg,
+  /* ── Beam 1: Solar Amber Ambient Glow (88°) ── */
+  rgba(154, 52, 18, 0.25) 96deg,
+  #c2410c 108deg,
+  #ea580c 120deg,
+  #ff6a00 132deg,
+  #ffffff 140deg,
+  #ff6a00 148deg,
+  #ea580c 158deg,
+  #9a3412 170deg,
+  rgba(154, 52, 18, 0.2) 184deg,
+  transparent 190deg,
+  transparent 272deg,
+  /* ── Beam 2: Electric Cyan Ambient Glow (88°) ── */
+  rgba(30, 64, 175, 0.25) 276deg,
+  #0284c7 288deg,
+  #00f0ff 302deg,
+  #38bdf8 312deg,
+  #ffffff 320deg,
+  #00f0ff 328deg,
+  #38bdf8 338deg,
+  #1d4ed8 350deg,
+  rgba(30, 64, 175, 0.2) 364deg
 )`;
 
 function FeatureShowcaseHuly() {
@@ -206,50 +184,52 @@ function FeatureShowcaseHuly() {
         </motion.p>
       </div>
 
-      {/* ── The Floating Card Container with Clockwise Rotating Electric Plasma Beams ── */}
+      {/* ── The Floating Card Container with Clockwise Rotating Dual Laser Beams ── */}
       <div className="relative mx-auto w-full">
-        {/* ── LAYER 1: BROAD AMBIENT HALO (Clockwise Electric Plasma) ── */}
+        {/* ── LAYER 1: LIGHT REFINED AMBIENT HALO (Clockwise) ── */}
         <div
-          className="pointer-events-none absolute -inset-[18px] sm:-inset-[22px] rounded-[36px] md:rounded-[44px] overflow-hidden select-none -z-10 animate-electric-crackle"
+          className="pointer-events-none absolute -inset-[10px] sm:-inset-[14px] rounded-[32px] md:rounded-[40px] overflow-hidden select-none -z-10"
+          style={{ filter: 'blur(16px)', opacity: 0.60 }}
           aria-hidden="true"
         >
           <div
             className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
             style={{
               willChange: 'transform',
-              background: ELECTRIC_PLASMA_AMBIENT_GRADIENT,
+              background: TWO_BEAM_AMBIENT_GRADIENT,
             }}
           />
         </div>
 
-        {/* ── LAYER 2: TIGHT HIGH-VOLTAGE RIM GLOW (Clockwise Electric Plasma) ── */}
+        {/* ── LAYER 2: TIGHT SHINY RIM GLOW (Clockwise) ── */}
         <div
-          className="pointer-events-none absolute -inset-[6px] rounded-[28px] md:rounded-[36px] overflow-hidden select-none -z-10 animate-electric-rim"
+          className="pointer-events-none absolute -inset-[4px] rounded-[26px] md:rounded-[34px] overflow-hidden select-none -z-10"
+          style={{ filter: 'blur(5px)', opacity: 0.75 }}
           aria-hidden="true"
         >
           <div
             className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
             style={{
               willChange: 'transform',
-              background: ELECTRIC_PLASMA_AMBIENT_GRADIENT,
+              background: TWO_BEAM_AMBIENT_GRADIENT,
             }}
           />
         </div>
 
-        {/* ── 3.5PX SHINY ELECTRIC LASER BORDER CONTAINER (Clockwise) ── */}
+        {/* ── 3.5PX SHINY LASER BORDER CONTAINER (Clockwise) ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '250px' }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="relative rounded-[24px] md:rounded-[32px] p-[3.5px] overflow-hidden shadow-[0_35px_100px_rgba(0,0,0,0.90)] z-10"
+          className="relative rounded-[24px] md:rounded-[32px] p-[3px] overflow-hidden shadow-[0_35px_100px_rgba(0,0,0,0.90)] z-10"
         >
-          {/* Rotating Laser Border Line with High-Voltage Electric Pulse */}
+          {/* Rotating Dual Laser Border Line */}
           <div
-            className="pointer-events-none absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-electric z-0"
+            className="pointer-events-none absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise z-0"
             style={{
-              willChange: 'transform, filter',
-              background: ELECTRIC_PLASMA_LASER_GRADIENT,
+              willChange: 'transform',
+              background: TWO_BEAM_LASER_GRADIENT,
             }}
           />
 

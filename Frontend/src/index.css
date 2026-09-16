@@ -318,40 +318,104 @@ body {
   }
 }
 
-.animate-spin-clockwise {
-  animation: spin-clockwise 8s linear infinite;
-  will-change: transform;
-}
-
-/* Corner-anchored breathing shimmer (single-color corners with complete dark gaps) */
-@keyframes blue-corner-pulse {
+/* High-voltage electric lightning / plasma discharge animations */
+@keyframes electric-plasma-crackle {
   0%, 100% {
-    transform: translate(0px, 0px) scale(1);
     opacity: 0.90;
+    filter: blur(30px) brightness(1.1);
   }
-  50% {
-    transform: translate(5px, -3px) scale(1.05);
+  14% {
     opacity: 1;
+    filter: blur(34px) brightness(1.35);
+  }
+  28% {
+    opacity: 0.86;
+    filter: blur(28px) brightness(1.05);
+  }
+  42% {
+    opacity: 1;
+    filter: blur(36px) brightness(1.45);
+  }
+  57% {
+    opacity: 0.92;
+    filter: blur(30px) brightness(1.15);
+  }
+  71% {
+    opacity: 1;
+    filter: blur(34px) brightness(1.35);
+  }
+  85% {
+    opacity: 0.88;
+    filter: blur(28px) brightness(1.05);
   }
 }
 
-@keyframes orange-corner-pulse {
+@keyframes electric-rim-pulse {
   0%, 100% {
-    transform: translate(0px, 0px) scale(1);
-    opacity: 0.90;
+    opacity: 0.92;
+    filter: blur(9px) brightness(1.15);
   }
-  50% {
-    transform: translate(-5px, 3px) scale(1.05);
+  14% {
     opacity: 1;
+    filter: blur(11px) brightness(1.45);
+  }
+  28% {
+    opacity: 0.86;
+    filter: blur(8px) brightness(1.05);
+  }
+  42% {
+    opacity: 1;
+    filter: blur(12px) brightness(1.5);
+  }
+  57% {
+    opacity: 0.94;
+    filter: blur(9px) brightness(1.2);
+  }
+  71% {
+    opacity: 1;
+    filter: blur(11px) brightness(1.4);
+  }
+  85% {
+    opacity: 0.88;
+    filter: blur(8px) brightness(1.08);
   }
 }
 
-.animate-blue-corner {
-  animation: blue-corner-pulse 5s ease-in-out infinite;
-  will-change: transform, opacity;
+@keyframes electric-laser-pulse {
+  0%, 100% {
+    filter: brightness(1.25) contrast(1.2);
+  }
+  14% {
+    filter: brightness(1.55) contrast(1.35);
+  }
+  28% {
+    filter: brightness(1.15) contrast(1.15);
+  }
+  42% {
+    filter: brightness(1.65) contrast(1.4);
+  }
+  57% {
+    filter: brightness(1.25) contrast(1.2);
+  }
+  71% {
+    filter: brightness(1.5) contrast(1.3);
+  }
+  85% {
+    filter: brightness(1.18) contrast(1.15);
+  }
 }
 
-.animate-orange-corner {
-  animation: orange-corner-pulse 5s ease-in-out infinite 0.6s;
-  will-change: transform, opacity;
+.animate-electric-crackle {
+  animation: electric-plasma-crackle 2.2s ease-in-out infinite;
+  will-change: filter, opacity;
+}
+
+.animate-electric-rim {
+  animation: electric-rim-pulse 2.2s ease-in-out infinite;
+  will-change: filter, opacity;
+}
+
+.animate-spin-electric {
+  animation: spin-clockwise 8s linear infinite, electric-laser-pulse 1.8s ease-in-out infinite;
+  will-change: transform, filter;
 }

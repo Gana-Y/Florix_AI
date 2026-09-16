@@ -93,6 +93,85 @@ const UNDER_REVIEW_ITEMS = [
   },
 ];
 
+// ── High-Voltage Electric Lightning & Solar Plasma Beam Gradients ──
+const ELECTRIC_PLASMA_LASER_GRADIENT = `conic-gradient(
+  from 0deg,
+  rgba(255, 255, 255, 0.07) 0deg,
+  rgba(255, 255, 255, 0.07) 38deg,
+  /* Electric Lightning Bolt Arc: Hyper-Cyan / Violet Ionization / Pure White-Hot Core */
+  rgba(147, 51, 234, 0.35) 48deg,
+  #0284c7 60deg,
+  #00f0ff 70deg,
+  #ffffff 75deg,
+  #e0f2fe 78deg,
+  #00f0ff 83deg,
+  #38bdf8 94deg,
+  rgba(14, 165, 233, 0.4) 106deg,
+  rgba(255, 255, 255, 0.07) 118deg,
+  /* Secondary Crackling Spark / Electric Tendril */
+  rgba(255, 255, 255, 0.07) 150deg,
+  rgba(0, 240, 255, 0.75) 157deg,
+  #ffffff 161deg,
+  rgba(56, 189, 248, 0.75) 165deg,
+  rgba(255, 255, 255, 0.07) 174deg,
+  /* Solar Plasma Lightning Flare: Ionized Amber / Crimson / Pure White-Hot Core */
+  rgba(255, 255, 255, 0.07) 218deg,
+  rgba(220, 38, 38, 0.35) 230deg,
+  #ea580c 242deg,
+  #ff6a00 252deg,
+  #ffffff 257deg,
+  #fef3c7 260deg,
+  #ffaa00 265deg,
+  #f59e0b 276deg,
+  rgba(249, 115, 22, 0.4) 288deg,
+  rgba(255, 255, 255, 0.07) 300deg,
+  /* Secondary Solar Plasma Discharge Spark */
+  rgba(255, 255, 255, 0.07) 332deg,
+  rgba(255, 106, 0, 0.75) 338deg,
+  #ffffff 342deg,
+  rgba(245, 158, 11, 0.75) 347deg,
+  rgba(255, 255, 255, 0.07) 360deg
+)`;
+
+const ELECTRIC_PLASMA_AMBIENT_GRADIENT = `conic-gradient(
+  from 0deg,
+  transparent 0deg,
+  transparent 38deg,
+  /* Electric Lightning Bolt Arc Ambient Bloom */
+  rgba(147, 51, 234, 0.35) 48deg,
+  #0284c7 60deg,
+  #00f0ff 70deg,
+  #ffffff 75deg,
+  #e0f2fe 78deg,
+  #00f0ff 83deg,
+  #38bdf8 94deg,
+  rgba(14, 165, 233, 0.4) 106deg,
+  transparent 118deg,
+  /* Secondary Crackling Spark Ambient */
+  transparent 150deg,
+  rgba(0, 240, 255, 0.75) 157deg,
+  #ffffff 161deg,
+  rgba(56, 189, 248, 0.75) 165deg,
+  transparent 174deg,
+  /* Solar Plasma Lightning Flare Ambient Bloom */
+  transparent 218deg,
+  rgba(220, 38, 38, 0.35) 230deg,
+  #ea580c 242deg,
+  #ff6a00 252deg,
+  #ffffff 257deg,
+  #fef3c7 260deg,
+  #ffaa00 265deg,
+  #f59e0b 276deg,
+  rgba(249, 115, 22, 0.4) 288deg,
+  transparent 300deg,
+  /* Secondary Solar Plasma Discharge Spark Ambient */
+  transparent 332deg,
+  rgba(255, 106, 0, 0.75) 338deg,
+  #ffffff 342deg,
+  rgba(245, 158, 11, 0.75) 347deg,
+  transparent 360deg
+)`;
+
 function FeatureShowcaseHuly() {
   const [activeNav, setActiveNav] = useState('docs');
   const [hoveredRow, setHoveredRow] = useState(null);
@@ -127,85 +206,37 @@ function FeatureShowcaseHuly() {
         </motion.p>
       </div>
 
-      {/* ── The Floating Card Container with Clockwise Rotating Laser Beams ── */}
+      {/* ── The Floating Card Container with Clockwise Rotating Electric Plasma Beams ── */}
       <div className="relative mx-auto w-full">
-        {/* ── LAYER 1: BROAD AMBIENT HALO (Clockwise) ── */}
+        {/* ── LAYER 1: BROAD AMBIENT HALO (Clockwise Electric Plasma) ── */}
         <div
-          className="pointer-events-none absolute -inset-[18px] sm:-inset-[22px] rounded-[36px] md:rounded-[44px] overflow-hidden select-none -z-10"
-          style={{ filter: 'blur(32px)', opacity: 0.95 }}
+          className="pointer-events-none absolute -inset-[18px] sm:-inset-[22px] rounded-[36px] md:rounded-[44px] overflow-hidden select-none -z-10 animate-electric-crackle"
           aria-hidden="true"
         >
           <div
             className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
             style={{
               willChange: 'transform',
-              background: `conic-gradient(
-                from 0deg,
-                transparent 0deg,
-                transparent 95deg,
-                rgba(154, 52, 18, 0.3) 105deg,
-                #c2410c 118deg,
-                #ea580c 130deg,
-                #ff6a00 138deg,
-                #ffffff 145deg,
-                #ff6a00 152deg,
-                #ea580c 160deg,
-                #9a3412 172deg,
-                transparent 185deg,
-                transparent 275deg,
-                rgba(30, 64, 175, 0.3) 285deg,
-                #0284c7 298deg,
-                #00f0ff 312deg,
-                #38bdf8 320deg,
-                #ffffff 325deg,
-                #00f0ff 332deg,
-                #38bdf8 342deg,
-                #1d4ed8 355deg,
-                transparent 365deg
-              )`,
+              background: ELECTRIC_PLASMA_AMBIENT_GRADIENT,
             }}
           />
         </div>
 
-        {/* ── LAYER 2: TIGHT SHINY RIM GLOW (Clockwise) ── */}
+        {/* ── LAYER 2: TIGHT HIGH-VOLTAGE RIM GLOW (Clockwise Electric Plasma) ── */}
         <div
-          className="pointer-events-none absolute -inset-[6px] rounded-[28px] md:rounded-[36px] overflow-hidden select-none -z-10"
-          style={{ filter: 'blur(10px)', opacity: 0.95 }}
+          className="pointer-events-none absolute -inset-[6px] rounded-[28px] md:rounded-[36px] overflow-hidden select-none -z-10 animate-electric-rim"
           aria-hidden="true"
         >
           <div
             className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
             style={{
               willChange: 'transform',
-              background: `conic-gradient(
-                from 0deg,
-                transparent 0deg,
-                transparent 95deg,
-                rgba(154, 52, 18, 0.3) 105deg,
-                #c2410c 118deg,
-                #ea580c 130deg,
-                #ff6a00 138deg,
-                #ffffff 145deg,
-                #ff6a00 152deg,
-                #ea580c 160deg,
-                #9a3412 172deg,
-                transparent 185deg,
-                transparent 275deg,
-                rgba(30, 64, 175, 0.3) 285deg,
-                #0284c7 298deg,
-                #00f0ff 312deg,
-                #38bdf8 320deg,
-                #ffffff 325deg,
-                #00f0ff 332deg,
-                #38bdf8 342deg,
-                #1d4ed8 355deg,
-                transparent 365deg
-              )`,
+              background: ELECTRIC_PLASMA_AMBIENT_GRADIENT,
             }}
           />
         </div>
 
-        {/* ── 3.5PX SHINY LASER BORDER CONTAINER (Clockwise) ── */}
+        {/* ── 3.5PX SHINY ELECTRIC LASER BORDER CONTAINER (Clockwise) ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -213,35 +244,12 @@ function FeatureShowcaseHuly() {
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           className="relative rounded-[24px] md:rounded-[32px] p-[3.5px] overflow-hidden shadow-[0_35px_100px_rgba(0,0,0,0.90)] z-10"
         >
-          {/* Rotating Laser Border Line */}
+          {/* Rotating Laser Border Line with High-Voltage Electric Pulse */}
           <div
-            className="pointer-events-none absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise z-0"
+            className="pointer-events-none absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-electric z-0"
             style={{
-              willChange: 'transform',
-              background: `conic-gradient(
-                from 0deg,
-                rgba(255, 255, 255, 0.07) 0deg,
-                rgba(255, 255, 255, 0.07) 95deg,
-                rgba(154, 52, 18, 0.3) 105deg,
-                #c2410c 118deg,
-                #ea580c 130deg,
-                #ff6a00 138deg,
-                #ffffff 145deg,
-                #ff6a00 152deg,
-                #ea580c 160deg,
-                #9a3412 172deg,
-                rgba(255, 255, 255, 0.07) 185deg,
-                rgba(255, 255, 255, 0.07) 275deg,
-                rgba(30, 64, 175, 0.3) 285deg,
-                #0284c7 298deg,
-                #00f0ff 312deg,
-                #38bdf8 320deg,
-                #ffffff 325deg,
-                #00f0ff 332deg,
-                #38bdf8 342deg,
-                #1d4ed8 355deg,
-                rgba(255, 255, 255, 0.07) 365deg
-              )`,
+              willChange: 'transform, filter',
+              background: ELECTRIC_PLASMA_LASER_GRADIENT,
             }}
           />
 

@@ -84,11 +84,13 @@ function AppInner() {
     }
     const welcomed = localStorage.getItem(`florix_welcomed_${user.id}`);
     if (!welcomed) {
-      if (currentView !== 'welcome' && currentView !== 'onboarding' && currentView !== 'landing') {
-        navigate('/welcome');
+      // New or un-welcomed user: must complete /onboarding questions first, then /welcome
+      if (currentView !== 'onboarding' && currentView !== 'welcome' && currentView !== 'landing') {
+        navigate('/onboarding');
       }
     } else {
-      if (['login', 'signup'].includes(currentView)) {
+      // Welcomed user: prevent navigating back to auth, onboarding, or welcome screens
+      if (['login', 'signup', 'onboarding', 'welcome'].includes(currentView)) {
         navigate('/dashboard');
       }
     }
@@ -183,11 +185,9 @@ function AppInner() {
     }
   };
 
-  const handleWelcomeComplete = () => navigate('/onboarding');
-
+  // When student finishes the onboarding questions ("after registration completation")
   const handleOnboardingComplete = async (answers) => {
     if (user?.id) {
-      localStorage.setItem(`florix_welcomed_${user.id}`, 'true');
       localStorage.setItem(`florix_onboarding_${user.id}`, JSON.stringify(answers));
       const detectedCountry = localStorage.getItem('user_country') || 'Unknown';
       try {
@@ -200,6 +200,15 @@ function AppInner() {
       } catch (err) {
         console.error('Failed to sync onboarding to backend', err);
       }
+    }
+    // Smoothly land on celebration welcome screen with student's name
+    navigate('/welcome');
+  };
+
+  // When student enters/advances from the welcome screen
+  const handleWelcomeComplete = () => {
+    if (user?.id) {
+      localStorage.setItem(`florix_welcomed_${user.id}`, 'true');
     }
     navigate('/dashboard');
   };
@@ -285,7 +294,7 @@ function AppInner() {
                   <LandingPage />
                 </motion.div>
               } />
-              <Route path="/welcome" element={<WelcomeIntro key="welcome" userName={user.name} onComplete={handleWelcomeComplete} />} />
+              <Route path="/welcome" element={<WelcomeIntro key="welcome" userName={user.name} userId={user.id} onComplete={handleWelcomeComplete} />} />
               <Route path="/onboarding" element={<OnboardingFlow key="onboarding" onComplete={handleOnboardingComplete} />} />
               <Route path="/dashboard" element={
                 <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="fixed inset-0 w-full h-full overflow-hidden">

@@ -1335,7 +1335,8 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return {"access_token": token, "token_type": "bearer", "user": {
-        "id": new_user.id, "name": new_user.name, "email": new_user.email, "plan": new_user.plan
+        "id": new_user.id, "name": new_user.name, "email": new_user.email, "plan": new_user.plan, "is_admin": False,
+        "onboarding_completed": False
     }}
 
 
@@ -1351,19 +1352,21 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
     attempts = [t for t in attempts if now - t < window]
     _login_attempts[client_ip] = attempts
 
-    if len(attempts) >= 5:
+    if len(attempts) >= 10:
+        logger.warning(f"Rate limit exceeded for IP {client_ip}")
         raise HTTPException(
-            status_code=429,
-            detail="Too many login attempts. Please try again in 15 minutes.",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts. Please try again in 15 minutes."
         )
 
-    db_user = db.query(User).filter(User.email == user.email.lower().strip()).first()
+    db_user = db.query(User).filter(func.lower(User.email) == user.email.lower().strip()).first()
     if not db_user or not verify_password(user.password, db_user.hashed_password):
         # Record failed attempt
         _login_attempts.setdefault(client_ip, []).append(now)
+        logger.warning(f"Failed login attempt for email: {user.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Invalid credentials. Please check your email and password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -1374,8 +1377,10 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
         data={"sub": db_user.email},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+    onboarding_done = bool(db_user.onboarding_info and db_user.onboarding_info.get("role"))
     return {"access_token": token, "token_type": "bearer", "user": {
-        "id": db_user.id, "name": db_user.name, "email": db_user.email, "plan": db_user.plan, "is_admin": getattr(db_user, "is_admin", False)
+        "id": db_user.id, "name": db_user.name, "email": db_user.email, "plan": db_user.plan, "is_admin": getattr(db_user, "is_admin", False),
+        "onboarding_completed": onboarding_done
     }}
 
 
@@ -1386,8 +1391,10 @@ def refresh_token(current_user: User = Depends(get_current_user)):
         data={"sub": current_user.email},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
+    onboarding_done = bool(current_user.onboarding_info and current_user.onboarding_info.get("role"))
     return {"access_token": token, "token_type": "bearer", "user": {
-        "id": current_user.id, "name": current_user.name, "email": current_user.email, "plan": current_user.plan, "is_admin": getattr(current_user, "is_admin", False)
+        "id": current_user.id, "name": current_user.name, "email": current_user.email, "plan": current_user.plan, "is_admin": getattr(current_user, "is_admin", False),
+        "onboarding_completed": onboarding_done
     }}
 
 
@@ -1427,13 +1434,16 @@ def oauth_login(data: OAuthRequest, db: Session = Depends(get_db)):
         data={"sub": user.email},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
+    onboarding_done = bool(user.onboarding_info and user.onboarding_info.get("role"))
     return {"access_token": token, "token_type": "bearer", "user": {
-        "id": user.id, "name": user.name, "email": user.email, "plan": user.plan, "is_admin": getattr(user, "is_admin", False)
+        "id": user.id, "name": user.name, "email": user.email, "plan": user.plan, "is_admin": getattr(user, "is_admin", False),
+        "onboarding_completed": onboarding_done
     }}
 
 
 @app.get("/me", tags=["Auth"])
 def read_me(current_user: User = Depends(get_current_user)):
+    onboarding_done = bool(current_user.onboarding_info and current_user.onboarding_info.get("role"))
     return {
         "id": current_user.id,
         "name": current_user.name,
@@ -1442,6 +1452,7 @@ def read_me(current_user: User = Depends(get_current_user)):
         "plan_expires_at": current_user.plan_expires_at.isoformat() if current_user.plan_expires_at else None,
         "member_since": current_user.created_at.strftime("%B %Y") if current_user.created_at else "N/A",
         "is_admin": getattr(current_user, "is_admin", False),
+        "onboarding_completed": onboarding_done,
     }
 
 

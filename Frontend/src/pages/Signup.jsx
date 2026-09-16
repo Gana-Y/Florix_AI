@@ -68,8 +68,9 @@ const Signup = () => {
     setError('');
     setLoading(true);
     try {
-      await signup(name, email, password);
-      addToast('Sign up successful! 🎉', 'success');
+      const res = await signup(name.trim(), email.trim(), password);
+      addToast('Sign up successful! Let’s personalize your workspace 🎉', 'success');
+      navigate('/onboarding');
     } catch (err) {
       if (!err.response) {
         setError('Server is offline. Please check your network connection or verify that the backend is running.');
@@ -88,9 +89,14 @@ const Signup = () => {
     setOauthLoading(true);
     setError('');
     try {
-      await oauthLogin(oauthModal.provider, oauthEmail.trim(), oauthName.trim());
+      const res = await oauthLogin(oauthModal.provider, oauthEmail.trim(), oauthName.trim());
       addToast(`Account created and signed in with ${oauthModal.provider === 'google' ? 'Google' : 'GitHub'}! 🎉`, 'success');
       setOauthModal({ show: false, provider: '' });
+      if (res?.user?.onboarding_completed) {
+        navigate('/dashboard');
+      } else {
+        navigate('/onboarding');
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'OAuth Sign-in failed. Please try again.');
     } finally {

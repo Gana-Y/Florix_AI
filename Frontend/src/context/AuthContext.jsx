@@ -14,6 +14,9 @@ export const AuthProvider = ({ children }) => {
         try {
           const res = await api.get('/me');
           setUser(res.data);
+          if (res.data?.id && res.data?.onboarding_completed) {
+            localStorage.setItem(`florix_welcomed_${res.data.id}`, 'true');
+          }
           scheduleSessionWarning(token);
         } catch (error) {
           console.error('Failed to fetch user', error);
@@ -56,9 +59,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
     scheduleSessionWarning(token);
     const userData = res.data.user;
-    // ✅ Mark as welcomed — login users must have already completed onboarding
-    if (userData?.id) {
+    if (userData?.id && userData?.onboarding_completed) {
       localStorage.setItem(`florix_welcomed_${userData.id}`, 'true');
+    } else if (userData?.id) {
+      localStorage.removeItem(`florix_welcomed_${userData.id}`);
     }
     setUser(userData);
     return res.data;
@@ -69,7 +73,12 @@ export const AuthProvider = ({ children }) => {
     const token = res.data.access_token;
     localStorage.setItem('token', token);
     scheduleSessionWarning(token);
-    setUser(res.data.user);
+    const userData = res.data.user;
+    // New signup: clear welcomed flag so user answers questions and sees welcome screen
+    if (userData?.id) {
+      localStorage.removeItem(`florix_welcomed_${userData.id}`);
+    }
+    setUser(userData);
     return res.data;
   };
 
@@ -79,8 +88,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
     scheduleSessionWarning(token);
     const userData = res.data.user;
-    if (userData?.id) {
+    if (userData?.id && userData?.onboarding_completed) {
       localStorage.setItem(`florix_welcomed_${userData.id}`, 'true');
+    } else if (userData?.id) {
+      localStorage.removeItem(`florix_welcomed_${userData.id}`);
     }
     setUser(userData);
     return res.data;

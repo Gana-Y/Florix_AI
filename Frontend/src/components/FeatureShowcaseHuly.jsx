@@ -128,18 +128,53 @@ function FeatureShowcaseHuly() {
       </div>
 
       {/* ── The Floating Card Container with Clockwise Rotating Laser Beams ── */}
-      <div 
-        className="relative mx-auto w-full"
-        style={{ transform: 'translate3d(0, 0, 0)', contain: 'paint' }}
-      >
-        {/* ── LAYER 1: AMBIENT LUMINOUS RIM HALO (Clockwise) ── */}
+      <div className="relative mx-auto w-full">
+        {/* ── LAYER 1: BROAD AMBIENT HALO (Clockwise) ── */}
         <div
-          className="pointer-events-none absolute -inset-[14px] sm:-inset-[18px] rounded-[36px] md:rounded-[44px] overflow-hidden select-none -z-10"
-          style={{ filter: 'blur(18px)', opacity: 0.95 }}
+          className="pointer-events-none absolute -inset-[18px] sm:-inset-[22px] rounded-[36px] md:rounded-[44px] overflow-hidden select-none -z-10"
+          style={{ filter: 'blur(32px)', opacity: 0.95 }}
           aria-hidden="true"
         >
           <div
-            className="absolute top-1/2 left-1/2 w-[1450px] h-[1450px] aspect-square animate-spin-clockwise pointer-events-none"
+            className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
+            style={{
+              willChange: 'transform',
+              background: `conic-gradient(
+                from 0deg,
+                transparent 0deg,
+                transparent 95deg,
+                rgba(154, 52, 18, 0.3) 105deg,
+                #c2410c 118deg,
+                #ea580c 130deg,
+                #ff6a00 138deg,
+                #ffffff 145deg,
+                #ff6a00 152deg,
+                #ea580c 160deg,
+                #9a3412 172deg,
+                transparent 185deg,
+                transparent 275deg,
+                rgba(30, 64, 175, 0.3) 285deg,
+                #0284c7 298deg,
+                #00f0ff 312deg,
+                #38bdf8 320deg,
+                #ffffff 325deg,
+                #00f0ff 332deg,
+                #38bdf8 342deg,
+                #1d4ed8 355deg,
+                transparent 365deg
+              )`,
+            }}
+          />
+        </div>
+
+        {/* ── LAYER 2: TIGHT SHINY RIM GLOW (Clockwise) ── */}
+        <div
+          className="pointer-events-none absolute -inset-[6px] rounded-[28px] md:rounded-[36px] overflow-hidden select-none -z-10"
+          style={{ filter: 'blur(10px)', opacity: 0.95 }}
+          aria-hidden="true"
+        >
+          <div
+            className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
             style={{
               willChange: 'transform',
               background: `conic-gradient(
@@ -180,7 +215,7 @@ function FeatureShowcaseHuly() {
         >
           {/* Rotating Laser Border Line */}
           <div
-            className="pointer-events-none absolute top-1/2 left-1/2 w-[1450px] h-[1450px] aspect-square animate-spin-clockwise z-0"
+            className="pointer-events-none absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise z-0"
             style={{
               willChange: 'transform',
               background: `conic-gradient(

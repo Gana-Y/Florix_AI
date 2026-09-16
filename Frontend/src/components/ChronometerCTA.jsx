@@ -1,11 +1,19 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Github, Twitter, Linkedin } from 'lucide-react';
+import { MessageCircle, Github, Linkedin, Mail } from 'lucide-react';
+import LegalModal from './LegalModal';
 
 function ChronometerCTA() {
   const navigate = useNavigate();
   const sectionRef = useRef(null);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState('terms');
+
+  const openLegalModal = (tab) => {
+    setLegalModalTab(tab);
+    setLegalModalOpen(true);
+  };
 
   // Track scroll progression specifically for this bottom section
   const { scrollYProgress } = useScroll({
@@ -393,7 +401,7 @@ function ChronometerCTA() {
 
             {/* Secondary Glass Button (Join Community) */}
             <button
-              onClick={() => navigate('/login')}
+              onClick={() => openLegalModal('community')}
               className="px-7 py-3.5 rounded-full font-semibold text-sm text-white bg-white/5 hover:bg-white/10 border border-white/15 hover:border-white/25 transition-all duration-300 flex items-center gap-2 cursor-pointer"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -412,21 +420,66 @@ function ChronometerCTA() {
         </div>
 
         <div className="flex items-center gap-6">
-          <a href="#" className="hover:text-zinc-300 transition-colors">Terms of Service</a>
-          <a href="#" className="hover:text-zinc-300 transition-colors">Privacy Policy</a>
+          <button 
+            onClick={() => openLegalModal('terms')} 
+            className="hover:text-zinc-300 transition-colors cursor-pointer bg-transparent border-none p-0 text-xs text-inherit"
+          >
+            Terms of Service
+          </button>
+          <button 
+            onClick={() => openLegalModal('privacy')} 
+            className="hover:text-zinc-300 transition-colors cursor-pointer bg-transparent border-none p-0 text-xs text-inherit"
+          >
+            Privacy Policy
+          </button>
         </div>
 
         <div className="flex items-center gap-5 text-zinc-400">
-          <span className="hover:text-white cursor-pointer transition-colors"><Twitter size={15} /></span>
-          <span className="hover:text-white cursor-pointer transition-colors"><Linkedin size={15} /></span>
-          <span className="hover:text-white cursor-pointer transition-colors"><Github size={15} /></span>
-          <span className="hover:text-white cursor-pointer transition-colors"><MessageCircle size={15} /></span>
+          <a
+            href="mailto:ganeshyandigeri1@gmail.com"
+            title="Email: ganeshyandigeri1@gmail.com"
+            className="hover:text-amber-400 transition-colors cursor-pointer"
+          >
+            <Mail size={16} />
+          </a>
+          <a
+            href="https://www.linkedin.com/in/ganesh-yandigeri-988821287"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="LinkedIn Profile"
+            className="hover:text-[#38bdf8] transition-colors cursor-pointer"
+          >
+            <Linkedin size={16} />
+          </a>
+          <a
+            href="https://github.com/Gana-Y"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="GitHub: Gana-Y"
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            <Github size={16} />
+          </a>
+          <button
+            onClick={() => openLegalModal('community')}
+            title="Community & Author Details"
+            className="hover:text-indigo-400 transition-colors cursor-pointer bg-transparent border-none p-0 text-inherit flex items-center"
+          >
+            <MessageCircle size={16} />
+          </button>
         </div>
 
         <div className="flex items-center gap-1.5 text-zinc-400">
           <span className="text-orange-400">🧡</span> Made with passion for students
         </div>
       </div>
+
+      {/* Interactive In-App Legal & Author Modal */}
+      <LegalModal
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+        initialTab={legalModalTab}
+      />
 
     </section>
   );

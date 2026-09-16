@@ -257,14 +257,14 @@ const plans = [
   },
 ];
 
-/* ─── Animation Variants ───────────────────────────────── */
+/* ─── Animation Variants (Optimized 60fps) ───────────────── */
 const fadeUp = {
-  hidden: { opacity: 0, y: 32 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
+  hidden: { opacity: 0, y: 16 },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
 };
 const stagger = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.09 } },
+  show: { transition: { staggerChildren: 0.035 } },
 };
 
 /* ─── Component ─────────────────────────────────────────── */
@@ -407,6 +407,8 @@ const LandingPage = () => {
           style={{
             maskImage: 'radial-gradient(ellipse 80% 50% at 50% 40%, black 20%, rgba(0,0,0,0.65) 45%, transparent 75%)',
             WebkitMaskImage: 'radial-gradient(ellipse 80% 50% at 50% 40%, black 20%, rgba(0,0,0,0.65) 45%, transparent 75%)',
+            transform: 'translate3d(0, 0, 0)',
+            willChange: 'transform',
           }}
         >
           <video
@@ -545,7 +547,7 @@ const LandingPage = () => {
 
       {/* ── Features ── */}
       <section className="relative z-10 px-6 md:px-16 py-24 max-w-6xl mx-auto">
-        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}>
+        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '250px' }}>
           <motion.div variants={fadeUp} className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-black mb-4">
               Everything You Need to{' '}
@@ -584,7 +586,7 @@ const LandingPage = () => {
 
       {/* ── How It Works ── */}
       <section className="relative z-10 px-6 py-24 max-w-4xl mx-auto">
-        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}>
+        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '250px' }}>
           <motion.div variants={fadeUp} className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-black mb-4">How It Works</h2>
             <p className="text-zinc-400 text-lg">Get started in under 2 minutes.</p>
@@ -637,7 +639,7 @@ const LandingPage = () => {
 
       {/* ── Testimonials ── */}
       <section className="relative z-10 px-6 md:px-16 py-24 max-w-5xl mx-auto">
-        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}>
+        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '250px' }}>
           <motion.div variants={fadeUp} className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-black mb-4">
               Loved by{' '}
@@ -683,7 +685,7 @@ const LandingPage = () => {
 
       {/* ── Pricing & Upgrade Plans ── */}
       <section id="pricing" className="relative z-10 px-6 md:px-16 py-24 max-w-6xl mx-auto">
-        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}>
+        <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '250px' }}>
           <motion.div variants={fadeUp} className="text-center mb-16">
             <motion.div
               whileHover={{ scale: 1.05 }}

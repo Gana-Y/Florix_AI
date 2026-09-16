@@ -104,8 +104,8 @@ function FeatureShowcaseHuly() {
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '50px' }}
-          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          viewport={{ once: true, margin: '250px' }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-white mb-4 leading-[1.08]"
         >
           Intelligent Study Workspace.
@@ -118,8 +118,8 @@ function FeatureShowcaseHuly() {
         <motion.p
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '50px' }}
-          transition={{ duration: 0.6, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          viewport={{ once: true, margin: '250px' }}
+          transition={{ duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
           className="text-base sm:text-lg text-zinc-400 leading-relaxed max-w-2xl font-normal"
         >
           Manage research papers, lecture recordings, and active recall decks in one unified intelligent cockpit.
@@ -128,52 +128,18 @@ function FeatureShowcaseHuly() {
       </div>
 
       {/* ── The Floating Card Container with Clockwise Rotating Laser Beams ── */}
-      <div className="relative mx-auto w-full">
-        {/* ── LAYER 1: BROAD AMBIENT HALO (Clockwise) ── */}
+      <div 
+        className="relative mx-auto w-full"
+        style={{ transform: 'translate3d(0, 0, 0)', contain: 'paint' }}
+      >
+        {/* ── LAYER 1: AMBIENT LUMINOUS RIM HALO (Clockwise) ── */}
         <div
-          className="pointer-events-none absolute -inset-[18px] sm:-inset-[22px] rounded-[36px] md:rounded-[44px] overflow-hidden select-none -z-10"
-          style={{ filter: 'blur(32px)', opacity: 0.95 }}
+          className="pointer-events-none absolute -inset-[14px] sm:-inset-[18px] rounded-[36px] md:rounded-[44px] overflow-hidden select-none -z-10"
+          style={{ filter: 'blur(18px)', opacity: 0.95 }}
           aria-hidden="true"
         >
           <div
-            className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
-            style={{
-              background: `conic-gradient(
-                from 0deg,
-                transparent 0deg,
-                transparent 95deg,
-                rgba(154, 52, 18, 0.3) 105deg,
-                #c2410c 118deg,
-                #ea580c 130deg,
-                #ff6a00 138deg,
-                #ffffff 145deg,
-                #ff6a00 152deg,
-                #ea580c 160deg,
-                #9a3412 172deg,
-                transparent 185deg,
-                transparent 275deg,
-                rgba(30, 64, 175, 0.3) 285deg,
-                #0284c7 298deg,
-                #00f0ff 312deg,
-                #38bdf8 320deg,
-                #ffffff 325deg,
-                #00f0ff 332deg,
-                #38bdf8 342deg,
-                #1d4ed8 355deg,
-                transparent 365deg
-              )`,
-            }}
-          />
-        </div>
-
-        {/* ── LAYER 2: TIGHT SHINY RIM GLOW (Clockwise) ── */}
-        <div
-          className="pointer-events-none absolute -inset-[6px] rounded-[28px] md:rounded-[36px] overflow-hidden select-none -z-10"
-          style={{ filter: 'blur(10px)', opacity: 0.95 }}
-          aria-hidden="true"
-        >
-          <div
-            className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
+            className="absolute top-1/2 left-1/2 w-[1450px] h-[1450px] aspect-square animate-spin-clockwise pointer-events-none"
             style={{
               willChange: 'transform',
               background: `conic-gradient(
@@ -206,15 +172,15 @@ function FeatureShowcaseHuly() {
 
         {/* ── 3.5PX SHINY LASER BORDER CONTAINER (Clockwise) ── */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '50px' }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          viewport={{ once: true, margin: '250px' }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           className="relative rounded-[24px] md:rounded-[32px] p-[3.5px] overflow-hidden shadow-[0_35px_100px_rgba(0,0,0,0.90)] z-10"
         >
           {/* Rotating Laser Border Line */}
           <div
-            className="pointer-events-none absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise z-0"
+            className="pointer-events-none absolute top-1/2 left-1/2 w-[1450px] h-[1450px] aspect-square animate-spin-clockwise z-0"
             style={{
               willChange: 'transform',
               background: `conic-gradient(

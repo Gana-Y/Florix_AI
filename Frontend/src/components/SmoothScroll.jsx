@@ -24,8 +24,8 @@ export default function SmoothScroll({ children }) {
   useEffect(() => {
     // 1. Initialize Lenis instance with optimal 60fps/120fps inertia interpolation
     const lenis = new Lenis({
-      lerp: 0.12, // Responsive, zero-lag direction reversals and silky momentum
-      wheelMultiplier: 1.0, // 1:1 natural scroll distance per wheel click
+      lerp: 0.16, // Snappy, immediate feedback with zero perceived inertia drag
+      wheelMultiplier: 1.05, // Generous, natural 1:1 scroll displacement
       smoothWheel: true,
       syncTouch: false, // Don't hijack native mobile/touchpad momentum
       autoResize: true,

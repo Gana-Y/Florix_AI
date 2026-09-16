@@ -15,10 +15,10 @@ function KnowledgeStudioShowcase() {
 
       {/* ── THE $1M FLOATING STUDIO CANVAS (Sleek Vertical Proportion) ── */}
       <motion.div
-        initial={{ opacity: 0, y: 35 }}
+        initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: '50px' }}
-        transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        viewport={{ once: true, margin: '250px' }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         className="relative w-full rounded-[30px] sm:rounded-[38px] md:rounded-[44px] bg-gradient-to-b from-[#fcfcff] via-[#f8fafc] to-[#f1f5f9] p-5 sm:p-7 md:p-9 lg:p-10 shadow-[0_35px_120px_-20px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,255,255,0.8)] border border-white/80 overflow-hidden text-slate-900"
       >
         {/* Subtle Architectural Grid Pattern */}
@@ -38,7 +38,7 @@ function KnowledgeStudioShowcase() {
             <motion.div
               animate={{ y: [0, -5, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-full max-w-xs bg-white/95 backdrop-blur-xl border border-slate-200/90 rounded-3xl p-4 sm:p-5 shadow-[0_18px_45px_rgba(15,23,42,0.10)] relative hover:shadow-[0_24px_60px_rgba(99,102,241,0.18)] transition-all duration-300"
+              className="w-full max-w-xs bg-white/95 border border-slate-200/90 rounded-3xl p-4 sm:p-5 shadow-[0_18px_45px_rgba(15,23,42,0.10)] relative hover:shadow-[0_24px_60px_rgba(99,102,241,0.18)] transition-all duration-300"
             >
               {/* Inner Soft Gradient Aura Box */}
               <div className="relative bg-gradient-to-tr from-purple-100/75 via-pink-50/50 to-indigo-100/75 rounded-2xl p-4 sm:p-5 mb-3.5 flex items-center justify-center min-h-[110px] border border-white/90 overflow-visible shadow-inner">

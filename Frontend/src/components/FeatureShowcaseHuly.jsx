@@ -155,7 +155,7 @@ function FeatureShowcaseHuly() {
   const [hoveredRow, setHoveredRow] = useState(null);
 
   return (
-    <section className="relative z-20 py-24 px-4 sm:px-6 md:px-12 max-w-6xl mx-auto overflow-visible select-none">
+    <section className="relative z-20 py-24 px-4 sm:px-6 md:px-12 max-w-6xl mx-auto overflow-x-clip select-none">
       {/* ── Section Header (100% Aligned with Florix Study Workspace) ── */}
       <div className="mb-14 text-left max-w-3xl">
         <motion.h2
@@ -188,32 +188,36 @@ function FeatureShowcaseHuly() {
       <div className="relative mx-auto w-full">
         {/* ── LAYER 1: LIGHT REFINED AMBIENT HALO (Clockwise) ── */}
         <div
-          className="pointer-events-none absolute -inset-[10px] sm:-inset-[14px] rounded-[32px] md:rounded-[40px] overflow-hidden select-none -z-10"
+          className="pointer-events-none absolute -inset-[10px] sm:-inset-[14px] rounded-[32px] md:rounded-[40px] select-none -z-10"
           style={{ filter: 'blur(16px)', opacity: 0.60 }}
           aria-hidden="true"
         >
-          <div
-            className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
-            style={{
-              willChange: 'transform',
-              background: TWO_BEAM_AMBIENT_GRADIENT,
-            }}
-          />
+          <div className="w-full h-full rounded-[32px] md:rounded-[40px] overflow-hidden relative">
+            <div
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1650px] h-[1650px] aspect-square animate-spin-clockwise pointer-events-none"
+              style={{
+                willChange: 'transform',
+                background: TWO_BEAM_AMBIENT_GRADIENT,
+              }}
+            />
+          </div>
         </div>
 
         {/* ── LAYER 2: TIGHT SHINY RIM GLOW (Clockwise) ── */}
         <div
-          className="pointer-events-none absolute -inset-[4px] rounded-[26px] md:rounded-[34px] overflow-hidden select-none -z-10"
+          className="pointer-events-none absolute -inset-[4px] rounded-[26px] md:rounded-[34px] select-none -z-10"
           style={{ filter: 'blur(5px)', opacity: 0.75 }}
           aria-hidden="true"
         >
-          <div
-            className="absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise pointer-events-none"
-            style={{
-              willChange: 'transform',
-              background: TWO_BEAM_AMBIENT_GRADIENT,
-            }}
-          />
+          <div className="w-full h-full rounded-[26px] md:rounded-[34px] overflow-hidden relative">
+            <div
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1650px] h-[1650px] aspect-square animate-spin-clockwise pointer-events-none"
+              style={{
+                willChange: 'transform',
+                background: TWO_BEAM_AMBIENT_GRADIENT,
+              }}
+            />
+          </div>
         </div>
 
         {/* ── 3.5PX SHINY LASER BORDER CONTAINER (Clockwise) ── */}
@@ -226,7 +230,7 @@ function FeatureShowcaseHuly() {
         >
           {/* Rotating Dual Laser Border Line */}
           <div
-            className="pointer-events-none absolute top-1/2 left-1/2 w-[2400px] h-[2400px] aspect-square animate-spin-clockwise z-0"
+            className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1650px] h-[1650px] aspect-square animate-spin-clockwise z-0"
             style={{
               willChange: 'transform',
               background: TWO_BEAM_LASER_GRADIENT,

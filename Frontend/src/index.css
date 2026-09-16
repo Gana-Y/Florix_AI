@@ -26,10 +26,11 @@ a,
 
 html {
   width: 100%;
+  max-width: 100vw;
   min-height: 100%;
   scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: scroll; /* Single master scrollbar on html */
   scrollbar-gutter: stable;
 }
@@ -63,6 +64,7 @@ html.lenis.lenis-scrolling * {
 
 body {
   width: 100%;
+  max-width: 100vw;
   min-height: 100%;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: var(--font-size-base, 16px);
@@ -71,7 +73,8 @@ body {
   background-color: #f8fafc;
   color: #1e293b;
   transition: background-color 0.25s ease, color 0.2s ease;
-  overflow: visible; /* NEVER overflow-x: hidden on body to avoid dual scrollbars */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .dark body {
@@ -81,11 +84,13 @@ body {
 
 #root {
   width: 100%;
+  max-width: 100vw;
   min-height: 100%;
   display: flex;
   flex-direction: column;
   isolation: isolate;
-  overflow: visible; /* Ensure root never creates a nested scrollbar */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 /* ── Unified Sleek Modern Scrollbar (Eliminates chunky Windows dual scrollbars) ── */

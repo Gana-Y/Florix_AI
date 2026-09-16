@@ -288,7 +288,7 @@ const LandingPage = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#060713] text-white relative select-none">
+    <div className="min-h-screen bg-[#060713] text-white relative select-none w-full max-w-[100vw] overflow-x-clip">
 
       {/* ── Global Cursor Spotlight (GPU-Composited, Zero Reflow) ── */}
       <motion.div

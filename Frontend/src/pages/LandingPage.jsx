@@ -407,8 +407,6 @@ const LandingPage = () => {
           style={{
             maskImage: 'radial-gradient(ellipse 80% 50% at 50% 40%, black 20%, rgba(0,0,0,0.65) 45%, transparent 75%)',
             WebkitMaskImage: 'radial-gradient(ellipse 80% 50% at 50% 40%, black 20%, rgba(0,0,0,0.65) 45%, transparent 75%)',
-            transform: 'translate3d(0, 0, 0)',
-            willChange: 'transform',
           }}
         >
           <video

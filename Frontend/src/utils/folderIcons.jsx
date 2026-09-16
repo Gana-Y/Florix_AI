@@ -400,13 +400,16 @@ export const getSmartFolderThemeForTitle = (title) => {
     return { icon: 'Folder', color: 'indigo', category: 'productivity', matched: false };
   }
   
-  // Split title into alphanumeric words
+  // Split title into alphanumeric words/tokens
   const words = normalized.split(/[^a-z0-9#+]/).filter(Boolean);
+  if (words.length === 0) {
+    return { icon: 'Folder', color: 'indigo', category: 'productivity', matched: false };
+  }
 
   for (const rule of SMART_KEYWORD_RULES) {
     for (const kw of rule.keywords) {
-      // Check exact word match or substring if keyword is multi-word
       if (kw.includes(' ')) {
+        // Multi-word phrase (e.g. 'machine learning', 'organic chemistry', 'deep learning')
         if (normalized.includes(kw)) {
           return {
             icon: rule.icon,
@@ -417,7 +420,18 @@ export const getSmartFolderThemeForTitle = (title) => {
           };
         }
       } else {
-        if (words.includes(kw) || (kw.length >= 4 && normalized.includes(kw))) {
+        // Word boundary matching to avoid false positive substring matches
+        const isMatched = words.some(w => {
+          // Exact token match (e.g. "med", "python", "ai", "dsa", "c++")
+          if (w === kw) return true;
+          // Word starts with keyword if keyword is at least 3 chars (e.g. "medical" starts with "med", "algorithm" starts with "algo")
+          if (kw.length >= 3 && w.startsWith(kw)) return true;
+          // Keyword starts with partial user word if word has at least 3 chars (e.g. user typed "medic" for "medical", "pyth" for "python")
+          if (w.length >= 3 && kw.startsWith(w)) return true;
+          return false;
+        });
+
+        if (isMatched) {
           return {
             icon: rule.icon,
             color: rule.color,

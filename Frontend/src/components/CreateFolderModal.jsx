@@ -80,11 +80,24 @@ export default function CreateFolderModal({
   // Dynamic Title Change with Smart Logo and Color matching
   const handleTitleChange = (val) => {
     setFolderName(val);
+
+    // If user erases the title (empty or whitespace only), the logo and theme should GO!
     if (!val.trim()) {
-      // If user clears the input, reset modified flag so new titles trigger auto-matching again
       setUserModifiedIcon(false);
       setUserModifiedColor(false);
       setAutoMatchedBadge('');
+      setCustomEmojiInput('');
+      if (!editingFolder) {
+        setSelectedIcon('Folder');
+        if (!customHex) {
+          setSelectedColor('indigo');
+        }
+        setActiveCategory('academic');
+      } else {
+        // If editing an existing folder, restore its saved state
+        setSelectedIcon(editingFolder.icon || 'Folder');
+        setSelectedColor(editingFolder.color || 'indigo');
+      }
       return;
     }
 
@@ -100,8 +113,14 @@ export default function CreateFolderModal({
       }
       setAutoMatchedBadge(match.matchedKeyword || 'matched');
     } else {
+      // Title does not match any keyword (e.g. user backspaced to a partial non-word or generic name)
+      // The auto-selected logo and theme should go back to default Folder + Indigo
       if (!userModifiedIcon) {
-        setSelectedIcon('Folder');
+        setSelectedIcon(editingFolder ? (editingFolder.icon || 'Folder') : 'Folder');
+        setActiveCategory('academic');
+      }
+      if (!userModifiedColor && !customHex) {
+        setSelectedColor(editingFolder ? (editingFolder.color || 'indigo') : 'indigo');
       }
       setAutoMatchedBadge('');
     }
@@ -151,6 +170,7 @@ export default function CreateFolderModal({
       setSelectedIcon('Folder');
       setSelectedColor('indigo');
       setCustomHex('');
+      setCustomEmojiInput('');
       setAutoMatchedBadge('');
     }
   };
@@ -297,15 +317,27 @@ export default function CreateFolderModal({
                 {folderName.length}/50
               </span>
             </div>
-            <input
-              type="text"
-              required
-              maxLength={50}
-              value={folderName}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              placeholder="e.g. Data Structures & Algorithms, Neurobiology 2026..."
-              className="w-full text-sm px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-800/90 rounded-xl border border-slate-200 dark:border-zinc-700/80 text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-medium"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                required
+                maxLength={50}
+                value={folderName}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="e.g. Data Structures & Algorithms, Neurobiology 2026..."
+                className="w-full text-sm pl-3.5 pr-8 py-2.5 bg-slate-50 dark:bg-zinc-800/90 rounded-xl border border-slate-200 dark:border-zinc-700/80 text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-medium"
+              />
+              {folderName && (
+                <button
+                  type="button"
+                  onClick={() => handleTitleChange('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-700/60 transition-colors"
+                  title="Clear title and reset logo"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             {/* Quick Title Suggestions */}
             <div className="flex flex-wrap gap-1.5 pt-1">
               {QUICK_SUGGESTIONS.map((sug) => (

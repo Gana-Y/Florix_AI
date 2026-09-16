@@ -289,7 +289,7 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
   const isChat = activeTab === 'AI Chat'; // eslint-disable-line
 
   return (
-    <div className="fixed inset-0 w-screen h-screen flex bg-[#f8fafc] dark:bg-[#09090b] text-slate-800 dark:text-white overflow-hidden font-sans" style={{ colorScheme: isDarkMode ? 'dark' : 'light' }}>
+    <div data-lenis-prevent="true" className="fixed inset-0 w-screen h-screen flex bg-[#f8fafc] dark:bg-[#09090b] text-slate-800 dark:text-white overflow-hidden font-sans" style={{ colorScheme: isDarkMode ? 'dark' : 'light' }}>
 
       {/* Background glow orbs */}
       <div className="pointer-events-none fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/8 dark:bg-indigo-600/10 rounded-full blur-[120px]" />

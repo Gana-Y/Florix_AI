@@ -9,6 +9,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
+import CreateFolderModal from './CreateFolderModal';
+import { renderFolderIcon, getFolderColorConfig } from '../utils/folderIcons';
 
 const PLAN_COLORS = {
   free:    'bg-slate-200 dark:bg-zinc-700 text-slate-500 dark:text-zinc-400',
@@ -42,14 +44,11 @@ const Sidebar = ({
   const [standaloneChats, setStandaloneChats] = useState([]);
   const [pinnedChats, setPinnedChats] = useState([]);
 
-  // Spaces (Folders)
+  // Folders & Workspaces
   const [spaces, setSpaces] = useState([]);
   const [expandedSpaceIds, setExpandedSpaceIds] = useState(new Set());
-  const [isCreatingSpace, setIsCreatingSpace] = useState(false);
-  const [newSpaceName, setNewSpaceName] = useState('');
-  const [newSpaceEmoji, setNewSpaceEmoji] = useState('📁');
-  const [newSpaceColor, setNewSpaceColor] = useState('indigo');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [folderToEdit, setFolderToEdit] = useState(null);
   const [spacesSortBy, setSpacesSortBy] = useState('newest'); // 'newest' | 'alphabetical' | 'count'
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [spacesShowAll, setSpacesShowAll] = useState(false);
@@ -134,26 +133,7 @@ const Sidebar = ({
       .catch(() => {});
   }, [user]);
 
-  // Space Actions
-  const handleCreateSpace = async (e) => {
-    e.preventDefault();
-    if (!newSpaceName.trim()) return;
-    try {
-      const res = await api.post('/projects', {
-        name: newSpaceName.trim(),
-        color: newSpaceColor,
-        icon: newSpaceEmoji,
-      });
-      setSpaces(prev => [res.data, ...prev]);
-      setNewSpaceName('');
-      setIsCreatingSpace(false);
-      addToast(`Space "${res.data.name}" created!`, 'success');
-      onSelectSpace?.(res.data.id);
-    } catch (err) {
-      addToast('Failed to create space', 'error');
-    }
-  };
-
+  // Folder Actions
   const handleToggleExpandSpace = (e, spaceId) => {
     e.stopPropagation();
     setExpandedSpaceIds(prev => {
@@ -164,33 +144,18 @@ const Sidebar = ({
     });
   };
 
-  const handleSaveRenameSpace = async (spaceId) => {
-    if (!editSpaceName.trim()) {
-      setEditingSpaceId(null);
-      return;
-    }
-    try {
-      await api.patch(`/projects/${spaceId}`, { name: editSpaceName.trim() });
-      setSpaces(prev => prev.map(s => s.id === spaceId ? { ...s, name: editSpaceName.trim() } : s));
-      setEditingSpaceId(null);
-      addToast('Space renamed', 'success');
-    } catch {
-      addToast('Failed to rename space', 'error');
-    }
-  };
-
   const handleDeleteSpace = async (e, spaceId) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this space? Subchats and notes will be kept in standalone library.')) return;
+    if (!window.confirm('Delete this folder? Subchats and notes will be kept in your library.')) return;
     try {
       await api.delete(`/projects/${spaceId}`);
       setSpaces(prev => prev.filter(s => s.id !== spaceId));
       fetchSessions();
       fetchConversations();
       if (activeSpaceId === spaceId) onSelectSpace?.(null);
-      addToast('Space deleted', 'success');
+      addToast('Folder deleted', 'success');
     } catch {
-      addToast('Failed to delete space', 'error');
+      addToast('Failed to delete folder', 'error');
     }
   };
 
@@ -345,9 +310,10 @@ const Sidebar = ({
       </AnimatePresence>
 
       <motion.aside
+        data-lenis-prevent="true"
         animate={{ width: sidebarWidth }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className={`fixed md:sticky top-0 left-0 h-screen z-50 flex flex-col bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-r border-slate-200/80 dark:border-zinc-800/80 shadow-xl select-none ${
+        className={`fixed md:sticky top-0 left-0 h-screen z-50 flex flex-col bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-r border-slate-200/80 dark:border-zinc-800/80 shadow-xl select-none overscroll-contain ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
@@ -371,7 +337,10 @@ const Sidebar = ({
         </div>
 
         {/* Scrollable Nav Area */}
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1 custom-scrollbar">
+        <nav
+          data-lenis-prevent="true"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2 py-3 space-y-1 custom-scrollbar"
+        >
           {/* Main Navigation Items */}
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -456,20 +425,26 @@ const Sidebar = ({
             </div>
           )}
 
-          {/* ── 📂 SPACES SECTION (YouLearn + ChatGPT Style) ── */}
+          {/* ── 📂 FOLDERS & WORKSPACES (ChatGPT + Claude Superior Organization) ── */}
           {!isCollapsed && (
             <div className="pt-3 pb-1 border-t border-slate-100/60 dark:border-zinc-800/60 mt-2">
-              <div className="flex items-center justify-between px-3 mb-1.5">
-                <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 tracking-wider uppercase">
-                  Spaces
-                </span>
+              <div className="flex items-center justify-between px-3 mb-2">
+                <div className="flex items-center gap-1.5">
+                  <Folder size={12} className="text-indigo-500" />
+                  <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 tracking-wider uppercase">
+                    Folders
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.2 bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 rounded-full font-mono font-bold">
+                    {spaces.length}
+                  </span>
+                </div>
                 <div className="flex items-center gap-1">
                   {/* Sorting dropdown toggle */}
                   <div className="relative">
                     <button
                       onClick={() => setShowSortMenu(prev => !prev)}
                       className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300 transition-colors"
-                      title="Sort Spaces"
+                      title="Sort Folders"
                     >
                       <ArrowUpDown size={11} />
                     </button>
@@ -497,121 +472,59 @@ const Sidebar = ({
                     )}
                   </div>
 
-                  {/* Create New Space */}
+                  {/* Create New Folder + button */}
                   <button
-                    onClick={() => setIsCreatingSpace(true)}
+                    onClick={() => { setFolderToEdit(null); setIsFolderModalOpen(true); }}
                     className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
-                    title="Create New Space"
+                    title="Create New Folder"
                   >
                     <Plus size={13} />
                   </button>
                 </div>
               </div>
 
-              {/* Inline Create Space Form */}
-              <AnimatePresence>
-                {isCreatingSpace && (
-                  <motion.form
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    onSubmit={handleCreateSpace}
-                    className="px-2 mb-2"
-                  >
-                    <div className="p-2.5 bg-white dark:bg-zinc-900 border border-indigo-500/40 rounded-xl shadow-md space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => setShowEmojiPicker(prev => !prev)}
-                            className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-zinc-800 text-sm flex items-center justify-center hover:scale-105"
-                            title="Pick Space icon"
-                          >
-                            {newSpaceEmoji}
-                          </button>
-                          {showEmojiPicker && (
-                            <div className="absolute left-0 top-full mt-1 z-50 p-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-xl grid grid-cols-4 gap-1 w-36">
-                              {EMOJI_OPTIONS.map((em) => (
-                                <button
-                                  key={em}
-                                  type="button"
-                                  onClick={() => { setNewSpaceEmoji(em); setShowEmojiPicker(false); }}
-                                  className="w-7 h-7 text-sm rounded hover:bg-slate-100 dark:hover:bg-zinc-800"
-                                >
-                                  {em}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <input
-                          type="text"
-                          required
-                          autoFocus
-                          value={newSpaceName}
-                          onChange={(e) => setNewSpaceName(e.target.value)}
-                          placeholder="Space name (e.g. DSA Prep)..."
-                          className="flex-1 text-xs px-2 py-1.5 bg-slate-50 dark:bg-zinc-800/80 rounded-lg border border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex gap-1">
-                          {['indigo', 'purple', 'emerald', 'amber', 'rose'].map((c) => (
-                            <button
-                              type="button"
-                              key={c}
-                              onClick={() => setNewSpaceColor(c)}
-                              className={`w-3 h-3 rounded-full ${
-                                c === 'indigo' ? 'bg-indigo-500' :
-                                c === 'purple' ? 'bg-purple-500' :
-                                c === 'emerald' ? 'bg-emerald-500' :
-                                c === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
-                              } ${newSpaceColor === c ? 'ring-2 ring-offset-1 ring-slate-700 dark:ring-white scale-110' : 'opacity-60'}`}
-                            />
-                          ))}
-                        </div>
-                        <div className="flex gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => { setIsCreatingSpace(false); setNewSpaceName(''); }}
-                            className="px-2 py-0.5 text-[10px] font-semibold text-slate-400 hover:text-slate-600"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={!newSpaceName.trim()}
-                            className="px-2.5 py-0.5 text-[10px] font-bold bg-indigo-600 text-white rounded-md shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                          >
-                            Create
-                          </button>
-                        </div>
-                      </div>
+              {/* Dedicated High-Visibility "+ New Folder" Action Button (Unlocked for Free, Pro, Premium) */}
+              <div className="px-1.5 mb-2">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => { setFolderToEdit(null); setIsFolderModalOpen(true); }}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/30 hover:bg-indigo-100/80 dark:hover:bg-indigo-900/40 border border-indigo-200/60 dark:border-indigo-800/50 shadow-sm transition-all group"
+                  title="Create Folder & Workspace"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                      <Plus size={12} />
                     </div>
-                  </motion.form>
-                )}
-              </AnimatePresence>
+                    <span>New Folder</span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+                    Free
+                  </span>
+                </motion.button>
+              </div>
 
-              {/* Spaces Tree List with Subchats */}
+              {/* Folders Tree List with Subchats */}
               <div className="space-y-0.5 px-1">
-                {displayedSpaces.length === 0 && !isCreatingSpace ? (
+                {displayedSpaces.length === 0 ? (
                   <p className="text-[10px] text-slate-400 dark:text-zinc-600 px-3 py-1 italic">
-                    No spaces yet. Click + to organize.
+                    No folders yet. Click + New Folder to organize.
                   </p>
                 ) : (
                   displayedSpaces.map((sp) => {
                     const isExpanded = expandedSpaceIds.has(sp.id);
                     const isSelected = activeSpaceId === sp.id;
                     const subchats = sp.subchats || [];
+                    const colorCfg = getFolderColorConfig(sp.color);
 
                     return (
                       <div key={sp.id} className="group flex flex-col">
-                        {/* Space Row */}
+                        {/* Folder Row */}
                         <div
                           onClick={() => onSelectSpace?.(sp.id)}
                           className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl cursor-pointer transition-all ${
                             isSelected
-                              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold'
+                              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold shadow-sm'
                               : 'hover:bg-slate-100/60 dark:hover:bg-zinc-800/50 text-slate-600 dark:text-zinc-300'
                           }`}
                         >
@@ -620,10 +533,17 @@ const Sidebar = ({
                             <button
                               onClick={(e) => handleToggleExpandSpace(e, sp.id)}
                               className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 transition-colors"
+                              title={isExpanded ? "Collapse" : "Expand folder"}
                             >
                               <ChevronRight size={11} className={`transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                             </button>
-                            <span className="text-sm shrink-0">{sp.icon || '📁'}</span>
+                            {/* Custom Colored Glowing Icon Badge */}
+                            <div
+                              className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${colorCfg.badge || 'bg-indigo-500 text-white'}`}
+                              style={colorCfg.customBadgeStyle || {}}
+                            >
+                              {renderFolderIcon(sp.icon, { size: 12 })}
+                            </div>
                             <span className="text-xs truncate">{sp.name}</span>
                           </div>
 
@@ -634,14 +554,25 @@ const Sidebar = ({
                             <button
                               onClick={(e) => handleStartSubchatInSpace(e, sp.id)}
                               className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 rounded transition-opacity"
-                              title="Start Subchat in this Space"
+                              title="Start Subchat in this Folder"
                             >
                               <Plus size={11} />
                             </button>
                             <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFolderToEdit(sp);
+                                setIsFolderModalOpen(true);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 rounded transition-opacity"
+                              title="Edit Folder Title, Logo & Color"
+                            >
+                              <Edit3 size={10} />
+                            </button>
+                            <button
                               onClick={(e) => handleDeleteSpace(e, sp.id)}
                               className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 rounded transition-opacity"
-                              title="Delete Space"
+                              title="Delete Folder"
                             >
                               <Trash2 size={10} />
                             </button>
@@ -805,7 +736,7 @@ const Sidebar = ({
 
         {/* ── Upgrade to Pro Promo Card ── */}
         {!isCollapsed && user?.plan !== 'premium' && (
-          <div className="px-3 pb-2">
+          <div className="px-3 pb-2 shrink-0">
             <motion.div
               whileHover={{ scale: 1.02 }}
               className="p-3 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-transparent border border-indigo-500/25 rounded-2xl cursor-pointer transition-all hover:border-indigo-500/40"
@@ -830,8 +761,8 @@ const Sidebar = ({
           </div>
         )}
 
-        {/* ── User Profile Footer ── */}
-        <div className={`${isCollapsed ? 'p-2' : 'p-3'} shrink-0 border-t border-slate-100/50 dark:border-zinc-800/50`}>
+        {/* ── User Profile Footer (Cleanly Pinned at bottom) ── */}
+        <div className={`${isCollapsed ? 'p-2' : 'p-3'} shrink-0 border-t border-slate-100/80 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-900/95`}>
           <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} p-2.5 rounded-xl border border-slate-200/50 dark:border-zinc-800/50 bg-white/50 dark:bg-zinc-900/50`}>
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">
               {getInitials(user?.name)}
@@ -876,7 +807,7 @@ const Sidebar = ({
             <span>{sessions.find(s => s.id === contextMenu.sessionId)?.is_pinned ? 'Unpin Session' : 'Pin Session'}</span>
           </button>
 
-          {/* Move to Space submenu */}
+          {/* Move to Folder submenu */}
           <div className="relative">
             <button
               onMouseEnter={() => setShowSpaceSubmenu(true)}
@@ -885,7 +816,7 @@ const Sidebar = ({
             >
               <div className="flex items-center gap-2">
                 <Folder size={12} className="text-slate-400 shrink-0" />
-                <span>Move to Space</span>
+                <span>Move to Folder</span>
               </div>
               <ChevronRight size={12} className="text-slate-400 shrink-0" />
             </button>
@@ -910,7 +841,7 @@ const Sidebar = ({
                       className="flex items-center justify-between w-full px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 rounded-lg text-left transition-colors"
                     >
                       <div className="flex items-center gap-1.5 truncate">
-                        <span>{sp.icon || '📁'}</span>
+                        {renderFolderIcon(sp.icon, { size: 12 })}
                         <span className="truncate">{sp.name}</span>
                       </div>
                       {isCurrent && <Check size={10} className="text-indigo-500 shrink-0" />}
@@ -932,6 +863,22 @@ const Sidebar = ({
           </button>
         </div>
       )}
+
+      {/* ── Create / Edit Folder Modal ── */}
+      <CreateFolderModal
+        isOpen={isFolderModalOpen}
+        onClose={() => {
+          setIsFolderModalOpen(false);
+          setFolderToEdit(null);
+        }}
+        onFolderCreated={(folder) => {
+          fetchSpaces();
+          if (folder?.id) {
+            onSelectSpace?.(folder.id);
+          }
+        }}
+        editingFolder={folderToEdit}
+      />
     </>
   );
 };

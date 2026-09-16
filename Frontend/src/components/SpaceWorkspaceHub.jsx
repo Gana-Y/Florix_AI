@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
+import { renderFolderIcon, getFolderColorConfig } from '../utils/folderIcons';
+import CreateFolderModal from './CreateFolderModal';
 
 const EMOJI_OPTIONS = ['📁', '💲', '💻', '📚', '⚡', '🎯', '🔬', '🧠', '📝', '💡', '🎓', '🔥', '🚀', '⭐'];
 const COLOR_OPTIONS = ['indigo', 'purple', 'emerald', 'amber', 'rose', 'blue', 'cyan'];
@@ -41,6 +43,7 @@ const SpaceWorkspaceHub = ({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [isEditFolderModalOpen, setIsEditFolderModalOpen] = useState(false);
   const [isCreatingSubchat, setIsCreatingSubchat] = useState(false);
   const [newSubchatTitle, setNewSubchatTitle] = useState('');
 
@@ -221,9 +224,17 @@ const SpaceWorkspaceHub = ({
           className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
         >
           <ArrowLeft size={16} />
-          <span>All Spaces</span>
+          <span>All Folders</span>
         </button>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsEditFolderModalOpen(true)}
+            className="p-2 rounded-xl border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300/50 bg-white dark:bg-zinc-900 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+            title="Edit Folder Name, Logo & Color"
+          >
+            <Edit3 size={13} />
+            <span>Edit Folder</span>
+          </button>
           <button
             onClick={handleTogglePin}
             className={`p-2 rounded-xl border transition-all text-xs font-semibold flex items-center gap-1.5 ${
@@ -233,12 +244,12 @@ const SpaceWorkspaceHub = ({
             }`}
           >
             <Pin size={13} className={space.is_pinned ? 'fill-current rotate-45' : ''} />
-            <span>{space.is_pinned ? 'Pinned' : 'Pin Space'}</span>
+            <span>{space.is_pinned ? 'Pinned' : 'Pin Folder'}</span>
           </button>
           <button
             onClick={handleDeleteSpace}
             className="p-2 rounded-xl border border-slate-200 dark:border-zinc-800 text-slate-400 hover:text-rose-600 hover:border-rose-300/50 bg-white dark:bg-zinc-900 transition-colors"
-            title="Delete Space"
+            title="Delete Folder"
           >
             <Trash2 size={15} />
           </button>
@@ -246,36 +257,32 @@ const SpaceWorkspaceHub = ({
       </div>
 
       {/* Space Hero Banner */}
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`relative overflow-hidden rounded-3xl p-6 md:p-8 bg-gradient-to-br ${COLOR_MAP[space.color] || COLOR_MAP.indigo} border shadow-lg backdrop-blur-xl`}
-      >
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
-          <div className="flex items-center gap-4 min-w-0">
-            {/* Custom Emoji Picker Button */}
-            <div className="relative">
-              <button
-                onClick={() => setIsEmojiPickerOpen(prev => !prev)}
-                className="w-16 h-16 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-700/80 shadow-md flex items-center justify-center text-3xl hover:scale-105 active:scale-95 transition-transform"
-                title="Click to change space icon"
-              >
-                {space.icon || '📁'}
-              </button>
-              {isEmojiPickerOpen && (
-                <div className="absolute top-full mt-2 left-0 z-50 p-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl grid grid-cols-5 gap-1 w-48">
-                  {EMOJI_OPTIONS.map((em) => (
-                    <button
-                      key={em}
-                      onClick={() => handleUpdateEmoji(em)}
-                      className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-lg flex items-center justify-center transition-colors"
+      {(() => {
+        const colorCfg = getFolderColorConfig(space.color);
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`relative overflow-hidden rounded-3xl p-6 md:p-8 bg-gradient-to-br ${colorCfg.banner || 'from-indigo-500/20 via-indigo-500/5 to-transparent border-indigo-500/30'} border shadow-lg backdrop-blur-xl`}
+            style={colorCfg.customStyle || {}}
+          >
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+              <div className="flex items-center gap-4 min-w-0">
+                {/* Folder Icon / Logo Button */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsEditFolderModalOpen(true)}
+                    className="w-16 h-16 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-700/80 shadow-md flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
+                    title="Click to customize folder icon, logo, and color"
+                  >
+                    <div
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-sm ${colorCfg.badge || 'bg-indigo-500 text-white'}`}
+                      style={colorCfg.customBadgeStyle || {}}
                     >
-                      {em}
-                    </button>
-                  ))}
+                      {renderFolderIcon(space.icon, { size: 24 })}
+                    </div>
+                  </button>
                 </div>
-              )}
-            </div>
 
             {/* Title & Stats */}
             <div className="min-w-0 flex-1">
@@ -345,6 +352,8 @@ const SpaceWorkspaceHub = ({
           </div>
         </div>
       </motion.div>
+    );
+  })()}
 
       {/* Action Toolbar: Create Subchat, Add Material, Search, Sort */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-slate-200/60 dark:border-zinc-800/80 shadow-sm">
@@ -881,6 +890,16 @@ const SpaceWorkspaceHub = ({
           </div>
         </div>
       )}
+      {/* ── Edit Folder Modal ── */}
+      <CreateFolderModal
+        isOpen={isEditFolderModalOpen}
+        onClose={() => setIsEditFolderModalOpen(false)}
+        onFolderCreated={() => {
+          fetchSpaceDetails();
+          onSpaceUpdated?.();
+        }}
+        editingFolder={space}
+      />
     </div>
   );
 };

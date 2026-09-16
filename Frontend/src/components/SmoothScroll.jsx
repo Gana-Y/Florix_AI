@@ -29,6 +29,7 @@ export default function SmoothScroll({ children }) {
       smoothWheel: true,
       syncTouch: false, // Don't hijack native mobile/touchpad momentum
       autoResize: true,
+      allowNestedScroll: true, // Never block nested scroll containers
     });
 
     lenisRef.current = lenis;

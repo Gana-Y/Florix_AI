@@ -60,6 +60,7 @@ const CinematicStarfield = () => {
   return (
     <div
       className="pointer-events-none absolute inset-0 z-[3] overflow-hidden select-none"
+      style={{ transform: 'translate3d(0, 0, 0)', contain: 'paint' }}
       aria-hidden="true"
     >
       <style>{`
@@ -77,19 +78,20 @@ const CinematicStarfield = () => {
           0%, 100% {
             opacity: 0.35;
             transform: scale(0.85) rotate(0deg);
-            filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6));
           }
           50% {
             opacity: 1;
             transform: scale(1.35) rotate(45deg);
-            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 16px rgba(224, 231, 255, 0.8));
           }
         }
         .animate-twinkle {
           animation: subtleTwinkle var(--twinkle-dur) ease-in-out infinite var(--twinkle-delay);
+          will-change: transform, opacity;
         }
         .animate-diamond {
           animation: diamondGlint var(--twinkle-dur) ease-in-out infinite var(--twinkle-delay);
+          will-change: transform, opacity;
+          box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.95), 0 0 14px 2px rgba(199, 210, 254, 0.7);
         }
         @media (prefers-reduced-motion: reduce) {
           .animate-twinkle, .animate-diamond {

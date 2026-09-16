@@ -51,6 +51,12 @@ html.lenis, html.lenis body {
   overflow: hidden;
 }
 
+/* While Lenis is actively scrolling, disable pointer-events globally to prevent hover calculation jank and mousemove layout thrashing */
+html.lenis.lenis-scrolling,
+html.lenis.lenis-scrolling * {
+  pointer-events: none !important;
+}
+
 .lenis.lenis-scrolling iframe {
   pointer-events: none;
 }

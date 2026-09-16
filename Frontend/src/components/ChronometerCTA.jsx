@@ -21,20 +21,13 @@ function ChronometerCTA() {
     offset: ['start end', 'end end'],
   });
 
-  // Butter-smooth spring interpolation for the scroll-driven rotation
-  const smoothProgress = useSpring(scrollYProgress, {
-    stiffness: 80,
-    damping: 22,
-    restDelta: 0.001,
-  });
-
-  // Subtle 3D tilt of the physical watch case on scroll
-  const caseTilt = useTransform(smoothProgress, [0, 1], [-3, 3]);
+  // Direct 1:1 scroll synchronization with Lenis smooth momentum (zero lag on reverse scroll)
+  const caseTilt = useTransform(scrollYProgress, [0, 1], [-3, 3]);
 
   // Rotations for internal energy beam and chronometer instruments
-  const energyRotation = useTransform(smoothProgress, [0, 1], [-45, 65]);
-  const hourHandRotation = useTransform(smoothProgress, [0, 1], [15, 105]);
-  const minuteHandRotation = useTransform(smoothProgress, [0, 1], [40, 310]);
+  const energyRotation = useTransform(scrollYProgress, [0, 1], [-45, 65]);
+  const hourHandRotation = useTransform(scrollYProgress, [0, 1], [15, 105]);
+  const minuteHandRotation = useTransform(scrollYProgress, [0, 1], [40, 310]);
 
   return (
     <section ref={sectionRef} className="relative z-20 pt-24 pb-12 px-6 md:px-12 max-w-6xl mx-auto select-none overflow-visible">
@@ -181,26 +174,20 @@ function ChronometerCTA() {
                     viewBox="0 0 400 400"
                   >
                     <defs>
-                      {/* Deep Volumetric Atmosphere Filter */}
-                      <filter id="hyperLaserGlow" x="-60%" y="-60%" width="220%" height="220%">
-                        <feGaussianBlur stdDeviation="8" result="blurDeep" />
-                        <feGaussianBlur stdDeviation="3.5" result="blurMid" />
-                        <feGaussianBlur stdDeviation="1" result="blurSharp" />
+                      {/* High-Performance Volumetric Laser Glow */}
+                      <filter id="hyperLaserGlow" x="-30%" y="-30%" width="160%" height="160%">
+                        <feGaussianBlur stdDeviation="4.5" result="blurGlow" />
                         <feMerge>
-                          <feMergeNode in="blurDeep" />
-                          <feMergeNode in="blurMid" />
-                          <feMergeNode in="blurSharp" />
+                          <feMergeNode in="blurGlow" />
                           <feMergeNode in="SourceGraphic" />
                         </feMerge>
                       </filter>
 
-                      {/* Comet Plasma Flare */}
-                      <filter id="cometFlare" x="-100%" y="-100%" width="300%" height="300%">
-                        <feGaussianBlur stdDeviation="12" result="flareWide" />
-                        <feGaussianBlur stdDeviation="3.5" result="flareMid" />
+                      {/* Concentrated Comet Plasma Flare */}
+                      <filter id="cometFlare" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="6" result="flareWide" />
                         <feMerge>
                           <feMergeNode in="flareWide" />
-                          <feMergeNode in="flareMid" />
                           <feMergeNode in="SourceGraphic" />
                         </feMerge>
                       </filter>

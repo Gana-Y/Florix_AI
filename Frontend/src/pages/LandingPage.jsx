@@ -71,8 +71,9 @@ const TiltCard = React.memo(({ children, className, glowColor = 'rgba(99,102,241
         rotateY: springRotY,
         transformPerspective: 900,
         transformStyle: 'preserve-3d',
+        willChange: isHovered ? 'transform' : 'auto',
       }}
-      className={`relative overflow-hidden backdrop-blur-xl bg-[#0a0d18]/85 ${className}`}
+      className={`relative overflow-hidden bg-[#0a0d18]/92 border border-white/8 ${className}`}
     >
       {/* Moving inner glow on hover — strictly GPU transform (no top/left layout triggers) */}
       <AnimatePresence>
@@ -277,7 +278,7 @@ const LandingPage = () => {
     if (!video) return;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
-        video.play().catch(() => {});
+        requestAnimationFrame(() => video.play().catch(() => {}));
       } else {
         video.pause();
       }
@@ -308,7 +309,11 @@ const LandingPage = () => {
       />
 
       {/* ── Global Unified Atmospheric Lighting Canvas (Continuous Top-to-Bottom Flow) ── */}
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden select-none" aria-hidden="true">
+      <div 
+        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden select-none" 
+        style={{ transform: 'translate3d(0, 0, 0)', contain: 'paint' }}
+        aria-hidden="true"
+      >
         {/* Upper Space Apex: Subtle cosmic violet wash */}
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[1400px] h-[700px] bg-gradient-to-b from-indigo-600/12 via-purple-700/6 to-transparent rounded-full blur-[150px]" />
 

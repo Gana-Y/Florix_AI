@@ -225,6 +225,13 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
     return () => window.removeEventListener('florix:upgrade-required', handleUpgradeRequired);
   }, [addToast]);
 
+  // Redirect legacy Profile tab to Home (Profile is now accessed via bottom-left popover & modal)
+  useEffect(() => {
+    if (activeTab === 'Profile') {
+      setActiveTab('Home');
+    }
+  }, [activeTab]);
+
   // Lock window/document scrolling while Dashboard is mounted to eliminate all layout shifts
   useEffect(() => {
     const origBodyOverflow = document.body.style.overflow;

@@ -4,12 +4,13 @@ import {
   Brain, ChevronLeft, ChevronRight, ChevronDown, Sparkles,
   MessageSquare, X, UserCircle, Bookmark, TrendingUp, CreditCard, Shield, Activity,
   Pin, Trash2, Edit3, Flame, Folder, FolderPlus, Tag, Check, MoreVertical,
-  MessageSquarePlus, ArrowUpDown, CornerDownRight, Plus, Zap, Crown
+  MessageSquarePlus, ArrowUpDown, CornerDownRight, Plus, Zap, Crown, Award, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
 import CreateFolderModal from './CreateFolderModal';
+import ProfileModal from './ProfileModal';
 import { renderFolderIcon, getFolderColorConfig } from '../utils/folderIcons';
 
 const PLAN_COLORS = {
@@ -69,6 +70,47 @@ const Sidebar = ({
   const [editSpaceName, setEditSpaceName] = useState('');
   
   const contextMenuRef = useRef(null);
+
+  // Profile Popover & Modal State
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState('overview');
+  const [userStats, setUserStats] = useState(null);
+  const profileMenuRef = useRef(null);
+
+  // Fetch user stats for profile popover
+  useEffect(() => {
+    if (user?.id) {
+      api.get('/stats')
+        .then(res => setUserStats(res.data))
+        .catch(() => {});
+    }
+  }, [user?.id, isProfileModalOpen]);
+
+  // Click outside to close profile popover
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setShowProfileMenu(false);
+      }
+    };
+    if (showProfileMenu) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [showProfileMenu]);
+
+  // Global event listener to open profile modal from anywhere
+  useEffect(() => {
+    const handleOpenProfileEvent = (e) => {
+      if (e?.detail?.tab) setProfileModalTab(e.detail.tab);
+      setIsProfileModalOpen(true);
+    };
+    window.addEventListener('florix:open-profile', handleOpenProfileEvent);
+    return () => window.removeEventListener('florix:open-profile', handleOpenProfileEvent);
+  }, []);
 
   // Fetch study sessions
   const fetchSessions = async () => {
@@ -268,7 +310,6 @@ const Sidebar = ({
     { id: 'Bookmarks',         icon: Bookmark,      label: 'Bookmarks' },
     { id: 'Progress',          icon: TrendingUp,    label: 'Progress' },
     { id: 'History',           icon: Clock,         label: 'History' },
-    { id: 'Profile',           icon: UserCircle,    label: 'Profile' },
     { id: 'Personalization',   icon: Sparkles,      label: 'Personalization' },
     { id: 'Pricing',           icon: Zap,           label: 'Upgrade Plan' },
     ...(user?.is_admin ? [
@@ -758,24 +799,204 @@ const Sidebar = ({
           </div>
         )}
 
-        {/* ── User Profile Footer (Cleanly Pinned at bottom) ── */}
-        <div className={`${isCollapsed ? 'p-2' : 'p-3'} shrink-0 border-t border-slate-100/80 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-900/95`}>
-          <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} p-2.5 rounded-xl border border-slate-200/50 dark:border-zinc-800/50 bg-white/50 dark:bg-zinc-900/50`}>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">
+        {/* ── User Profile Footer (Interactive ChatGPT & Claude Style Popover Trigger) ── */}
+        <div
+          ref={profileMenuRef}
+          className={`relative ${isCollapsed ? 'p-2' : 'p-3'} shrink-0 border-t border-slate-100/80 dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-900/95`}
+        >
+          {/* Floating Profile Popover Menu (Pops up directly above user card) */}
+          <AnimatePresence>
+            {showProfileMenu && (
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.95 }}
+                transition={{ duration: 0.15, ease: 'easeOut' }}
+                className={`absolute bottom-full mb-2 z-[90] ${
+                  isCollapsed ? 'left-2 w-72' : 'left-3 right-3'
+                } bg-white dark:bg-zinc-900 border border-slate-200/90 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl flex flex-col`}
+              >
+                {/* User Identity Card Header */}
+                <div
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    setProfileModalTab('overview');
+                    setIsProfileModalOpen(true);
+                  }}
+                  className="p-3.5 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent border-b border-slate-100 dark:border-zinc-800/80 hover:bg-indigo-500/15 cursor-pointer transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-black text-sm shadow-md shrink-0 group-hover:scale-105 transition-transform">
+                      {getInitials(user?.name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                          {user?.name || 'Scholar Account'}
+                        </p>
+                        <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase shrink-0 ${PLAN_COLORS[user?.plan || 'free'] || PLAN_COLORS.free}`}>
+                          {user?.plan || 'free'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 dark:text-zinc-500 truncate mt-0.5">
+                        {user?.email || 'student@florix.ai'}
+                      </p>
+                    </div>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </div>
+
+                  {/* Level & XP Mini Banner */}
+                  <div className="mt-2.5 pt-2 border-t border-indigo-500/15 flex items-center justify-between text-[10px]">
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                      <Sparkles size={10} />
+                      <span>Level 1 • Scholar</span>
+                    </span>
+                    <span className="font-semibold text-slate-500 dark:text-zinc-400 flex items-center gap-1">
+                      <Flame size={10} className="text-amber-500" />
+                      <span>Active Streak</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quick Stats Pill Row */}
+                <div className="grid grid-cols-4 gap-1 p-2 bg-slate-50/50 dark:bg-zinc-800/40 border-b border-slate-100 dark:border-zinc-800 text-center text-[9px]">
+                  <div className="p-1 rounded-lg">
+                    <span className="font-bold block text-slate-800 dark:text-zinc-200">{userStats?.total_sessions || 0}</span>
+                    <span className="text-slate-400">Docs</span>
+                  </div>
+                  <div className="p-1 rounded-lg">
+                    <span className="font-bold block text-slate-800 dark:text-zinc-200">{userStats?.total_quizzes || 0}</span>
+                    <span className="text-slate-400">Quizzes</span>
+                  </div>
+                  <div className="p-1 rounded-lg">
+                    <span className="font-bold block text-slate-800 dark:text-zinc-200">{userStats?.avg_quiz_score ? `${userStats.avg_quiz_score}%` : '0%'}</span>
+                    <span className="text-slate-400">Score</span>
+                  </div>
+                  <div className="p-1 rounded-lg">
+                    <span className="font-bold block text-slate-800 dark:text-zinc-200">{userStats?.bookmarks_count || 0}</span>
+                    <span className="text-slate-400">Saved</span>
+                  </div>
+                </div>
+
+                {/* Popover Actions List */}
+                <div className="p-1.5 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      setProfileModalTab('overview');
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
+                  >
+                    <UserCircle size={15} className="text-indigo-500 shrink-0" />
+                    <span>My Profile & Scholar Cockpit</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      setProfileModalTab('achievements');
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
+                  >
+                    <Award size={15} className="text-amber-500 shrink-0" />
+                    <span>Milestones & Badges</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      setActiveTab('Personalization');
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
+                  >
+                    <Sparkles size={15} className="text-purple-500 shrink-0" />
+                    <span>AI Tutor Personalization</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      setProfileModalTab('developer');
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
+                  >
+                    <Shield size={15} className="text-emerald-500 shrink-0" />
+                    <span>Developer API Keys</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      setActiveTab('Pricing');
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Zap size={15} className="text-indigo-500 shrink-0" />
+                      <span>Subscription & Plans</span>
+                    </div>
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
+                      PRO
+                    </span>
+                  </button>
+
+                  <div className="border-t border-slate-100 dark:border-zinc-800 my-1" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      onLogout?.();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-left cursor-pointer"
+                  >
+                    <LogOut size={15} className="shrink-0" />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* User Profile Footer Button (Clickable Pill) */}
+          <button
+            type="button"
+            onClick={() => setShowProfileMenu(prev => !prev)}
+            className={`w-full flex items-center ${
+              isCollapsed ? 'justify-center' : 'gap-3'
+            } p-2.5 rounded-2xl border border-slate-200/60 dark:border-zinc-800/60 bg-white/60 dark:bg-zinc-900/60 hover:bg-slate-100/80 dark:hover:bg-zinc-800/80 hover:border-slate-300 dark:hover:border-zinc-700 shadow-sm transition-all text-left cursor-pointer group`}
+            title={user?.name || 'My Profile & Settings'}
+          >
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-sm group-hover:scale-105 transition-transform">
               {getInitials(user?.name)}
             </div>
             {!isCollapsed && (
               <div className="flex-1 text-left overflow-hidden min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-xs font-bold text-slate-700 dark:text-zinc-200 truncate">{user?.name || 'User'}</p>
-                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full capitalize shrink-0 ${PLAN_COLORS[user?.plan || 'free'] || PLAN_COLORS.free}`}>
+                <div className="flex items-center justify-between gap-1">
+                  <p className="text-xs font-bold text-slate-800 dark:text-zinc-200 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    {user?.name || 'User'}
+                  </p>
+                  <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-full capitalize shrink-0 ${PLAN_COLORS[user?.plan || 'free'] || PLAN_COLORS.free}`}>
                     {user?.plan || 'free'}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 dark:text-zinc-500 truncate mt-0.5">{user?.email || 'Student Account'}</p>
+                <div className="flex items-center justify-between gap-1 mt-0.5">
+                  <p className="text-[10px] text-slate-400 dark:text-zinc-500 truncate">
+                    {user?.email || 'Student Account'}
+                  </p>
+                  <MoreVertical size={12} className="text-slate-400 shrink-0 group-hover:text-slate-600 dark:group-hover:text-zinc-300" />
+                </div>
               </div>
             )}
-          </div>
+          </button>
         </div>
 
         {/* Mobile close toggle */}
@@ -875,6 +1096,14 @@ const Sidebar = ({
           }
         }}
         editingFolder={folderToEdit}
+      />
+
+      {/* ── Scholar Profile & Settings Modal ── */}
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        initialTab={profileModalTab}
+        onLogout={onLogout}
       />
     </>
   );

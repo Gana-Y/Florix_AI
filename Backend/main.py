@@ -827,8 +827,10 @@ def process_upload_in_background(
             with open(file_path, "rb") as af:
                 audio_file = client.files.upload(file=af, config={"mime_type": mime_type})
             instruction = (
-                "Transcribe this audio recording accurately. Then create a comprehensive study guide "
-                "from the transcription in Markdown format, including key points, summary, and important concepts."
+                "You are an expert academic audio transcriber. Transcribe this audio accurately with timestamps.\n"
+                "Format spoken segments as:\n"
+                "[MM:SS - MM:SS] Speaker: Transcript text\n\n"
+                "Then create a comprehensive study guide in Markdown format including key points, summary, and important concepts."
             )
             response = client.models.generate_content(
                 model=MODEL_NAME,
@@ -847,8 +849,9 @@ def process_upload_in_background(
             with open(file_path, "rb") as vf:
                 video_file = client.files.upload(file=vf, config={"mime_type": mime_type})
             instruction = (
-                "You are an expert educational content analyzer. Watch and analyze this video comprehensively. "
-                "Extract all spoken content (transcription), visual information, text on screen, diagrams, and key concepts. "
+                "You are an expert educational content analyzer. Watch and analyze this video comprehensively.\n"
+                "Extract spoken content and visual context with timestamps formatted as:\n"
+                "[MM:SS - MM:SS] Speaker: Spoken transcript & visual highlights\n\n"
                 "Create a comprehensive study guide in Markdown format with: "
                 "# Video Title, ## Transcription Highlights, ## Key Topics Covered, ## Summary, ## Important Points, ## Key Takeaways."
             )
@@ -924,7 +927,19 @@ def process_upload_in_background(
         db.commit()
 
         update_pipeline_progress(progress_id, 3, "Text chunking", "Extracting structural sections and semantic chunks...", "active")
-        enriched_chunks = build_semantic_chunks(text, chunk_size=800, overlap=150)
+        try:
+            from content import ContentNormalizer
+            normalized = ContentNormalizer.normalize_any(
+                source_type=source_type,
+                data=text,
+                title=session.filename,
+                metadata={"session_id": session_id, "user_id": session.user_id, "source_type": source_type}
+            )
+            enriched_chunks = build_semantic_chunks(normalized, chunk_size=800, overlap=150)
+        except Exception as norm_err:
+            logger.warning(f"⚠️ Normalizer fallback to direct text chunking: {norm_err}")
+            enriched_chunks = build_semantic_chunks(text, chunk_size=800, overlap=150)
+
         chunks = [c.text for c in enriched_chunks]
         if enriched_chunks:
             update_pipeline_progress(progress_id, 3, "Text chunking", f"Split into {len(enriched_chunks)} academic semantic chunks", "done")
@@ -981,14 +996,33 @@ def process_upload_in_background(
             if chroma_collection is not None:
                 try:
                     chroma_ids = [f"sess_{session_id}_chunk_{idx}" for idx in range(len(enriched_chunks))]
-                    chroma_metadatas = [{
-                        "session_id": session_id,
-                        "user_id": session.user_id,
-                        "chunk_index": idx,
-                        "page_number": chk.page_number,
-                        "section_heading": chk.section_heading or "",
-                        "content_type": chk.content_type.value if hasattr(chk.content_type, "value") else str(chk.content_type),
-                    } for idx, chk in enumerate(enriched_chunks)]
+                    chroma_metadatas = []
+                    for idx, chk in enumerate(enriched_chunks):
+                        meta_dict = {
+                            "session_id": session_id,
+                            "user_id": session.user_id,
+                            "chunk_index": idx,
+                            "page_number": chk.page_number,
+                            "section_heading": chk.section_heading or "",
+                            "content_type": chk.content_type.value if hasattr(chk.content_type, "value") else str(chk.content_type),
+                        }
+                        if chk.metadata:
+                            if "timestamp_start" in chk.metadata and chk.metadata["timestamp_start"] is not None:
+                                meta_dict["timestamp_start"] = float(chk.metadata["timestamp_start"])
+                            if "timestamp_end" in chk.metadata and chk.metadata["timestamp_end"] is not None:
+                                meta_dict["timestamp_end"] = float(chk.metadata["timestamp_end"])
+                            if "timestamp_str" in chk.metadata and chk.metadata["timestamp_str"]:
+                                meta_dict["timestamp_str"] = str(chk.metadata["timestamp_str"])
+                            if "source_type" in chk.metadata and chk.metadata["source_type"]:
+                                meta_dict["source_type"] = str(chk.metadata["source_type"])
+                            elif source_type:
+                                meta_dict["source_type"] = str(source_type)
+                            if "speaker" in chk.metadata and chk.metadata["speaker"]:
+                                meta_dict["speaker"] = str(chk.metadata["speaker"])
+                        elif source_type:
+                            meta_dict["source_type"] = str(source_type)
+                        chroma_metadatas.append(meta_dict)
+
                     chroma_collection.upsert(
                         ids=chroma_ids,
                         embeddings=all_embeddings,
@@ -1178,6 +1212,8 @@ def retrieve_relevant_chunks(
                 "page_number": c.page_number,
                 "section_heading": c.section_heading,
                 "content_type": c.content_type.value if hasattr(c.content_type, "value") else str(c.content_type),
+                "source_type": getattr(c, "source_type", "pdf"),
+                "metadata": getattr(c, "metadata", {}) or {},
                 "document_title": session.filename if session else "Study Material"
             } for c in reranked]
 
@@ -1194,6 +1230,8 @@ def retrieve_relevant_chunks(
             "page_number": getattr(c, "page_number", 1) or 1,
             "section_heading": getattr(c, "section_heading", "") or "",
             "content_type": getattr(c, "content_type", "text") or "text",
+            "source_type": (getattr(c, "chunk_metadata", {}) or {}).get("source_type", "pdf"),
+            "metadata": getattr(c, "chunk_metadata", {}) or {},
             "document_title": session.filename if session else "Study Material"
         } for c in chunks[:top_k]]
     except Exception as e:
@@ -3092,13 +3130,28 @@ async def process_link(
                         break
                 if transcript:
                     fetched = transcript.fetch()
-                    text = " ".join(
-                        item["text"] if isinstance(item, dict) else getattr(item, "text", str(item))
-                        for item in fetched
-                    )
+                    formatted_lines = []
+                    for item in fetched:
+                        it_text = item["text"] if isinstance(item, dict) else getattr(item, "text", str(item))
+                        it_start = float(item.get("start", 0.0)) if isinstance(item, dict) else float(getattr(item, "start", 0.0))
+                        it_dur = float(item.get("duration", 0.0)) if isinstance(item, dict) else float(getattr(item, "duration", 0.0))
+                        it_end = it_start + it_dur
+                        sm, ss = divmod(int(it_start), 60)
+                        em, es = divmod(int(it_end), 60)
+                        formatted_lines.append(f"[{sm:02d}:{ss:02d} - {em:02d}:{es:02d}] {it_text.strip()}")
+                    text = "\n".join(formatted_lines)
             except AttributeError:
                 transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-                text = " ".join(t["text"] for t in transcript_list)
+                formatted_lines = []
+                for t in transcript_list:
+                    it_text = t.get("text", "")
+                    it_start = float(t.get("start", 0.0))
+                    it_dur = float(t.get("duration", 0.0))
+                    it_end = it_start + it_dur
+                    sm, ss = divmod(int(it_start), 60)
+                    em, es = divmod(int(it_end), 60)
+                    formatted_lines.append(f"[{sm:02d}:{ss:02d} - {em:02d}:{es:02d}] {it_text.strip()}")
+                text = "\n".join(formatted_lines)
         except Exception as e:
             error_str = str(e).lower()
             if "no transcript" in error_str or "disabled" in error_str:
@@ -3503,6 +3556,8 @@ async def chat_with_document(
                     section_heading=c.get("section_heading", "") or "",
                     content_type=ContentType(c.get("content_type", "text") or "text"),
                     final_score=c.get("score", 0.0),
+                    source_type=c.get("source_type", "pdf"),
+                    metadata=c.get("metadata", {}),
                     document_title=session.filename
                 )
                 for idx, c in enumerate(chunks)
@@ -3584,6 +3639,8 @@ async def chat_stream(
                     section_heading=c.get("section_heading", "") or "",
                     content_type=ContentType(c.get("content_type", "text") or "text"),
                     final_score=c.get("score", 0.0),
+                    source_type=c.get("source_type", "pdf"),
+                    metadata=c.get("metadata", {}),
                     document_title=session.filename
                 )
                 for idx, c in enumerate(chunks)

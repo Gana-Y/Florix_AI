@@ -186,7 +186,9 @@ class HybridRetriever:
                             section_heading=meta.get("section_heading", meta.get("heading", "")),
                             content_type=ContentType(meta.get("content_type", "text")),
                             dense_score=sim_score,
-                            final_score=sim_score
+                            final_score=sim_score,
+                            source_type=meta.get("source_type", "pdf"),
+                            metadata=meta
                         ))
             except Exception as e:
                 logger.error(f"⚠️ Dense retrieval failed, will rely on lexical/SQLite: {e}")
@@ -199,6 +201,7 @@ class HybridRetriever:
                     score = compute_lexical_score(query_tokens, c.text_content)
                     if score > 0.05:
                         cid = f"sess_{session_id}_chunk_{c.chunk_index}"
+                        c_meta = getattr(c, "chunk_metadata", None) or {}
                         lexical_candidates.append(RetrievalCandidate(
                             chunk_id=cid,
                             session_id=session_id,
@@ -208,7 +211,9 @@ class HybridRetriever:
                             section_heading=getattr(c, "section_heading", "") or "",
                             content_type=ContentType(getattr(c, "content_type", "text") or "text"),
                             lexical_score=score,
-                            final_score=score
+                            final_score=score,
+                            source_type=c_meta.get("source_type", "pdf"),
+                            metadata=c_meta
                         ))
                 lexical_candidates.sort(key=lambda x: x.lexical_score, reverse=True)
             except Exception as e:

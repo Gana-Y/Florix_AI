@@ -298,7 +298,40 @@ Prior to deploying any backend or frontend updates:
    - All learning endpoints (`/learning/mastery/{session_id}`, `/learning/weak-topics/{session_id}`, `/learning/evaluate-answer`) are strictly authenticated and enforce `StudySession.user_id == current_user.id`.
    - Cross-user access returns HTTP 404.
 5. **Verification Evidence**:
-   - Complete backend test suite: 56 passed, 0 failed across `Backend/test_rag.py`, `Backend/test_main.py`, `Backend/test_api.py`, and `Backend/test_intelligence.py`.
+   - Complete backend test suite: 63 passed, 0 failed across `Backend/test_rag.py`, `Backend/test_main.py`, `Backend/test_api.py`, and `Backend/test_intelligence.py`.
    - Frontend production build: `npm run build` compiled cleanly with exit code 0.
+
+---
+
+## 11. Phase 4 Architecture Contract — Multimodal Knowledge Engine & Learning Experience
+
+**Status**: COMPLETED, VERIFIED & LOCKED  
+**Architecture Specification**: `FLORIX_MULTIMODAL_ARCHITECTURE.md`
+
+### 11.1 Core Invariants & Guarantees
+1. **Single Unified Retrieval Foundation**:
+   - Phase 4 strictly consumes the Phase 2 ChromaDB collection `document_chunks` and Google GenAI embedding model `models/gemini-embedding-2`.
+   - Zero secondary vector stores, zero secondary embedding models, and zero parallel retrieval pipelines.
+2. **Unified Content Normalization Topology (`Backend/content/`)**:
+   - `models.py`: Defines canonical `MediaType`, atomic `ContentSegment` (with page number and timestamp spans), and `NormalizedContent`.
+   - `normalizer.py`: Content normalizer handling PDF, text, audio, video, YouTube captions, and web articles.
+   - `transcription.py`: Modular transcription interface supporting `GeminiTranscriptionProvider` and deterministic `MockTranscriptionProvider`.
+3. **Timestamp Preservation & Semantic Chunking**:
+   - Spoken audio/video and YouTube transcripts preserve start and end seconds (`timestamp_start`, `timestamp_end`).
+   - `build_semantic_chunks` consumes `NormalizedContent`, groups segments into ~800-character chunks while aggregating boundary timestamps, and linearly interpolates timestamps during sentence splits.
+   - Chunks without section headings are automatically annotated with `[MM:SS - MM:SS]` brackets.
+4. **Relational & Vector Storage Alignment**:
+   - `DocumentChunk.chunk_metadata` (SQLite JSON) stores `timestamp_start`, `timestamp_end`, `timestamp_str`, `source_type`, and `speaker`.
+   - ChromaDB metadata stores scalar float/str values: `timestamp_start`, `timestamp_end`, `timestamp_str`, and `source_type`.
+5. **Traceable Citations & Learning Grounding**:
+   - `ContextBuilder` outputs temporal evidence blocks: `[SOURCE X: Media "...", Timestamp [MM:SS - MM:SS]]`.
+   - `Citation` model provides backward-compatible serialization with `timestamp_start`, `timestamp_end`, `source_type`, and `media_timestamp_str`.
+   - Grounded quizzes, flashcards, and tutoring chat cite specific lecture timestamps.
+6. **Multi-Tenant Security & Tenant Isolation**:
+   - All multimodal sessions and chunk operations enforce strict `user_id` authorization. Cross-user access returns HTTP 404.
+   - SHA-256 content hashing guarantees deterministic deduplication across all modalities.
+7. **Verification Evidence**:
+   - Complete backend test suite: 84 passed, 0 failed across `test_rag.py`, `test_main.py`, `test_api.py`, `test_intelligence.py`, and `test_multimodal.py`.
+   - Frontend production build: `npm run build` compiled cleanly with exit code 0 in 14.19s.
 
 

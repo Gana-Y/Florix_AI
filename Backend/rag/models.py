@@ -124,9 +124,13 @@ class Citation:
     page_number: int
     section_heading: str
     snippet: str
+    timestamp_start: Optional[float] = None
+    timestamp_end: Optional[float] = None
+    source_type: Optional[str] = None
+    media_timestamp_str: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data = {
             "source_index": self.source_index,
             "document_title": self.document_title,
             "session_id": self.session_id,
@@ -134,6 +138,15 @@ class Citation:
             "section_heading": self.section_heading,
             "snippet": self.snippet
         }
+        if self.timestamp_start is not None:
+            data["timestamp_start"] = self.timestamp_start
+        if self.timestamp_end is not None:
+            data["timestamp_end"] = self.timestamp_end
+        if self.source_type is not None:
+            data["source_type"] = self.source_type
+        if self.media_timestamp_str is not None:
+            data["media_timestamp_str"] = self.media_timestamp_str
+        return data
 
 
 @dataclass

@@ -6,7 +6,7 @@ Author: Ganesh (Lead Architect)
 """
 
 import re
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any, Union, Dict
 from .models import EnrichedChunk, ContentType, ParsedSection
 from .parser import detect_content_type, extract_structural_sections
 
@@ -179,19 +179,216 @@ def chunk_section(
     return chunks
 
 
-def build_semantic_chunks(
-    pages_or_text: List[Tuple[int, str]] | str,
+def _format_ts_span(t_start: Optional[float], t_end: Optional[float]) -> Optional[str]:
+    """Formats start and end seconds into [MM:SS - MM:SS] representation."""
+    if t_start is None:
+        return None
+    sm, ss = divmod(int(t_start), 60)
+    if t_end is not None:
+        em, es = divmod(int(t_end), 60)
+        return f"{sm:02d}:{ss:02d} - {em:02d}:{es:02d}"
+    return f"{sm:02d}:{ss:02d}"
+
+
+def _create_media_chunk(
+    segs: List[Any],
+    chunk_index: int,
+    source_type: str = "media"
+) -> EnrichedChunk:
+    """Combines media segments into a single enriched chunk with consolidated timestamp boundaries."""
+    combined_text = " ".join(s.text.strip() for s in segs if s.text.strip())
+    ts_starts = [s.timestamp_start for s in segs if getattr(s, "timestamp_start", None) is not None]
+    ts_ends = [s.timestamp_end for s in segs if getattr(s, "timestamp_end", None) is not None]
+
+    t_start = min(ts_starts) if ts_starts else None
+    t_end = max(ts_ends) if ts_ends else None
+    ts_str = _format_ts_span(t_start, t_end)
+
+    speakers = list(dict.fromkeys(s.speaker for s in segs if getattr(s, "speaker", None) and s.speaker))
+    speaker = speakers[0] if len(speakers) == 1 else (", ".join(speakers) if len(speakers) > 1 else None)
+
+    heading = f"[{ts_str}]" if ts_str else ""
+    if speaker:
+        heading = f"{heading} {speaker}".strip()
+
+    metadata = {
+        "source_type": source_type,
+        "timestamp_start": t_start,
+        "timestamp_end": t_end,
+        "timestamp_str": ts_str,
+        "speaker": speaker
+    }
+
+    return EnrichedChunk(
+        text=combined_text,
+        chunk_index=chunk_index,
+        page_number=1,
+        section_heading=heading,
+        content_type=ContentType.TEXT,
+        token_count=_approx_token_count(combined_text),
+        char_start=0,
+        char_end=len(combined_text),
+        metadata=metadata
+    )
+
+
+def _create_media_chunk_from_text(
+    text: str,
+    chunk_index: int,
+    t_start: Optional[float],
+    t_end: Optional[float],
+    speaker: Optional[str],
+    source_type: str = "media"
+) -> EnrichedChunk:
+    """Creates a media chunk from sub-split text with interpolated timestamps."""
+    ts_str = _format_ts_span(t_start, t_end)
+    heading = f"[{ts_str}]" if ts_str else ""
+    if speaker:
+        heading = f"{heading} {speaker}".strip()
+
+    metadata = {
+        "source_type": source_type,
+        "timestamp_start": t_start,
+        "timestamp_end": t_end,
+        "timestamp_str": ts_str,
+        "speaker": speaker
+    }
+
+    return EnrichedChunk(
+        text=text,
+        chunk_index=chunk_index,
+        page_number=1,
+        section_heading=heading,
+        content_type=ContentType.TEXT,
+        token_count=_approx_token_count(text),
+        char_start=0,
+        char_end=len(text),
+        metadata=metadata
+    )
+
+
+def chunk_normalized_content(
+    normalized: Any,
     chunk_size: int = 800,
     overlap: int = 150
 ) -> List[EnrichedChunk]:
     """
-    Primary chunking entry point. Accepts either:
-    1. A list of (page_number, text) tuples from PDF extraction.
-    2. A single raw text string (from web scrape, YouTube transcript, or notes).
+    Chunks NormalizedContent into semantic EnrichedChunks preserving timestamps
+    for audio/video/YouTube and page numbers for document formats.
+    """
+    segments = getattr(normalized, "segments", [])
+    if not segments:
+        return []
+
+    media_type_val = normalized.media_type.value if hasattr(normalized.media_type, "value") else str(getattr(normalized, "media_type", "text"))
+    has_timestamps = any(getattr(s, "timestamp_start", None) is not None for s in segments)
+
+    # If content has timestamps (Audio, Video, YouTube), preserve temporal spans
+    if has_timestamps or media_type_val in ("audio", "video", "youtube"):
+        chunks: List[EnrichedChunk] = []
+        curr_segs: List[Any] = []
+        curr_len = 0
+        curr_idx = 0
+
+        for seg in segments:
+            seg_text = seg.text.strip()
+            if not seg_text:
+                continue
+
+            # If single segment is oversized, split by sentences with timestamp interpolation
+            if len(seg_text) > chunk_size:
+                if curr_segs:
+                    chunks.append(_create_media_chunk(curr_segs, curr_idx, media_type_val))
+                    curr_idx += 1
+                    curr_segs = []
+                    curr_len = 0
+
+                sentences = re.split(r"(?<=[.!?])\s+", seg_text)
+                sub_texts = []
+                sub_len = 0
+                s_start = getattr(seg, "timestamp_start", 0.0) or 0.0
+                s_end = getattr(seg, "timestamp_end", s_start + 30.0) or (s_start + 30.0)
+                seg_dur = max(1.0, s_end - s_start)
+                tot_chars = max(1, len(seg_text))
+
+                char_acc = 0
+                for sent in sentences:
+                    sent = sent.strip()
+                    if not sent:
+                        continue
+                    if sub_len + len(sent) > chunk_size and sub_texts:
+                        c_text = " ".join(sub_texts)
+                        t_s = s_start + ((char_acc - sub_len) / tot_chars) * seg_dur
+                        t_e = s_start + (char_acc / tot_chars) * seg_dur
+                        chunks.append(_create_media_chunk_from_text(
+                            c_text, curr_idx, t_s, t_e, getattr(seg, "speaker", None), media_type_val
+                        ))
+                        curr_idx += 1
+                        sub_texts = [sent]
+                        sub_len = len(sent)
+                    else:
+                        sub_texts.append(sent)
+                        sub_len += len(sent) + 1
+                    char_acc += len(sent) + 1
+
+                if sub_texts:
+                    c_text = " ".join(sub_texts)
+                    t_s = s_start + (max(0, tot_chars - sub_len) / tot_chars) * seg_dur
+                    t_e = s_end
+                    chunks.append(_create_media_chunk_from_text(
+                        c_text, curr_idx, t_s, t_e, getattr(seg, "speaker", None), media_type_val
+                    ))
+                    curr_idx += 1
+                continue
+
+            if curr_len + len(seg_text) > chunk_size and curr_segs:
+                chunks.append(_create_media_chunk(curr_segs, curr_idx, media_type_val))
+                curr_idx += 1
+
+                # Overlap handling
+                if len(curr_segs[-1].text) <= overlap:
+                    curr_segs = [curr_segs[-1], seg]
+                    curr_len = len(curr_segs[0].text) + len(seg_text) + 1
+                else:
+                    curr_segs = [seg]
+                    curr_len = len(seg_text)
+            else:
+                curr_segs.append(seg)
+                curr_len += len(seg_text) + 1
+
+        if curr_segs:
+            chunks.append(_create_media_chunk(curr_segs, curr_idx, media_type_val))
+            curr_idx += 1
+
+        return chunks
+
+    # Otherwise: group by page_number or plain text
+    page_dict: Dict[int, List[str]] = {}
+    for s in segments:
+        p_num = getattr(s, "page_number", 1) or 1
+        page_dict.setdefault(p_num, []).append(s.text)
+
+    pages_data = [(p_num, "\n\n".join(texts)) for p_num, texts in sorted(page_dict.items())]
+    return build_semantic_chunks(pages_data, chunk_size, overlap)
+
+
+def build_semantic_chunks(
+    pages_or_text: Union[List[Tuple[int, str]], str, Any],
+    chunk_size: int = 800,
+    overlap: int = 150
+) -> List[EnrichedChunk]:
+    """
+    Primary chunking entry point. Accepts:
+    1. A NormalizedContent object (preserves timestamps/pages).
+    2. A list of (page_number, text) tuples from PDF extraction.
+    3. A single raw text string (from web scrape, YouTube transcript, or notes).
 
     Produces a flat list of EnrichedChunks with continuous indices, page numbers,
-    structural headings, and detected content types.
+    structural headings, timestamps (if media), and detected content types.
     """
+    if hasattr(pages_or_text, "segments"):
+        return chunk_normalized_content(pages_or_text, chunk_size, overlap)
+
     if isinstance(pages_or_text, str):
         pages_data = [(1, pages_or_text)]
     else:

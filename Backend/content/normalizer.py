@@ -297,10 +297,45 @@ class ContentNormalizer:
             else:
                 return cls.normalize_pdf([(1, str(data))], title=title, metadata=meta)
         elif st in ("youtube", "yt"):
+            vid = meta.get("video_id", "")
             if isinstance(data, list):
-                return cls.normalize_youtube(data, title=title, video_id=meta.get("video_id", ""), metadata=meta)
+                if data and isinstance(data[0], ContentSegment):
+                    for s in data:
+                        if hasattr(s, "metadata") and isinstance(s.metadata, dict):
+                            s.metadata.setdefault("source_type", "youtube")
+                            if vid:
+                                s.metadata.setdefault("video_id", vid)
+                    raw = " ".join(s.text for s in data)
+                    return NormalizedContent(
+                        title=title,
+                        media_type=MediaType.YOUTUBE,
+                        content_hash=compute_sha256(raw),
+                        raw_text=raw,
+                        segments=data,
+                        metadata=meta
+                    )
+                else:
+                    return cls.normalize_youtube(data, title=title, video_id=vid, metadata=meta)
             else:
-                return cls.normalize_text(str(data), title=title, metadata=meta)
+                from .transcription import extract_timestamped_segments
+                segs = extract_timestamped_segments(str(data))
+                if segs and any(getattr(s, "timestamp_start", None) is not None for s in segs):
+                    for s in segs:
+                        if hasattr(s, "metadata") and isinstance(s.metadata, dict):
+                            s.metadata["source_type"] = "youtube"
+                            if vid:
+                                s.metadata["video_id"] = vid
+                    raw = str(data)
+                    return NormalizedContent(
+                        title=title,
+                        media_type=MediaType.YOUTUBE,
+                        content_hash=compute_sha256(raw),
+                        raw_text=raw,
+                        segments=segs,
+                        metadata=meta
+                    )
+                else:
+                    return cls.normalize_text(str(data), title=title, metadata=meta)
         elif st == "audio":
             if isinstance(data, list) and data and isinstance(data[0], ContentSegment):
                 return cls.normalize_audio(data, title=title, metadata=meta)

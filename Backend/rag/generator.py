@@ -19,9 +19,10 @@ logger = logging.getLogger("florix.rag.generator")
 class GroundedGenerator:
     """Generates cited, grounded answers using Google Gemini with resilience fallbacks."""
 
-    def __init__(self, gemini_client, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, gemini_client, model_name: str = "gemini-2.5-flash", fallback_models: Optional[List[str]] = None):
         self.client = gemini_client
         self.model_name = model_name
+        self.fallback_models = fallback_models or ["gemini-3.5-flash-lite", "gemini-flash-latest"]
 
     def generate(
         self,
@@ -34,7 +35,7 @@ class GroundedGenerator:
         max_retries: int = 3
     ) -> GroundedResponse:
         """
-        Executes grounded generation with exponential backoff:
+        Executes grounded generation with exponential backoff and model cascading:
         1. Formats prompt with strict citation and grounding rules.
         2. Calls Gemini API.
         3. Parses citations used in text and matches with citation metadata.
@@ -48,11 +49,12 @@ class GroundedGenerator:
 
         response_text = ""
         last_error = None
+        models_to_try = [self.model_name] + [m for m in self.fallback_models if m != self.model_name]
 
-        for attempt in range(max_retries):
+        for model in models_to_try:
             try:
                 res = self.client.models.generate_content(
-                    model=self.model_name,
+                    model=model,
                     contents=prompt
                 )
                 if res and res.text:
@@ -60,9 +62,8 @@ class GroundedGenerator:
                     break
             except Exception as e:
                 last_error = e
-                wait_time = (2 ** attempt) + 0.5
-                logger.warning(f"⚠️ Gemini generate attempt {attempt + 1} failed: {e}. Retrying in {wait_time:.1f}s...")
-                time.sleep(wait_time)
+                logger.warning(f"⚠️ Gemini generate attempt on model '{model}' failed: {e}. Cascading...")
+                continue
 
         if not response_text:
             if last_error:
@@ -120,24 +121,39 @@ class GroundedGenerator:
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
 
-        try:
-            for chunk in self.client.models.generate_content_stream(
-                model=self.model_name,
-                contents=prompt,
-                config={"safety_settings": safety_settings}
-            ):
-                if chunk and chunk.text:
-                    yield f"data: {json.dumps({'token': chunk.text})}\n\n"
+        models_to_try = [self.model_name] + [m for m in self.fallback_models if m != self.model_name]
+        stream_started = False
+        last_error = None
 
-            # Send citation metadata packet right before [DONE]
-            if citations:
-                citation_payload = {
-                    "citations": [c.to_dict() for c in citations]
-                }
-                yield f"data: {json.dumps(citation_payload)}\n\n"
+        for model in models_to_try:
+            try:
+                for chunk in self.client.models.generate_content_stream(
+                    model=model,
+                    contents=prompt,
+                    config={"safety_settings": safety_settings}
+                ):
+                    if chunk and chunk.text:
+                        stream_started = True
+                        yield f"data: {json.dumps({'token': chunk.text})}\n\n"
+                if stream_started:
+                    break
+            except Exception as e:
+                last_error = e
+                logger.warning(f"⚠️ RAG streaming failed on model '{model}': {e}. Cascading if unstarted...")
+                if stream_started:
+                    # Tokens were already dispatched to the client; cannot restart mid-stream
+                    break
+                continue
 
-            yield "data: [DONE]\n\n"
-        except Exception as e:
-            logger.error(f"❌ Error during RAG streaming: {e}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            yield "data: [DONE]\n\n"
+        if not stream_started and last_error:
+            logger.error(f"❌ Error during RAG streaming across models: {last_error}")
+            yield f"data: {json.dumps({'error': 'AI engine temporarily unavailable. Please retry.'})}\n\n"
+
+        # Send citation metadata packet right before [DONE]
+        if citations:
+            citation_payload = {
+                "citations": [c.to_dict() for c in citations]
+            }
+            yield f"data: {json.dumps(citation_payload)}\n\n"
+
+        yield "data: [DONE]\n\n"

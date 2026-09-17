@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useContext, Component } from 'react';
 import {
   Send, Mic, MicOff, Bot, User, Loader2, AlertCircle, Sparkles,
-  Zap, BookOpen, Lightbulb, Award, FileText, Cpu, HelpCircle, ArrowRight
+  Zap, BookOpen, Lightbulb, Award, FileText, Cpu, HelpCircle, ArrowRight,
+  Copy, Check, ChevronDown, ChevronUp
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '../utils/api';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { PreferencesContext } from '../context/PreferencesContext';
 
@@ -20,8 +22,8 @@ class ChatErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm flex items-center gap-2">
-          <AlertCircle size={16} /> Error rendering message.
+        <div className="p-3 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-xl text-xs flex items-center gap-2">
+          <AlertCircle size={14} /> Error rendering message content.
         </div>
       );
     }
@@ -29,42 +31,243 @@ class ChatErrorBoundary extends Component {
   }
 }
 
-// ── Memoized Message Item (Prevents ReactMarkdown AST Re-parse on input/stream) ──
+// ── Markdown Normalizer for Academic Tutor Output ──
+const formatTutorMarkdown = (rawText) => {
+  if (!rawText || typeof rawText !== 'string') return '';
+  
+  const parts = rawText.split(/(```[\s\S]*?```)/g);
+  return parts.map((part, index) => {
+    if (index % 2 === 1) return part; // code block, preserve untouched
+    
+    // Ensure any heading that follows text or single newline has a double newline before it
+    return part
+      .replace(/([^#\n])[ \t]*(#{1,6}\s+[^\n]+)/g, '$1\n\n$2')
+      .replace(/([^#\n])\n(#{1,6}\s+[^\n]+)/g, '$1\n\n$2');
+  }).join('');
+};
+
+// ── Custom Academic Components for ReactMarkdown ──
+/* eslint-disable no-unused-vars */
+const tutorMarkdownComponents = {
+  h1: ({ node, ...props }) => (
+    <h3 className="text-sm md:text-base font-bold text-slate-900 dark:text-zinc-100 mt-4 mb-2 pb-1 border-b border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-1.5" {...props} />
+  ),
+  h2: ({ node, ...props }) => (
+    <h4 className="text-xs md:text-sm font-bold text-indigo-700 dark:text-indigo-300 mt-3.5 mb-1.5 flex items-center gap-1.5" {...props} />
+  ),
+  h3: ({ node, ...props }) => (
+    <h5 className="text-xs font-semibold text-slate-800 dark:text-zinc-200 mt-3 mb-1" {...props} />
+  ),
+  p: ({ node, ...props }) => (
+    <p className="text-xs md:text-[13px] leading-relaxed text-slate-700 dark:text-zinc-300 mb-2.5 last:mb-0" {...props} />
+  ),
+  ul: ({ node, ...props }) => (
+    <ul className="space-y-1.5 my-2.5 pl-4 list-disc text-xs md:text-[13px] text-slate-700 dark:text-zinc-300 marker:text-indigo-500" {...props} />
+  ),
+  ol: ({ node, ...props }) => (
+    <ol className="space-y-1.5 my-2.5 pl-4 list-decimal text-xs md:text-[13px] text-slate-700 dark:text-zinc-300 marker:text-indigo-500 marker:font-semibold" {...props} />
+  ),
+  li: ({ node, ...props }) => (
+    <li className="leading-relaxed pl-0.5" {...props} />
+  ),
+  strong: ({ node, ...props }) => (
+    <strong className="font-semibold text-slate-900 dark:text-zinc-100" {...props} />
+  ),
+  blockquote: ({ node, ...props }) => (
+    <blockquote className="border-l-2 border-indigo-500 pl-3 py-1.5 my-2.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-r-lg text-xs italic text-slate-600 dark:text-zinc-400" {...props} />
+  ),
+  code: ({ node, inline, className, children, ...props }) => {
+    if (inline) {
+      return (
+        <code className="px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-mono border border-indigo-200/50 dark:border-indigo-800/50" {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <pre className="p-3 rounded-xl bg-slate-900 text-slate-100 text-xs font-mono overflow-x-auto my-2.5 border border-slate-800 custom-scrollbar">
+        <code {...props}>{children}</code>
+      </pre>
+    );
+  },
+  table: ({ node, ...props }) => (
+    <div className="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-zinc-800">
+      <table className="w-full text-xs text-left" {...props} />
+    </div>
+  ),
+  th: ({ node, ...props }) => (
+    <th className="px-3 py-2 bg-slate-100 dark:bg-zinc-800 font-semibold text-slate-700 dark:text-zinc-200 border-b border-slate-200 dark:border-zinc-700" {...props} />
+  ),
+  td: ({ node, ...props }) => (
+    <td className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800 text-slate-600 dark:text-zinc-300" {...props} />
+  ),
+};
+/* eslint-enable no-unused-vars */
+
+// ── Copy Button ──
+const CopyButton = ({ text }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      type="button"
+      title={copied ? "Copied to clipboard" : "Copy answer"}
+      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100 bg-slate-100/70 hover:bg-slate-200/80 dark:bg-zinc-800/60 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+    >
+      {copied ? (
+        <>
+          <Check size={12} className="text-emerald-500" />
+          <span className="text-emerald-600 dark:text-emerald-400">Copied</span>
+        </>
+      ) : (
+        <>
+          <Copy size={12} />
+          <span>Copy</span>
+        </>
+      )}
+    </button>
+  );
+};
+
+// ── Interactive Grounded Citation Pill ──
+const CitationPill = ({ citation, index }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const page = citation.page_number;
+  const timeStr = citation.media_timestamp_str;
+  const heading = citation.section_heading;
+  const snippet = citation.snippet;
+
+  return (
+    <div className="relative inline-block text-[11px]">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all cursor-pointer font-medium ${
+          isOpen
+            ? 'bg-indigo-100/80 dark:bg-indigo-900/50 border-indigo-300 dark:border-indigo-700 text-indigo-800 dark:text-indigo-200 shadow-sm'
+            : 'bg-white dark:bg-zinc-900/80 border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-800 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30'
+        }`}
+      >
+        <FileText size={11} className="text-indigo-500 shrink-0" />
+        <span>
+          Source [{citation.source_index || index}]
+          {timeStr ? ` · ⏱ ${timeStr}` : (page ? ` · p. ${page}` : '')}
+        </span>
+        {isOpen ? <ChevronUp size={10} className="text-indigo-500" /> : <ChevronDown size={10} className="text-slate-400" />}
+      </button>
+
+      {isOpen && snippet && (
+        <motion.div
+          initial={{ opacity: 0, y: 4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          className="absolute bottom-full left-0 mb-1.5 z-30 w-72 md:w-80 p-3 rounded-xl bg-white dark:bg-zinc-900 border border-indigo-200 dark:border-indigo-800/70 shadow-xl text-left"
+        >
+          <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-100 dark:border-zinc-800">
+            <span className="font-semibold text-slate-800 dark:text-zinc-200 truncate max-w-[200px]">
+              {heading || citation.document_title || `Source ${citation.source_index || index}`}
+            </span>
+            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono">
+              {timeStr ? `Timestamp [${timeStr}]` : (page ? `Page ${page}` : '')}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-600 dark:text-zinc-300 italic leading-relaxed max-h-36 overflow-y-auto custom-scrollbar">
+            "{snippet}"
+          </p>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
+// ── Memoized Message Item (User Bubble vs Academic Tutor Card) ──
 const GlobalChatMessageBubble = React.memo(({ msg }) => {
+  if (msg.role === 'user') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className="flex justify-end w-full"
+      >
+        <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-tr-xs bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs md:text-sm font-medium shadow-sm shadow-indigo-500/20 leading-relaxed break-words">
+          {msg.text}
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95, y: 15 }}
+      initial={{ opacity: 0, scale: 0.98, y: 12 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-      className={`flex items-end gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+      className="w-full"
     >
-      {msg.role === 'bot' && (
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 flex items-center justify-center shrink-0 border border-white dark:border-zinc-800 shadow-sm">
-          <Bot size={16} className="text-indigo-600 dark:text-indigo-400" />
-        </div>
-      )}
+      <div className="w-full rounded-2xl bg-white dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800/80 p-4 md:p-5 shadow-sm shadow-slate-200/30 dark:shadow-none space-y-3">
+        {/* Card Header */}
+        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-zinc-800/80">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/30 shrink-0">
+              <Sparkles size={14} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-slate-800 dark:text-zinc-100">Florix AI</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200/40 dark:border-indigo-800/40">
+                {msg.teachingMode ? `${msg.teachingMode.charAt(0).toUpperCase() + msg.teachingMode.slice(1)} Tutor` : 'Academic Tutor'}
+              </span>
+            </div>
+          </div>
 
-      <div className={`max-w-[85%] md:max-w-[75%] p-5 rounded-3xl shadow-sm backdrop-blur-sm ${
-        msg.role === 'user'
-          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-br-sm shadow-indigo-500/20'
-          : 'bg-white/90 dark:bg-zinc-900/90 border border-slate-100 dark:border-zinc-800/50 text-slate-800 dark:text-zinc-200 rounded-bl-sm shadow-slate-200/20 dark:shadow-none'
-      }`}>
-        <div className={`prose prose-sm md:prose-base dark:prose-invert max-w-none ${
-          msg.role === 'user' ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white' : ''
-        }`}>
+          <div className="flex items-center gap-2">
+            {msg.isGrounded && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60">
+                <Check size={10} className="stroke-[3]" /> Grounded
+              </span>
+            )}
+            <CopyButton text={msg.text} />
+          </div>
+        </div>
+
+        {/* Formatted Content */}
+        <div className="text-slate-800 dark:text-zinc-200">
           <ChatErrorBoundary>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {String(msg.text || "")}
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={tutorMarkdownComponents}
+            >
+              {formatTutorMarkdown(String(msg.text || ""))}
             </ReactMarkdown>
           </ChatErrorBoundary>
         </div>
+
+        {/* Grounded Sources & Citations */}
+        {msg.citations && msg.citations.length > 0 && (
+          <div className="pt-3 border-t border-slate-100 dark:border-zinc-800/80">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-zinc-400 mb-2">
+              <BookOpen size={12} className="text-indigo-500 shrink-0" />
+              <span>Verified Sources ({msg.citations.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {msg.citations.map((citation, cIdx) => (
+                <CitationPill key={cIdx} citation={citation} index={cIdx + 1} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );
 }, (prev, next) => (
   (prev.msg.id ? prev.msg.id === next.msg.id : true) &&
   prev.msg.text === next.msg.text &&
-  prev.msg.role === next.msg.role
+  prev.msg.role === next.msg.role &&
+  (prev.msg.citations?.length === next.msg.citations?.length)
 ));
 
 const GlobalChatTab = ({ sessionId, documentTitle }) => {
@@ -145,6 +348,7 @@ const GlobalChatTab = ({ sessionId, documentTitle }) => {
       } else {
         // Graceful fallback — no browser alert
         setMessages(prev => [...prev, {
+          id: Date.now() + Math.random(),
           role: 'bot',
           text: '⚠️ Voice input is not supported in your browser. Please type your message instead. (Try Chrome or Edge for voice support.)'
         }]);
@@ -157,7 +361,7 @@ const GlobalChatTab = ({ sessionId, documentTitle }) => {
 
     const userMessage = textToSend.trim();
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
+    setMessages(prev => [...prev, { id: Date.now() + Math.random(), role: 'user', text: userMessage }]);
     setIsLoading(true);
 
     try {
@@ -167,9 +371,29 @@ const GlobalChatTab = ({ sessionId, documentTitle }) => {
       };
       if (sessionId) payload.session_id = sessionId;
       const response = await api.post('/chat', payload);
-      setMessages(prev => [...prev, { role: 'bot', text: response.data.reply || "No reply" }]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now() + Math.random(),
+          role: 'bot',
+          text: response.data.reply || "No reply",
+          citations: response.data.citations || [],
+          isGrounded: response.data.is_grounded,
+          sourcesUsed: response.data.sources_used,
+          intent: response.data.intent,
+          teachingMode: response.data.teaching_mode
+        }
+      ]);
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'bot', text: "I'm sorry, I encountered an error connecting to my neural network. Please try again." }]);
+      const errDetail = error.response?.data?.detail || error.message || "Error connecting to neural network";
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now() + Math.random(),
+          role: 'bot',
+          text: `⚠️ I encountered an error connecting to my neural network: ${errDetail}. Please try again.`
+        }
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -288,24 +512,32 @@ const GlobalChatTab = ({ sessionId, documentTitle }) => {
         {/* Loading Indicator */}
         {isLoading && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-            className="flex items-end gap-3"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full rounded-2xl bg-white dark:bg-zinc-900/90 border border-indigo-100 dark:border-indigo-900/40 p-4 shadow-sm"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 flex items-center justify-center shrink-0 border border-white dark:border-zinc-800 shadow-sm">
-              <Bot size={16} className="text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div className="bg-white/90 dark:bg-zinc-900/90 border border-slate-100 dark:border-zinc-800/50 p-4 rounded-3xl rounded-bl-sm flex gap-1.5 items-center shadow-sm">
-              <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-2 h-2 bg-indigo-500 rounded-full" />
-              <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-2 h-2 bg-indigo-500 rounded-full" />
-              <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-2 h-2 bg-indigo-500 rounded-full" />
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-sm shrink-0 animate-pulse">
+                <Sparkles size={14} />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                  Florix AI is analyzing your study material...
+                </div>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
+                  <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
+                  <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
         <div className="h-2" />
       </div>
 
-      {/* Premium Input Area */}
-      <div className="p-3 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-xl border-t border-slate-100/60 dark:border-zinc-800/60 shrink-0">
+      {/* Input Area */}
+      <div className="p-3 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl border-t border-slate-200/60 dark:border-zinc-800/60 shrink-0">
         <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative flex items-center">
           <motion.button
             type="button"
@@ -320,7 +552,13 @@ const GlobalChatTab = ({ sessionId, documentTitle }) => {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isListening ? "Listening..." : "Message Florix AI..."}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder={isListening ? "Listening..." : isLoading ? "Florix AI is synthesizing..." : "Ask your academic tutor a question..."}
             className="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-slate-800 dark:text-zinc-200 text-xs md:text-sm transition-all font-medium placeholder:text-slate-400"
           />
 
@@ -328,13 +566,13 @@ const GlobalChatTab = ({ sessionId, documentTitle }) => {
             type="submit"
             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
             disabled={!input.trim() || isLoading}
-            className="absolute right-2 p-1.5 bg-gradient-to-br from-indigo-600 to-purple-600 disabled:from-slate-300 disabled:to-slate-300 dark:disabled:from-zinc-700 dark:disabled:to-zinc-700 text-white rounded-lg shadow-sm transition-all disabled:shadow-none flex items-center justify-center z-10"
+            className="absolute right-2 p-1.5 bg-gradient-to-br from-indigo-600 to-purple-600 disabled:from-slate-300 disabled:to-slate-300 dark:disabled:from-zinc-700 dark:disabled:to-zinc-700 text-white rounded-lg shadow-sm transition-all disabled:shadow-none flex items-center justify-center z-10 cursor-pointer disabled:cursor-not-allowed"
           >
             {isLoading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
           </motion.button>
         </form>
         <p className="text-center text-[10px] text-slate-400 dark:text-zinc-500 mt-1.5 font-medium">
-          Florix AI can make mistakes. Consider verifying important information.
+          Florix AI academic tutor · Grounded answers with source citations
         </p>
       </div>
     </motion.div>

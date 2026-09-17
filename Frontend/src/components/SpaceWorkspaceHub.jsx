@@ -47,6 +47,15 @@ const SpaceWorkspaceHub = ({
   const [isCreatingSubchat, setIsCreatingSubchat] = useState(false);
   const [newSubchatTitle, setNewSubchatTitle] = useState('');
 
+  // Space Quiz Review Modal state
+  const [selectedQuizReview, setSelectedQuizReview] = useState(null);
+
+  // Master Flashcards state
+  const [cardSourceFilter, setCardSourceFilter] = useState('all');
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [isCardFlipped, setIsCardFlipped] = useState(false);
+  const [masteredCards, setMasteredCards] = useState(() => new Set());
+
   useEffect(() => {
     if (spaceId) {
       fetchSpaceDetails();

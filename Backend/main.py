@@ -45,6 +45,7 @@ from auth import (
 )
 from google import genai
 from google.genai import types
+from google.genai import errors as genai_errors
 from google.api_core import exceptions as google_exceptions
 from dotenv import load_dotenv
 from pypdf import PdfReader
@@ -116,8 +117,8 @@ api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is not set")
 client = genai.Client(api_key=api_key)
-MODEL_NAME = "gemini-3.5-flash"
-MODEL_CASCADE = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL_CASCADE = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"]
 
 # ── Razorpay payment gateway ──────────────────────────────────────────────────
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
@@ -528,63 +529,82 @@ class PinChatRequest(BaseModel):
 # HELPER FUNCTIONS
 # =============================================================================
 
+def _is_quota_or_transient_error(e: Exception) -> bool:
+    """Returns True if the exception is a rate limit, quota exhaustion (429), or transient server error."""
+    if isinstance(e, genai_errors.APIError):
+        if getattr(e, "code", None) in (429, 500, 502, 503, 504):
+            return True
+    if isinstance(e, (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable, google_exceptions.InternalServerError)):
+        return True
+    err_str = str(e).lower()
+    quota_indicators = ["429", "resource_exhausted", "quota", "rate limit", "rate_limit", "503", "unavailable", "overloaded", "server error"]
+    return any(indicator in err_str for indicator in quota_indicators)
+
+
 def generate_with_fallback(prompt: str, instruction: str = "Summarize this text professionally in Markdown format") -> str:
-    """Call Gemini with exponential backoff retry on quota or unavailable demand spikes, falling back dynamically to gemini-1.5-flash."""
-    max_retries = 3
+    """Call Gemini with bounded retry on quota or unavailable demand spikes, cascading dynamically across active models."""
     safety = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
-    current_model = MODEL_NAME
-    for attempt in range(max_retries):
+    # Build unique cascade order starting with primary MODEL_NAME
+    models_to_try = []
+    for m in [MODEL_NAME] + MODEL_CASCADE:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
+
+    truncated = prompt[:15000]
+    contents = f"{instruction}:\n\n{truncated}"
+    last_err = None
+
+    for model in models_to_try:
         try:
-            truncated = prompt[:15000]
             response = client.models.generate_content(
-                model=current_model,
-                contents=f"{instruction}:\n\n{truncated}",
+                model=model,
+                contents=contents,
                 config={"safety_settings": safety},
             )
             track_gemini_tokens(response)
-            return response.text if response and response.text else "AI returned an empty response."
-        except (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable, google_exceptions.InternalServerError) as e:
-            wait = (2 ** attempt) + random.random()
-            
-            # If rate limited or service is unavailable, switch immediately to highly available fallback model
-            if attempt >= 0 and current_model != "gemini-1.5-flash":
-                logger.warning(f"Primary model {current_model} spiked or hit rate limit ({e}). Switching dynamically to fallback gemini-1.5-flash.")
-                current_model = "gemini-1.5-flash"
-                
-            logger.warning(f"Gemini error: {e}. Retrying in {wait:.1f}s (attempt {attempt+1}/{max_retries})")
-            time.sleep(wait)
-        except google_exceptions.NotFound:
-            logger.error(f"Model {current_model} not found.")
-            if current_model != "gemini-1.5-flash":
-                logger.warning("Attempting model fallback to gemini-1.5-flash.")
-                current_model = "gemini-1.5-flash"
-                continue
-            return "Error: AI model not found. Please contact support."
+            if response and response.text:
+                return response.text
+            return "AI returned an empty response."
         except Exception as e:
-            logger.error(f"Gemini exception: {e}")
-            return f"Error connecting to AI: {str(e)}"
-    return "The AI engine is currently experiencing high demand. Please try again in a few moments."
+            last_err = e
+            if _is_quota_or_transient_error(e):
+                logger.warning(f"⚠️ Gemini model '{model}' hit rate limit/quota or transient error ({e}). Cascading to next available model...")
+                continue
+            elif (isinstance(e, google_exceptions.NotFound) or 
+                  (isinstance(e, genai_errors.APIError) and getattr(e, "code", None) == 404)):
+                logger.warning(f"⚠️ Gemini model '{model}' not found (404). Cascading to next available model...")
+                continue
+            else:
+                logger.error(f"❌ Gemini non-retryable exception on model '{model}': {e}")
+                break
+
+    logger.error(f"❌ All generation models in cascade failed. Last error: {last_err}")
+    return "The AI engine is currently experiencing high demand or quota limits. Please try again in a few moments."
 
 
 def generate_multimodal(image_bytes: bytes, mime_type: str, instruction: str) -> str:
-    """Call Gemini with an image for multimodal vision analysis, with retry backoffs."""
-    max_retries = 3
+    """Call Gemini with an image for multimodal vision analysis, cascading across active models."""
     safety = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
-    current_model = "gemini-2.5-flash"  # Highly performant at vision/multimodal!
-    for attempt in range(max_retries):
+    models_to_try = []
+    for m in ["gemini-2.5-flash", MODEL_NAME] + MODEL_CASCADE:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
+
+    last_err = None
+    for model in models_to_try:
         try:
             response = client.models.generate_content(
-                model=current_model,
+                model=model,
                 contents=[
                     types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                     instruction
@@ -592,18 +612,233 @@ def generate_multimodal(image_bytes: bytes, mime_type: str, instruction: str) ->
                 config={"safety_settings": safety},
             )
             track_gemini_tokens(response)
-            return response.text if response and response.text else "AI returned an empty multimodal response."
-        except (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable, google_exceptions.InternalServerError) as e:
-            wait = (2 ** attempt) + random.random()
-            if attempt >= 0 and current_model != "gemini-1.5-flash":
-                logger.warning(f"Primary vision model {current_model} spiked/errored. Switching dynamically to gemini-1.5-flash.")
-                current_model = "gemini-1.5-flash"
-            logger.warning(f"Gemini vision error: {e}. Retrying in {wait:.1f}s (attempt {attempt+1}/{max_retries})")
-            time.sleep(wait)
+            if response and response.text:
+                return response.text
+            return "AI returned an empty multimodal response."
         except Exception as e:
-            logger.error(f"Multimodal exception: {e}")
-            return f"Error analyzing image: {str(e)}"
+            last_err = e
+            if _is_quota_or_transient_error(e):
+                logger.warning(f"⚠️ Vision model '{model}' hit quota or transient error ({e}). Cascading...")
+                continue
+            logger.error(f"❌ Multimodal exception on model '{model}': {e}")
+            break
+
+    logger.error(f"❌ All multimodal models in cascade failed. Last error: {last_err}")
     return "The AI vision engine is currently experiencing high demand. Please try again later."
+
+
+# ── YouTube Ingestion Helpers (Phase 4 Hardening) ────────────────────────────
+def is_youtube_url(url: str) -> bool:
+    """Return True if the URL points to YouTube (domain isolation)."""
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url.strip())
+        netloc = parsed.netloc.lower()
+        return (
+            netloc == "youtu.be"
+            or netloc.endswith(".youtube.com")
+            or netloc == "youtube.com"
+        )
+    except Exception:
+        return False
+
+
+def extract_youtube_video_id(url: str) -> Optional[str]:
+    """
+    Extract the 11-character YouTube video ID across all valid formats:
+    - https://www.youtube.com/watch?v=ID
+    - https://www.youtube.com/watch?feature=shared&v=ID
+    - https://youtu.be/ID
+    - https://www.youtube.com/shorts/ID
+    - https://www.youtube.com/embed/ID
+    - https://www.youtube.com/live/ID
+    """
+    if not url or not is_youtube_url(url):
+        return None
+    try:
+        parsed = urlparse(url.strip())
+        netloc = parsed.netloc.lower()
+
+        if netloc == "youtu.be":
+            path_parts = [p for p in parsed.path.split("/") if p]
+            if path_parts and len(path_parts[0]) == 11 and re.match(r"^[a-zA-Z0-9_-]{11}$", path_parts[0]):
+                return path_parts[0]
+
+        if netloc == "youtube.com" or netloc.endswith(".youtube.com"):
+            qs = parse_qs(parsed.query)
+            if "v" in qs and qs["v"]:
+                candidate = qs["v"][0]
+                if len(candidate) == 11 and re.match(r"^[a-zA-Z0-9_-]{11}$", candidate):
+                    return candidate
+
+            path_parts = [p for p in parsed.path.split("/") if p]
+            if len(path_parts) >= 2 and path_parts[0] in ("shorts", "embed", "live"):
+                candidate = path_parts[1]
+                if len(candidate) == 11 and re.match(r"^[a-zA-Z0-9_-]{11}$", candidate):
+                    return candidate
+
+        # Robust regex fallback
+        match = re.search(r"(?:v=|\/shorts\/|\/embed\/|\/live\/|youtu\.be\/)([a-zA-Z0-9_-]{11})", url)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        logger.warning(f"Error parsing YouTube video ID from {url}: {e}")
+    return None
+
+
+def canonicalize_youtube_url(video_id: str) -> str:
+    """Return standard canonical watch URL for a video ID."""
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def fetch_youtube_transcript_api(video_id: str) -> Optional[List[dict]]:
+    """
+    Tier 1: Fetch captions/transcript using youtube-transcript-api.
+    Returns a list of transcript segment dicts [{'text': ..., 'start': ..., 'duration': ...}] or None.
+    """
+    try:
+        try:
+            ytt = YouTubeTranscriptApi()
+            t_list = ytt.list(video_id)
+            transcript = None
+            try:
+                transcript = t_list.find_transcript(['en', 'en-US', 'en-GB'])
+            except Exception:
+                for t in t_list:
+                    transcript = t
+                    break
+            if transcript:
+                fetched = transcript.fetch()
+                items = []
+                for item in fetched:
+                    it_text = item["text"] if isinstance(item, dict) else getattr(item, "text", str(item))
+                    it_start = float(item.get("start", 0.0)) if isinstance(item, dict) else float(getattr(item, "start", 0.0))
+                    it_dur = float(item.get("duration", 0.0)) if isinstance(item, dict) else float(getattr(item, "duration", 0.0))
+                    if it_text and it_text.strip():
+                        items.append({"text": it_text.strip(), "start": it_start, "duration": it_dur})
+                if items:
+                    return items
+        except (AttributeError, TypeError):
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+            items = []
+            for t in transcript_list:
+                it_text = t.get("text", "")
+                it_start = float(t.get("start", 0.0))
+                it_dur = float(t.get("duration", 0.0))
+                if it_text and it_text.strip():
+                    items.append({"text": it_text.strip(), "start": it_start, "duration": it_dur})
+            if items:
+                return items
+    except Exception as e:
+        logger.warning(f"Tier 1 (youtube-transcript-api) failed for video {video_id}: {e}")
+    return None
+
+
+def fetch_youtube_transcript_gemini(canonical_url: str) -> Optional[List[dict]]:
+    """
+    Tier 2: Fetch transcript and content via Gemini native multimodal YouTube understanding.
+    Uses Part.from_uri with models/gemini-3.5-flash-lite / gemini-2.5-flash.
+    Returns list of dicts [{'text': ..., 'start': ..., 'duration': ...}] or None.
+    """
+    prompt = (
+        "Extract a comprehensive, chronological, timestamped transcript of this video. "
+        "Identify every spoken section or major topic transition with accurate start and end timestamps in seconds. "
+        "Return your output as a valid JSON array of objects, where each object has:\n"
+        "- 'start': float (start time in seconds)\n"
+        "- 'duration': float (duration in seconds)\n"
+        "- 'text': string (spoken words or detailed discussion at this timestamp)\n"
+        "- 'speaker': string (speaker name or 'Speaker', optional)\n\n"
+        "Example JSON:\n"
+        '[{"start": 0.0, "duration": 15.0, "text": "Introduction to the topic"}, {"start": 15.0, "duration": 30.0, "text": "Core concept discussion"}]\n\n'
+        "Return ONLY the valid JSON array without markdown backticks or explanation."
+    )
+
+    models_to_try = ["gemini-3.5-flash-lite", "gemini-2.5-flash", MODEL_NAME]
+    seen = set()
+    unique_models = [m for m in models_to_try if m and not (m in seen or seen.add(m))]
+
+    for model in unique_models:
+        try:
+            video_part = types.Part.from_uri(file_uri=canonical_url, mime_type="video/mp4")
+            response = client.models.generate_content(
+                model=model,
+                contents=[prompt, video_part],
+            )
+            track_gemini_tokens(response)
+            if response and response.text:
+                raw_text = response.text.strip()
+                clean_json = raw_text
+                if clean_json.startswith("```json"):
+                    clean_json = clean_json[7:]
+                elif clean_json.startswith("```"):
+                    clean_json = clean_json[3:]
+                if clean_json.endswith("```"):
+                    clean_json = clean_json[:-3]
+                clean_json = clean_json.strip()
+
+                try:
+                    parsed = json.loads(clean_json)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        items = []
+                        for obj in parsed:
+                            if isinstance(obj, dict):
+                                start = float(obj.get("start", 0.0))
+                                dur = float(obj.get("duration", 10.0))
+                                txt = str(obj.get("text", "")).strip()
+                                spk = obj.get("speaker")
+                                if txt:
+                                    item = {"text": txt, "start": start, "duration": dur}
+                                    if spk:
+                                        item["speaker"] = spk
+                                    items.append(item)
+                        if items:
+                            logger.info(f"✅ Tier 2 Gemini native video extraction succeeded ({len(items)} segments) using {model}")
+                            return items
+                except json.JSONDecodeError:
+                    pass
+
+                # Fallback: Parse regex timestamps from raw lines
+                lines = raw_text.split("\n")
+                items = []
+                for line in lines:
+                    ts_match = re.search(r"\[(\d{1,2}):(\d{2})\s*(?:-\s*(\d{1,2}):(\d{2}))?\]\s*(.*)", line)
+                    if ts_match:
+                        sm, ss, em, es, body = ts_match.groups()
+                        start_sec = int(sm) * 60 + int(ss)
+                        if em is not None and es is not None:
+                            end_sec = int(em) * 60 + int(es)
+                            dur_sec = max(1.0, float(end_sec - start_sec))
+                        else:
+                            dur_sec = 10.0
+                        if body and body.strip():
+                            items.append({"text": body.strip(), "start": float(start_sec), "duration": dur_sec})
+                if items:
+                    logger.info(f"✅ Tier 2 Gemini regex-parsed timestamp extraction succeeded ({len(items)} segments) using {model}")
+                    return items
+        except Exception as e:
+            logger.warning(f"Tier 2 (Gemini multimodal) model '{model}' failed: {e}")
+            continue
+
+    return None
+
+
+def format_transcript_items_to_text(items: List[dict]) -> str:
+    """Format transcript segments into standardized timestamped lines."""
+    formatted_lines = []
+    for item in items:
+        it_text = item.get("text", "").strip()
+        if not it_text:
+            continue
+        it_start = float(item.get("start", 0.0))
+        it_dur = float(item.get("duration", 0.0))
+        it_end = it_start + it_dur
+        sm, ss = divmod(int(it_start), 60)
+        em, es = divmod(int(it_end), 60)
+        speaker = item.get("speaker")
+        prefix = f"{speaker}: " if speaker else ""
+        formatted_lines.append(f"[{sm:02d}:{ss:02d} - {em:02d}:{es:02d}] {prefix}{it_text}")
+    return "\n".join(formatted_lines)
 
 
 def generate_smart_title(text: str, source_type: str = "document") -> str:
@@ -867,7 +1102,7 @@ def process_upload_in_background(
             db.commit()
             update_pipeline_progress(progress_id, 2, "Content parsing", f"Video processing complete ({len(full_text)} characters)", "done")
 
-        elif source_type in ("pdf", "url", "text"):
+        elif source_type in ("pdf", "url", "text", "youtube"):
             # Text was parsed synchronously in HTTP thread. Just generate summary now.
             update_pipeline_progress(progress_id, 2, "Content parsing", "Text content ready", "done")
             update_pipeline_progress(progress_id, 6, "AI summary generation", "Running study guide generator...", "active")
@@ -878,6 +1113,12 @@ def process_upload_in_background(
                     "comprehensive, well-structured study guide in Markdown format. Include: "
                     "# Main Title, ## Key Concepts, ## Summary, ## Important Points (bullet list), "
                     "## Key Terms (definition list). Make it useful for students studying for exams."
+                )
+            elif source_type == "youtube":
+                instruction = (
+                    "You are an expert educational content creator. Based on this YouTube video transcript, "
+                    "create a comprehensive study guide in Markdown format with: "
+                    "# Video Title, ## Key Topics Covered, ## Summary, ## Important Points, ## Key Takeaways."
                 )
             elif source_type == "url":
                 if "youtube.com" in text or "youtu.be" in text or session.filename.lower().startswith("youtube"):
@@ -3112,57 +3353,41 @@ async def process_link(
     update_pipeline_progress(progress_id, 1, "File received", f"Received URL to process: {url}", "done")
     update_pipeline_progress(progress_id, 2, "Content parsing", "Fetching and parsing website/YouTube content...", "active")
 
-    # ── YouTube ──
-    yt_match = re.search(r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})", url)
-    if yt_match:
-        video_id = yt_match.group(1)
-        try:
-            text = ""
-            try:
-                ytt = YouTubeTranscriptApi()
-                t_list = ytt.list(video_id)
-                transcript = None
-                try:
-                    transcript = t_list.find_transcript(['en', 'en-US', 'en-GB'])
-                except Exception:
-                    for t in t_list:
-                        transcript = t
-                        break
-                if transcript:
-                    fetched = transcript.fetch()
-                    formatted_lines = []
-                    for item in fetched:
-                        it_text = item["text"] if isinstance(item, dict) else getattr(item, "text", str(item))
-                        it_start = float(item.get("start", 0.0)) if isinstance(item, dict) else float(getattr(item, "start", 0.0))
-                        it_dur = float(item.get("duration", 0.0)) if isinstance(item, dict) else float(getattr(item, "duration", 0.0))
-                        it_end = it_start + it_dur
-                        sm, ss = divmod(int(it_start), 60)
-                        em, es = divmod(int(it_end), 60)
-                        formatted_lines.append(f"[{sm:02d}:{ss:02d} - {em:02d}:{es:02d}] {it_text.strip()}")
-                    text = "\n".join(formatted_lines)
-            except AttributeError:
-                transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-                formatted_lines = []
-                for t in transcript_list:
-                    it_text = t.get("text", "")
-                    it_start = float(t.get("start", 0.0))
-                    it_dur = float(t.get("duration", 0.0))
-                    it_end = it_start + it_dur
-                    sm, ss = divmod(int(it_start), 60)
-                    em, es = divmod(int(it_end), 60)
-                    formatted_lines.append(f"[{sm:02d}:{ss:02d} - {em:02d}:{es:02d}] {it_text.strip()}")
-                text = "\n".join(formatted_lines)
-        except Exception as e:
-            error_str = str(e).lower()
-            if "no transcript" in error_str or "disabled" in error_str:
-                raise HTTPException(status_code=422, detail="This YouTube video has no available transcript. Subtitles/captions may be disabled by the creator.")
-            elif "video unavailable" in error_str or "not found" in error_str:
-                raise HTTPException(status_code=422, detail="This YouTube video is unavailable, private, or does not exist.")
-            else:
-                raise HTTPException(status_code=422, detail=f"Could not fetch YouTube transcript: {str(e)}")
+    # ── YouTube Processing with Strict Domain Isolation ──
+    if is_youtube_url(url):
+        video_id = extract_youtube_video_id(url)
+        if not video_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid YouTube URL format. Could not locate a valid 11-character video ID."
+            )
+        canonical_url = canonicalize_youtube_url(video_id)
 
+        # Tier 1: youtube-transcript-api
+        update_pipeline_progress(progress_id, 2, "Content parsing", "Attempting automated transcript retrieval...", "active")
+        transcript_items = fetch_youtube_transcript_api(video_id)
+        tier_used = "Tier 1 (youtube-transcript-api)"
+
+        if not transcript_items:
+            # Tier 2: Gemini Native Multimodal Video Understanding
+            logger.info("⚠️ Tier 1 unavailable/blocked. Cascading to Tier 2 Gemini native video understanding...")
+            update_pipeline_progress(progress_id, 2, "Content parsing", "Running Gemini multimodal video analysis...", "active")
+            transcript_items = fetch_youtube_transcript_gemini(canonical_url)
+            tier_used = "Tier 2 (Gemini Multimodal Video Understanding)"
+
+        if not transcript_items:
+            # Strict domain isolation: DO NOT fall through to BeautifulSoup web scraping!
+            raise HTTPException(
+                status_code=422,
+                detail="Could not extract video transcript or content from this YouTube link. Automated captions were unavailable and AI video analysis could not process the video. The video may be private, age-restricted, or blocked."
+            )
+
+        text = format_transcript_items_to_text(transcript_items)
         if not text or not text.strip():
-            raise HTTPException(status_code=422, detail="YouTube transcript is empty. The video may not have any spoken content.")
+            raise HTTPException(
+                status_code=422,
+                detail="YouTube transcript is empty. The video may not contain spoken content."
+            )
 
         # Truncate to plan-based link character limit
         plan = current_user.plan or "free"
@@ -3170,25 +3395,21 @@ async def process_link(
         if max_link_chars != -1 and len(text) > max_link_chars:
             text = text[:max_link_chars]
 
-        instruction = (
-            "You are an expert educational content creator. Based on this YouTube video transcript, "
-            "create a comprehensive study guide in Markdown format with: "
-            "# Video Title, ## Key Topics Covered, ## Summary, ## Important Points, ## Key Takeaways."
-        )
-        update_pipeline_progress(progress_id, 2, "Content parsing", f"Fetched YouTube transcript successfully ({len(text)} characters)", "done")
-        update_pipeline_progress(progress_id, 6, "AI summary generation", "Generating study guide from YouTube video transcript...", "active")
         # Fetch real YouTube video title via official oEmbed API
         yt_title = f"YouTube: {video_id}"
         try:
-            oembed_resp = requests.get(f"https://www.youtube.com/oembed?url={url}&format=json", timeout=4)
+            oembed_resp = requests.get(f"https://www.youtube.com/oembed?url={canonical_url}&format=json", timeout=4)
             if oembed_resp.status_code == 200:
                 fetched_title = oembed_resp.json().get("title", "").strip()
                 if fetched_title:
                     yt_title = fetched_title
         except Exception:
             pass
+
         title = yt_title
         source_type = "youtube"
+        update_pipeline_progress(progress_id, 2, "Content parsing", f"Extracted YouTube content via {tier_used} ({len(text)} chars)", "done")
+        update_pipeline_progress(progress_id, 6, "AI summary generation", "Queued study guide generation...", "active")
     else:
         # ── Web URL ──
         try:
@@ -3224,21 +3445,15 @@ async def process_link(
         if not text or len(text.strip()) < 50:
             raise HTTPException(status_code=422, detail="The webpage returned very little readable content. It may require login, use heavy JavaScript rendering, or be a restricted page.")
 
-        instruction = (
-            "You are an expert at distilling web content into study material. "
-            "Analyze this web page content and create a comprehensive study guide in Markdown format with: "
-            "# Page Title, ## Key Points, ## Summary, ## Important Information."
-        )
         update_pipeline_progress(progress_id, 2, "Content parsing", f"Scraped webpage successfully ({len(text)} characters)", "done")
-        update_pipeline_progress(progress_id, 6, "AI summary generation", "Generating study guide from webpage content...", "active")
-        summary = generate_with_fallback(text, instruction)
+        update_pipeline_progress(progress_id, 6, "AI summary generation", "Queued study guide generation from webpage content...", "active")
         source_type = "url"
 
     # ── YouTube / Link Timeline & Basic Save ──
     display_title = title[:100]
     initial_timeline = [{"event": f"Processed {source_type.upper()}", "timestamp": datetime.utcnow().isoformat(), "detail": f"Source URL: {url}"}]
 
-    assigned_space_id = ensure_session_space(db, current_user.id, request.project_id, display_title, "youtube" if yt_match else "web")
+    assigned_space_id = ensure_session_space(db, current_user.id, request.project_id, display_title, "youtube" if source_type == "youtube" else "web")
     new_session = StudySession(
         filename=display_title, ai_title=None, summary="Processing...", content=text,
         user_id=current_user.id, source_type=source_type,
@@ -3247,7 +3462,7 @@ async def process_link(
         project_id=assigned_space_id,
     )
     db.add(new_session)
-    log_activity(db, current_user.id, f"Processed {'YouTube Video' if yt_match else 'Web URL'}", f"Analyzed: {display_title[:60]}")
+    log_activity(db, current_user.id, f"Processed {'YouTube Video' if source_type == 'youtube' else 'Web URL'}", f"Analyzed: {display_title[:60]}")
     db.commit()
     db.refresh(new_session)
 

@@ -1,5 +1,5 @@
 # pyrefly: ignore [missing-import]
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean, Enum as SAEnum
+from sqlalchemy import create_engine, Column, Integer, Float, String, Text, DateTime, ForeignKey, JSON, Boolean, Enum as SAEnum, UniqueConstraint
 # pyrefly: ignore [missing-import]
 from sqlalchemy.ext.declarative import declarative_base
 # pyrefly: ignore [missing-import]
@@ -50,6 +50,8 @@ class User(Base):
     flashcard_progress = relationship("FlashcardProgress", back_populates="user", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
     feedbacks = relationship("Feedback", back_populates="user", cascade="all, delete-orphan")
+    topic_mastery = relationship("LearnerTopicMastery", back_populates="user", cascade="all, delete-orphan")
+    learning_events = relationship("LearningEvent", back_populates="user", cascade="all, delete-orphan")
 
 class StudySession(Base):
     __tablename__ = "study_sessions"
@@ -77,6 +79,13 @@ class StudySession(Base):
     flashcards = Column(JSON, default=lambda: [])
     scores     = Column(JSON, default=lambda: [])
 
+    # Phase 2 — Academic RAG Engine enhancements
+    processing_status = Column(String, default="READY", index=True)  # UPLOADED|EXTRACTING|CHUNKING|EMBEDDING|INDEXING|READY|FAILED
+    processing_error = Column(Text, nullable=True)
+    page_count = Column(Integer, default=1)
+    char_count = Column(Integer, default=0)
+    doc_metadata = Column(JSON, default=lambda: {})
+
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
 
@@ -86,6 +95,8 @@ class StudySession(Base):
     bookmarks = relationship("Bookmark", back_populates="session", cascade="all, delete-orphan")
     chunks = relationship("DocumentChunk", back_populates="session", cascade="all, delete-orphan")
     flashcard_progress = relationship("FlashcardProgress", back_populates="session", cascade="all, delete-orphan")
+    topic_mastery = relationship("LearnerTopicMastery", back_populates="session", cascade="all, delete-orphan")
+    learning_events = relationship("LearningEvent", back_populates="session", cascade="all, delete-orphan")
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
@@ -93,6 +104,12 @@ class DocumentChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     text_content = Column(Text, nullable=False)
     embedding = Column(JSON, nullable=False)  # Stores the 3072-dimensional float list as JSON
+
+    # Phase 2 — Academic RAG metadata
+    page_number = Column(Integer, default=1, nullable=True)
+    section_heading = Column(String, nullable=True)
+    content_type = Column(String, default="text")  # text|code|table|equation|definition|heading|list
+    chunk_metadata = Column(JSON, default=lambda: {})
 
     session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False)
     session = relationship("StudySession", back_populates="chunks")
@@ -238,6 +255,43 @@ class Project(Base):
     conversations = relationship("ChatConversation", back_populates="project", cascade="all, delete-orphan")
 
 
+class LearnerTopicMastery(Base):
+    """Tracks learner topic mastery score and history for adaptive study."""
+    __tablename__ = "learner_topic_mastery"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    topic = Column(String, nullable=False, index=True)
+    mastery_score = Column(Float, default=0.0)  # 0.0 to 1.0
+    attempts = Column(Integer, default=0)
+    correct = Column(Integer, default=0)
+    weak_subtopics = Column(JSON, default=lambda: [])
+    last_reviewed = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="topic_mastery")
+    session = relationship("StudySession", back_populates="topic_mastery")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "session_id", "topic", name="uq_learner_mastery_user_session_topic"),
+    )
+
+
+class LearningEvent(Base):
+    """Audit log of learner interactions (e.g. EXPLAIN, QUIZ_ATTEMPT, FLASHCARD_REVIEW)."""
+    __tablename__ = "learning_events"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=True, index=True)
+    event_type = Column(String, nullable=False)  # 'EXPLAIN' | 'QUIZ_ATTEMPT' | 'FLASHCARD_REVIEW' | 'CONCEPT_PRACTICE'
+    payload = Column(JSON, default=lambda: {})
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="learning_events")
+    session = relationship("StudySession", back_populates="learning_events")
+
+
 # TABLE CREATION TOOL
 def init_db():
     print("[INIT] Updating Database Tables...")
@@ -261,6 +315,39 @@ def init_db():
             pass
         try:
             conn.execute(text("ALTER TABLE quiz_results ADD COLUMN details TEXT"))
+            conn.commit()
+        except Exception:
+            pass
+        # Phase 2: Academic RAG columns for study_sessions
+        rag_session_cols = [
+            ("processing_status", "VARCHAR DEFAULT 'READY'"),
+            ("processing_error", "TEXT"),
+            ("page_count", "INTEGER DEFAULT 1"),
+            ("char_count", "INTEGER DEFAULT 0"),
+            ("doc_metadata", "JSON DEFAULT '{}'"),
+        ]
+        for col_name, col_type in rag_session_cols:
+            try:
+                conn.execute(text(f"ALTER TABLE study_sessions ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass
+        # Phase 2: Academic RAG columns for document_chunks
+        rag_chunk_cols = [
+            ("page_number", "INTEGER DEFAULT 1"),
+            ("section_heading", "VARCHAR"),
+            ("content_type", "VARCHAR DEFAULT 'text'"),
+            ("chunk_metadata", "JSON DEFAULT '{}'"),
+        ]
+        for col_name, col_type in rag_chunk_cols:
+            try:
+                conn.execute(text(f"ALTER TABLE document_chunks ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            except Exception:
+                pass
+        # Phase 3: Enforce uniqueness on (user_id, session_id, topic)
+        try:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_learner_mastery_user_session_topic ON learner_topic_mastery (user_id, session_id, topic)"))
             conn.commit()
         except Exception:
             pass

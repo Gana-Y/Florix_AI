@@ -30,9 +30,9 @@ uploads/
 
 # ── Test / Debug files ────────────────────────────────────────────────────────
 database.json
-test_*.py
 check_*.py
 final_test.py
+test_key.py
 
 # ── IDE ───────────────────────────────────────────────────────────────────────
 .vscode/

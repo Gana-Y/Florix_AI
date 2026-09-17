@@ -91,5 +91,35 @@ CREATE TABLE IF NOT EXISTS payment_submissions (
 """)
 conn.commit()
 
+# Phase 2 — Academic RAG Engine Migrations
+print("Checking Phase 2 RAG columns...")
+cursor.execute("PRAGMA table_info(study_sessions);")
+sess_cols = [row[1] for row in cursor.fetchall()]
+for col_name, col_def in [
+    ("processing_status", "VARCHAR DEFAULT 'READY'"),
+    ("processing_error", "TEXT"),
+    ("page_count", "INTEGER DEFAULT 1"),
+    ("char_count", "INTEGER DEFAULT 0"),
+    ("doc_metadata", "TEXT DEFAULT '{}'")
+]:
+    if col_name not in sess_cols:
+        print(f"Adding '{col_name}' to study_sessions...")
+        cursor.execute(f"ALTER TABLE study_sessions ADD COLUMN {col_name} {col_def};")
+        conn.commit()
+
+cursor.execute("PRAGMA table_info(document_chunks);")
+chunk_cols = [row[1] for row in cursor.fetchall()]
+for col_name, col_def in [
+    ("page_number", "INTEGER DEFAULT 1"),
+    ("section_heading", "VARCHAR"),
+    ("content_type", "VARCHAR DEFAULT 'text'"),
+    ("chunk_metadata", "TEXT DEFAULT '{}'")
+]:
+    if col_name not in chunk_cols:
+        print(f"Adding '{col_name}' to document_chunks...")
+        cursor.execute(f"ALTER TABLE document_chunks ADD COLUMN {col_name} {col_def};")
+        conn.commit()
+
 print("SUCCESS: Schema patch verification complete!")
 conn.close()
+

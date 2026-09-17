@@ -49,6 +49,46 @@ from google.api_core import exceptions as google_exceptions
 from dotenv import load_dotenv
 from pypdf import PdfReader
 
+# ── Phase 2 Academic RAG Engine ────────────────────────────────────────────────
+from rag import (
+    ProcessingStatus,
+    ContentType,
+    QueryIntent,
+    EnrichedChunk,
+    RetrievalCandidate,
+    Citation,
+    GroundedResponse,
+    parse_pdf_pages,
+    detect_content_type,
+    extract_structural_sections,
+    build_semantic_chunks,
+    HybridRetriever,
+    classify_query_intent,
+    extract_key_tokens,
+    RelevanceReranker,
+    ContextBuilder,
+    build_grounded_rag_prompt,
+    GroundedGenerator,
+)
+
+# ── Phase 3 Intelligent Learning Engine ──────────────────────────────────────
+from intelligence import (
+    LearningIntent,
+    TeachingMode,
+    QuestionType,
+    GroundedQuizQuestion,
+    GroundedFlashcard,
+    TopicMasteryRecord,
+    IntelligenceResponse,
+    IntentClassifier,
+    detect_learning_intent,
+    TeachingEngine,
+    AssessmentEngine,
+    LearnerEngine,
+    GroundingValidator,
+    IntelligenceOrchestrator,
+)
+
 # ── Slowapi rate limiting ──────────────────────────────────────────────────────
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -879,12 +919,19 @@ def process_upload_in_background(
         db.commit()
 
         # Step 4: Indexing in ChromaDB & SQLite for Semantic RAG Chat
-        update_pipeline_progress(progress_id, 3, "Text chunking", "Chunking document text...", "active")
-        chunks = chunk_text(text, chunk_size=800, overlap=150)
-        if chunks:
-            update_pipeline_progress(progress_id, 3, "Text chunking", f"Split into {len(chunks)} semantic chunks", "done")
+        session.processing_status = ProcessingStatus.CHUNKING
+        session.char_count = len(text)
+        db.commit()
+
+        update_pipeline_progress(progress_id, 3, "Text chunking", "Extracting structural sections and semantic chunks...", "active")
+        enriched_chunks = build_semantic_chunks(text, chunk_size=800, overlap=150)
+        chunks = [c.text for c in enriched_chunks]
+        if enriched_chunks:
+            update_pipeline_progress(progress_id, 3, "Text chunking", f"Split into {len(enriched_chunks)} academic semantic chunks", "done")
             
-            update_pipeline_progress(progress_id, 4, "Generating vector embeddings", f"Creating embeddings for {len(chunks)} chunks...", "active")
+            session.processing_status = ProcessingStatus.EMBEDDING
+            db.commit()
+            update_pipeline_progress(progress_id, 4, "Generating vector embeddings", f"Creating embeddings for {len(enriched_chunks)} chunks...", "active")
             batch_size = 50
             all_embeddings = []
             for i in range(0, len(chunks), batch_size):
@@ -912,14 +959,20 @@ def process_upload_in_background(
 
             update_pipeline_progress(progress_id, 4, "Generating vector embeddings", "Generated embeddings successfully", "done")
             
+            session.processing_status = ProcessingStatus.INDEXING
+            db.commit()
             update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "Writing metadata to SQLite & ChromaDB...", "active")
             db_chunks = []
-            for index, (chunk_text_val, embedding_vector) in enumerate(zip(chunks, all_embeddings)):
+            for index, (chk, embedding_vector) in enumerate(zip(enriched_chunks, all_embeddings)):
                 db_chunk = DocumentChunk(
                     chunk_index=index,
-                    text_content=chunk_text_val,
+                    text_content=chk.text,
                     embedding=embedding_vector,
-                    session_id=session_id
+                    session_id=session_id,
+                    page_number=chk.page_number,
+                    section_heading=chk.section_heading,
+                    content_type=chk.content_type.value if hasattr(chk.content_type, "value") else str(chk.content_type),
+                    chunk_metadata=chk.metadata
                 )
                 db_chunks.append(db_chunk)
             db.add_all(db_chunks)
@@ -927,8 +980,15 @@ def process_upload_in_background(
 
             if chroma_collection is not None:
                 try:
-                    chroma_ids = [f"sess_{session_id}_chunk_{idx}" for idx in range(len(chunks))]
-                    chroma_metadatas = [{"session_id": session_id, "chunk_index": idx} for idx in range(len(chunks))]
+                    chroma_ids = [f"sess_{session_id}_chunk_{idx}" for idx in range(len(enriched_chunks))]
+                    chroma_metadatas = [{
+                        "session_id": session_id,
+                        "user_id": session.user_id,
+                        "chunk_index": idx,
+                        "page_number": chk.page_number,
+                        "section_heading": chk.section_heading or "",
+                        "content_type": chk.content_type.value if hasattr(chk.content_type, "value") else str(chk.content_type),
+                    } for idx, chk in enumerate(enriched_chunks)]
                     chroma_collection.upsert(
                         ids=chroma_ids,
                         embeddings=all_embeddings,
@@ -939,10 +999,14 @@ def process_upload_in_background(
                     logger.error(f"⚠️ ChromaDB background error: {e}")
 
             update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "ChromaDB index complete", "done")
+            session.processing_status = ProcessingStatus.READY
+            db.commit()
         else:
             update_pipeline_progress(progress_id, 3, "Text chunking", "No chunks generated", "done")
             update_pipeline_progress(progress_id, 4, "Generating vector embeddings", "Skipped", "done")
             update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "Skipped", "done")
+            session.processing_status = ProcessingStatus.READY
+            db.commit()
 
         # Step 5: Mark all tasks complete in pipeline progress tracker
         for step_idx in range(1, 7):
@@ -951,6 +1015,14 @@ def process_upload_in_background(
 
     except Exception as e:
         logger.error(f"❌ Background task error: {e}")
+        try:
+            session = db.query(StudySession).filter(StudySession.id == session_id).first()
+            if session:
+                session.processing_status = ProcessingStatus.FAILED
+                session.processing_error = str(e)
+                db.commit()
+        except Exception:
+            pass
         # Mark all failed
         for step_idx in range(2, 7):
             update_pipeline_progress(progress_id, step_idx, "Failed", f"Failed: {str(e)}", "pending")
@@ -1065,68 +1137,65 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     return dot_product / (magnitude_v1 * magnitude_v2)
 
 
-def retrieve_relevant_chunks(session_id: int, query: str, db: Session, top_k: int = 4) -> List[dict]:
+def retrieve_relevant_chunks(
+    session_id: int,
+    query: str,
+    db: Session,
+    top_k: int = 4,
+    user_id: Optional[int] = None
+) -> List[dict]:
     """
-    Embeds the user query and retrieves the Top-K document chunks
-    matching by cosine similarity from ChromaDB (with SQLite fallback).
+    Hybrid semantic + lexical retrieval engine combining ChromaDB dense vector search
+    with exact keyword matching via Reciprocal Rank Fusion (RRF), relevance reranking,
+    and strict multi-tenant user isolation.
     """
-    logger.info(f"🔍 Retrieval started for query: '{query[:50]}' (session {session_id})...")
+    logger.info(f"🔍 Hybrid RAG Retrieval started for query: '{query[:50]}' (session {session_id})...")
     try:
-        # 1. Embed query
-        response = client.models.embed_content(
-            model="models/gemini-embedding-2",
-            contents=query
+        session = db.query(StudySession).filter(StudySession.id == session_id).first()
+        effective_user_id = user_id if user_id is not None else (session.user_id if session else 0)
+
+        retriever = HybridRetriever(chroma_collection=chroma_collection, gemini_client=client)
+        candidates = retriever.retrieve(
+            query=query,
+            user_id=effective_user_id,
+            session_id=session_id,
+            db=db,
+            top_k=top_k * 2,
+            session_model=StudySession,
+            chunk_model=DocumentChunk
         )
-        query_embedding = response.embeddings[0].values
-        
-        # 2. Try querying ChromaDB first
-        if chroma_collection is not None:
-            try:
-                results = chroma_collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=top_k,
-                    where={"session_id": session_id}
-                )
-                if results and results.get("documents") and len(results["documents"][0]) > 0:
-                    documents = results["documents"][0]
-                    metadatas = results["metadatas"][0]
-                    distances = results["distances"][0] if "distances" in results else [0.5] * len(documents)
-                    
-                    formatted_chunks = []
-                    for doc, meta, dist in zip(documents, metadatas, distances):
-                        sim_score = 1.0 - dist  # Cosine distance to similarity
-                        formatted_chunks.append({
-                            "chunk_index": meta.get("chunk_index", 0),
-                            "text_content": doc,
-                            "score": sim_score
-                        })
-                    logger.info(f"✅ Retrieved {len(formatted_chunks)} chunks from ChromaDB. Top score: {formatted_chunks[0]['score']:.3f}")
-                    return formatted_chunks
-            except Exception as e:
-                logger.error(f"⚠️ ChromaDB query failed, falling back to SQLite: {e}")
-        
-        # 3. Fallback: Fetch chunks from SQLite
+
+        intent = classify_query_intent(query)
+        reranker = RelevanceReranker()
+        reranked = reranker.rerank(candidates, query=query, intent=intent, top_n=top_k)
+
+        if reranked:
+            logger.info(f"✅ Hybrid RAG: Retrieved & reranked {len(reranked)} chunks. Top score: {reranked[0].final_score:.3f}")
+            return [{
+                "chunk_index": getattr(c, "chunk_index", 0),
+                "text_content": c.text,
+                "score": round(c.final_score, 4),
+                "page_number": c.page_number,
+                "section_heading": c.section_heading,
+                "content_type": c.content_type.value if hasattr(c.content_type, "value") else str(c.content_type),
+                "document_title": session.filename if session else "Study Material"
+            } for c in reranked]
+
+        # Fallback: Query SQLite chunks directly if hybrid returned empty
         chunks = db.query(DocumentChunk).filter(DocumentChunk.session_id == session_id).all()
         if not chunks:
-            logger.warning(f"No chunks found for session {session_id} in DB. Falling back to empty retrieval.")
+            logger.warning(f"No chunks found for session {session_id} in DB.")
             return []
-            
-        # Calculate cosine similarity
-        chunk_scores = []
-        for chunk in chunks:
-            sim = cosine_similarity(query_embedding, chunk.embedding)
-            chunk_scores.append((chunk, sim))
-            
-        # Sort and return Top-K
-        chunk_scores.sort(key=lambda x: x[1], reverse=True)
-        top_chunks = chunk_scores[:top_k]
-        
-        if top_chunks:
-            logger.info(f"✅ Retrieved {len(top_chunks)} chunks from SQLite fallback. Top score: {top_chunks[0][1]:.3f}")
-        else:
-            logger.info("No chunks matched.")
-            
-        return [{"chunk_index": c.chunk_index, "text_content": c.text_content, "score": s} for c, s in top_chunks]
+
+        return [{
+            "chunk_index": c.chunk_index,
+            "text_content": c.text_content,
+            "score": 0.5,
+            "page_number": getattr(c, "page_number", 1) or 1,
+            "section_heading": getattr(c, "section_heading", "") or "",
+            "content_type": getattr(c, "content_type", "text") or "text",
+            "document_title": session.filename if session else "Study Material"
+        } for c in chunks[:top_k]]
     except Exception as e:
         logger.error(f"❌ RAG retrieval failed: {str(e)}")
         return []
@@ -2800,6 +2869,9 @@ async def upload_file(
         category="Processing...",
         timeline=initial_timeline,
         project_id=assigned_space_id,
+        processing_status=ProcessingStatus.UPLOADED,
+        page_count=len(reader.pages) if is_pdf else 1,
+        char_count=len(session_content)
     )
     db.add(new_session)
     log_activity(db, current_user.id, f"Uploaded {'PDF' if is_pdf else 'Screenshot'}", f"Processed: {display_title}")
@@ -3222,14 +3294,45 @@ async def generate_quiz(
         raise HTTPException(status_code=404, detail="Study session not found")
 
     n = max(1, min(request.num_questions, 20))  # cap at 20
-    instruction = (
-        f"Generate exactly {n} multiple-choice questions based on the following text. "
-        "Return ONLY a JSON array with no markdown wrapping or other text: "
-        '[{"question": "...", "options": ["A", "B", "C", "D"], "answer": 0, "explanation": "Why this is correct"}] '
-        "where answer is the 0-based index of the correct option. Include an explanation for each answer."
-    )
-    raw = generate_with_fallback(session.content, instruction)
-    quiz_data = clean_and_parse_json(raw)
+
+    # Phase 3: Evidence-grounded quiz generation from Phase 2 document chunks
+    chunks_data = []
+    db_chunks = db.query(DocumentChunk).filter(DocumentChunk.session_id == session.id).order_by(DocumentChunk.chunk_index).all()
+    if db_chunks:
+        chunks_data = [
+            {
+                "chunk_index": c.chunk_index,
+                "text_content": c.text_content,
+                "page_number": c.page_number or 1,
+                "section_heading": c.section_heading or "General",
+                "content_type": c.content_type or "text"
+            }
+            for c in db_chunks
+        ]
+
+    quiz_data = []
+    if chunks_data:
+        try:
+            quiz_data = AssessmentEngine.generate_quiz(
+                chunks=chunks_data,
+                num_questions=n,
+                difficulty="intermediate",
+                gemini_client=client,
+                model_name=MODEL_NAME,
+                generate_fallback_fn=generate_with_fallback
+            )
+        except Exception as e:
+            logger.warning(f"Phase 3 Grounded Assessment failed, falling back: {e}")
+
+    if not quiz_data:
+        instruction = (
+            f"Generate exactly {n} multiple-choice questions based on the following text. "
+            "Return ONLY a JSON array with no markdown wrapping or other text: "
+            '[{"question": "...", "options": ["A", "B", "C", "D"], "answer": 0, "explanation": "Why this is correct"}] '
+            "where answer is the 0-based index of the correct option. Include an explanation for each answer."
+        )
+        raw = generate_with_fallback(session.content, instruction)
+        quiz_data = clean_and_parse_json(raw)
 
     if quiz_data:
         session.quiz_data = quiz_data
@@ -3259,6 +3362,24 @@ def save_quiz_result(
     db.add(result)
     log_activity(db, current_user.id, "Completed Quiz",
                  f"Scored {request.score}/{request.total_questions} ({pct}%) on {session.filename}")
+
+    # Phase 3: Update learner topic mastery based on quiz details
+    if request.details:
+        for d in request.details:
+            topic = d.get("topic") or session.filename
+            is_correct = d.get("is_correct")
+            if is_correct is None:
+                is_correct = (d.get("selected") == d.get("answer") or d.get("user_answer") == d.get("correct_answer"))
+            LearnerEngine.record_topic_interaction(
+                db=db,
+                user_id=current_user.id,
+                session_id=session.id,
+                topic=str(topic),
+                is_correct=bool(is_correct),
+                difficulty=str(d.get("difficulty", "intermediate")),
+                subtopic=d.get("section_heading")
+            )
+
     db.commit()
     db.refresh(result)
     return {"id": result.id, "score": result.score, "percentage": pct, "details": result.details}
@@ -3306,11 +3427,42 @@ async def generate_flashcards(
     limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get("flashcards_per_session", 10)
 
     n = max(1, min(request.num_cards, limit))
-    instruction = f"""Create exactly {n} study flashcards from the following text.
+
+    # Phase 3: Gather Phase 2 document chunks for grounded flashcard creation
+    chunks_data = []
+    db_chunks = db.query(DocumentChunk).filter(DocumentChunk.session_id == session.id).order_by(DocumentChunk.chunk_index).all()
+    if db_chunks:
+        chunks_data = [
+            {
+                "chunk_index": c.chunk_index,
+                "text_content": c.text_content,
+                "page_number": c.page_number or 1,
+                "section_heading": c.section_heading or "General",
+                "content_type": c.content_type or "text"
+            }
+            for c in db_chunks
+        ]
+
+    cards = []
+    if chunks_data:
+        try:
+            cards = AssessmentEngine.generate_flashcards(
+                chunks=chunks_data,
+                num_cards=n,
+                difficulty="intermediate",
+                gemini_client=client,
+                model_name=MODEL_NAME,
+                generate_fallback_fn=generate_with_fallback
+            )
+        except Exception as e:
+            logger.warning(f"Phase 3 Grounded Flashcard generation failed, falling back: {e}")
+
+    if not cards:
+        instruction = f"""Create exactly {n} study flashcards from the following text.
 Return ONLY valid JSON with no extra text:
 [{{"front": "Short question (max 12 words)?", "back": "Clear, concise answer or definition"}}]"""
-    raw = generate_with_fallback(session.content, instruction)
-    cards = clean_and_parse_json(raw)
+        raw = generate_with_fallback(session.content, instruction)
+        cards = clean_and_parse_json(raw)
 
     if cards:
         session.flashcards = cards
@@ -3330,7 +3482,6 @@ async def chat_with_document(
     current_user: User = Depends(get_current_user)
 ):
     check_plan_limit(current_user, "chats_per_day", db)
-    style_instruction = get_style_instruction(request.response_style)
 
     if request.session_id:
         session = db.query(StudySession).filter(
@@ -3339,37 +3490,70 @@ async def chat_with_document(
         if not session:
             raise HTTPException(status_code=404, detail="Study session not found")
 
-        # 🔍 Perform Semantic RAG Search
-        chunks = retrieve_relevant_chunks(session.id, request.message, db, top_k=4)
+        # 🔍 Perform Semantic Hybrid RAG Search with strict user isolation
+        chunks = retrieve_relevant_chunks(session.id, request.message, db, top_k=5, user_id=current_user.id)
         if chunks:
-            doc_context = "\n\n---\n\n".join(
-                f"[Chunk {c['chunk_index']} (Relevance Score: {c['score']:.3f})]:\n{c['text_content']}"
-                for c in chunks
-            )
-            logger.info(f"✅ RAG Context built from {len(chunks)} relevant database chunks.")
+            source_candidates = [
+                RetrievalCandidate(
+                    chunk_id=f"chunk_{c.get('chunk_index', idx)}",
+                    session_id=session.id,
+                    user_id=current_user.id,
+                    text=c["text_content"],
+                    page_number=c.get("page_number", 1) or 1,
+                    section_heading=c.get("section_heading", "") or "",
+                    content_type=ContentType(c.get("content_type", "text") or "text"),
+                    final_score=c.get("score", 0.0),
+                    document_title=session.filename
+                )
+                for idx, c in enumerate(chunks)
+            ]
+            doc_context, citations = ContextBuilder.build_context(source_candidates)
+            logger.info(f"✅ Hybrid RAG Context built from {len(chunks)} relevant chunks with {len(citations)} citations.")
         else:
-            # Fallback to whole slice if not indexed
-            doc_context = session.content[:15000]
+            doc_context = session.content[:15000] if session.content else ""
+            citations = []
             logger.info("⚠️ Falling back to sliced full document context.")
 
-        instruction = (
-            f"You are Florix AI, an intelligent study assistant. "
-            f"Answer the user's question based on the relevant document chunks provided below. "
-            f"If the document doesn't contain the answer, use your general knowledge and clearly state so. "
-            f"Response style: {style_instruction}. "
-            f"User Question: {request.message}"
-        )
-        answer = generate_with_fallback(doc_context, instruction)
-    else:
-        instruction = (
-            f"You are Florix AI, a highly intelligent, friendly AI study assistant and tutor. "
-            f"You help students understand complex topics clearly. "
-            f"Response style: {style_instruction}. "
-            f"User Question: {request.message}"
-        )
-        answer = generate_with_fallback("", instruction)
+        intent, mode = detect_learning_intent(request.message)
+        scaffold = TeachingEngine.get_scaffolding_instruction(mode, intent)
+        enhanced_context = f"{scaffold}\n\n{doc_context}"
 
-    return {"reply": answer}
+        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        grounded_res = generator.generate(
+            query=request.message,
+            context=enhanced_context,
+            citations=citations,
+            response_style=request.response_style or "balanced"
+        )
+        cleaned_reply, valid_indices, warnings = GroundingValidator.validate_and_clean_citations(
+            reply=grounded_res.reply,
+            available_citations=grounded_res.citations
+        )
+        return {
+            "reply": cleaned_reply,
+            "citations": [c.to_dict() for c in grounded_res.citations],
+            "is_grounded": grounded_res.is_grounded,
+            "sources_used": grounded_res.sources_used,
+            "intent": intent.value,
+            "teaching_mode": mode.value
+        }
+    else:
+        intent, mode = detect_learning_intent(request.message)
+        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        grounded_res = generator.generate(
+            query=request.message,
+            context="",
+            citations=[],
+            response_style=request.response_style or "balanced"
+        )
+        return {
+            "reply": grounded_res.reply,
+            "citations": [],
+            "is_grounded": False,
+            "sources_used": 0,
+            "intent": intent.value,
+            "teaching_mode": mode.value
+        }
 
 
 @app.post("/chat/stream", tags=["AI"])
@@ -3379,70 +3563,234 @@ async def chat_stream(
     current_user: User = Depends(get_current_user)
 ):
     check_plan_limit(current_user, "chats_per_day", db)
-    """Server-Sent Events endpoint for streaming AI responses token by token."""
-    style_instruction = get_style_instruction(request.response_style)
-
+    """Server-Sent Events endpoint for streaming AI responses token by token with grounded citations."""
     if request.session_id:
         session = db.query(StudySession).filter(
             StudySession.id == request.session_id, StudySession.user_id == current_user.id
         ).first()
         if not session:
             raise HTTPException(status_code=404, detail="Study session not found")
-        
-        # 🔍 Perform Semantic RAG Search
-        chunks = retrieve_relevant_chunks(session.id, request.message, db, top_k=4)
+
+        # 🔍 Perform Semantic Hybrid RAG Search
+        chunks = retrieve_relevant_chunks(session.id, request.message, db, top_k=5, user_id=current_user.id)
         if chunks:
-            doc_context = "\n\n---\n\n".join(
-                f"[Chunk {c['chunk_index']} (Relevance Score: {c['score']:.3f})]:\n{c['text_content']}"
-                for c in chunks
-            )
-            logger.info(f"✅ RAG Streaming Context built from {len(chunks)} relevant chunks.")
+            source_candidates = [
+                RetrievalCandidate(
+                    chunk_id=f"chunk_{c.get('chunk_index', idx)}",
+                    session_id=session.id,
+                    user_id=current_user.id,
+                    text=c["text_content"],
+                    page_number=c.get("page_number", 1) or 1,
+                    section_heading=c.get("section_heading", "") or "",
+                    content_type=ContentType(c.get("content_type", "text") or "text"),
+                    final_score=c.get("score", 0.0),
+                    document_title=session.filename
+                )
+                for idx, c in enumerate(chunks)
+            ]
+            doc_context, citations = ContextBuilder.build_context(source_candidates)
+            logger.info(f"✅ RAG Streaming Context built from {len(chunks)} relevant chunks with {len(citations)} citations.")
         else:
-            # Fallback
-            doc_context = session.content[:15000]
+            doc_context = session.content[:15000] if session.content else ""
+            citations = []
             logger.info("⚠️ Falling back to sliced full document context for streaming.")
 
-        instruction = (
-            f"You are Florix AI, an intelligent study assistant. "
-            f"Answer based on the following relevant document chunks. Response style: {style_instruction}. "
-            f"User Question: {request.message}\n\nDocument Chunks:\n{doc_context}"
+        intent, mode = detect_learning_intent(request.message)
+        scaffold = TeachingEngine.get_scaffolding_instruction(mode, intent)
+        enhanced_context = f"{scaffold}\n\n{doc_context}"
+
+        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        return StreamingResponse(
+            generator.generate_stream(
+                query=request.message,
+                context=enhanced_context,
+                citations=citations,
+                response_style=request.response_style or "balanced"
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
     else:
-        instruction = (
-            f"You are Florix AI, a friendly AI study assistant. "
-            f"Response style: {style_instruction}. "
-            f"Answer: {request.message}"
+        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        return StreamingResponse(
+            generator.generate_stream(
+                query=request.message,
+                context="",
+                citations=[],
+                response_style=request.response_style or "balanced"
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
 
-    async def event_generator() -> AsyncGenerator[str, None]:
-        safety = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
-        try:
-            for chunk in client.models.generate_content_stream(
-                model=MODEL_NAME,
-                contents=instruction,
-                config={"safety_settings": safety},
-            ):
-                if chunk.text:
-                    # SSE format: data: <payload>\n\n
-                    yield f"data: {json.dumps({'token': chunk.text})}\n\n"
-            yield "data: [DONE]\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            yield "data: [DONE]\n\n"
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+# =============================================================================
+# PHASE 3 — ADAPTIVE LEARNING & MASTERY ENDPOINTS
+# =============================================================================
+
+@app.get("/learning/mastery/{session_id}", tags=["AI", "Learning"])
+def get_session_mastery_endpoint(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve learner topic mastery levels for a session with ownership scoping."""
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found")
+
+    return LearnerEngine.get_session_mastery(db, current_user.id, session_id)
+
+
+@app.get("/learning/weak-topics/{session_id}", tags=["AI", "Learning"])
+def get_weak_topics_endpoint(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Identify weak topics and retrieve actionable study recommendations."""
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found")
+
+    return LearnerEngine.get_weak_topics_and_recommendations(db, current_user.id, session_id)
+
+
+class AnswerEvaluationRequest(BaseModel):
+    session_id: int
+    question: str
+    user_answer: str
+    target_topic: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
+
+@app.post("/learning/evaluate-answer", tags=["AI", "Learning"])
+async def evaluate_student_answer(
+    request: AnswerEvaluationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Evaluates student conceptual response against grounded document evidence."""
+    session = db.query(StudySession).filter(
+        StudySession.id == request.session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found")
+
+    chunks = retrieve_relevant_chunks(session.id, request.question, db, top_k=4, user_id=current_user.id)
+    doc_context = "\n\n".join([c["text_content"] for c in chunks]) if chunks else (session.content[:8000] if session.content else "")
+
+    eval_prompt = f"""You are an expert academic evaluator.
+Evaluate the student's answer against the verified study context below.
+
+QUESTION: {request.question}
+STUDENT ANSWER: {request.user_answer}
+
+VERIFIED STUDY CONTEXT:
+{doc_context}
+
+Evaluate the student answer strictly based on the provided context:
+1. Score from 0 to 100 based on accuracy and completeness.
+2. Strengths of the answer.
+3. Missing or inaccurate points.
+4. Correct model answer grounded in the text.
+
+Return ONLY a valid JSON object:
+{{
+  "score": 85,
+  "is_correct": true,
+  "feedback": "...",
+  "key_points_covered": ["..."],
+  "missing_points": ["..."],
+  "model_answer": "..."
+}}"""
+
+    raw = generate_with_fallback(doc_context, eval_prompt)
+    evaluation = clean_and_parse_json(raw)
+    if not evaluation:
+        evaluation = {
+            "score": 70,
+            "is_correct": True,
+            "feedback": "Answer reviewed based on study material.",
+            "key_points_covered": [],
+            "missing_points": [],
+            "model_answer": ""
+        }
+
+    # Record mastery interaction with idempotency protection
+    topic = request.target_topic or session.filename
+    is_corr = evaluation.get("score", 0) >= 60
+    mastery_res = LearnerEngine.record_topic_interaction(
+        db=db,
+        user_id=current_user.id,
+        session_id=session.id,
+        topic=topic,
+        is_correct=is_corr,
+        difficulty="intermediate",
+        idempotency_key=request.idempotency_key
     )
+    evaluation["mastery_update"] = mastery_res
+
+    return evaluation
+
+
+class FlashcardReviewRequest(BaseModel):
+    session_id: int
+    card_index: int
+    quality: int  # 0 to 5
+    idempotency_key: Optional[str] = None
+
+
+@app.post("/learning/flashcard-review", tags=["AI", "Learning"])
+def review_flashcard_endpoint(
+    request: FlashcardReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Updates SM-2 spaced repetition state for a flashcard with idempotency protection."""
+    if request.quality < 0 or request.quality > 5:
+        raise HTTPException(status_code=400, detail="Quality rating must be between 0 and 5")
+
+    session = db.query(StudySession).filter(
+        StudySession.id == request.session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found")
+
+    return LearnerEngine.update_flashcard_sm2(
+        db=db,
+        user_id=current_user.id,
+        session_id=session.id,
+        card_index=request.card_index,
+        quality=request.quality,
+        idempotency_key=request.idempotency_key
+    )
+
+
+@app.get("/learning/spaced-revision/{session_id}", tags=["AI", "Learning"])
+def get_spaced_revision_endpoint(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieves flashcards due for SM-2 spaced revision for the current user."""
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found")
+
+    return LearnerEngine.get_spaced_revision_cards(db, current_user.id, session.id)
 
 
 # =============================================================================

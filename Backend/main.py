@@ -1458,8 +1458,15 @@ def retrieve_relevant_chunks(
     """
     logger.info(f"🔍 Hybrid RAG Retrieval started for query: '{query[:50]}' (session {session_id})...")
     try:
-        session = db.query(StudySession).filter(StudySession.id == session_id).first()
-        effective_user_id = user_id if user_id is not None else (session.user_id if session else 0)
+        session_query = db.query(StudySession).filter(StudySession.id == session_id)
+        if user_id is not None:
+            session_query = session_query.filter(StudySession.user_id == user_id)
+        session = session_query.first()
+        if not session:
+            logger.warning(f"🔒 RAG retrieval denied: session {session_id} not found or unauthorized for user {user_id}")
+            return []
+
+        effective_user_id = user_id if user_id is not None else session.user_id
 
         retriever = HybridRetriever(chroma_collection=chroma_collection, gemini_client=client)
         candidates = retriever.retrieve(
@@ -3080,6 +3087,8 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="Only PDF and Image files (PNG, JPG, JPEG, WEBP) are supported.")
 
     contents = await file.read()
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty (0 bytes). Please upload a valid document.")
     # Enforce subscription-based size limit
     check_plan_limit(current_user, "max_upload_mb", db, len(contents))
     max_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
@@ -3126,7 +3135,12 @@ async def upload_file(
                 # Detect password-protected PDFs
                 if reader.is_encrypted:
                     try:
-                        reader.decrypt("")
+                        res = reader.decrypt("")
+                        # In pypdf, 0 or PasswordResult.NOT_DECRYPTED means decryption with empty password failed
+                        if not res:
+                            raise HTTPException(status_code=422, detail="This PDF is password-protected. Please upload an unprotected PDF or remove the password first.")
+                    except HTTPException:
+                        raise
                     except Exception:
                         raise HTTPException(status_code=422, detail="This PDF is password-protected. Please upload an unprotected PDF or remove the password first.")
                 text = "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -3134,7 +3148,7 @@ async def upload_file(
                 raise  # Re-raise our own HTTP exceptions
             except Exception as e:
                 error_msg = str(e).lower()
-                if "password" in error_msg or "encrypted" in error_msg:
+                if "password" in error_msg or "encrypted" in error_msg or "decrypt" in error_msg:
                     raise HTTPException(status_code=422, detail="This PDF is password-protected. Please remove the password and try again.")
                 elif "eof" in error_msg or "marker" in error_msg or "invalid" in error_msg:
                     raise HTTPException(status_code=422, detail="This PDF file appears to be corrupted or damaged. Please try re-downloading the file and uploading again.")
@@ -3448,15 +3462,47 @@ async def process_link(
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
             resp = requests.get(url, timeout=20, headers=headers, allow_redirects=True)
             resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
-                tag.decompose()
-            # Truncate to plan-based link character limit
+
+            content_type = resp.headers.get("Content-Type", "").lower()
             plan = current_user.plan or "free"
             max_link_chars = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get("max_link_chars", 10000)
-            text = " ".join(soup.get_text(separator=" ").split())[:max_link_chars]
-            page_title = soup.find("title")
-            title = page_title.get_text().strip() if page_title else urlparse(url).netloc
+
+            # Detect direct PDF link
+            if "application/pdf" in content_type or parsed.path.lower().endswith(".pdf"):
+                try:
+                    import io
+                    from pypdf import PdfReader
+                    reader = PdfReader(io.BytesIO(resp.content))
+                    if reader.is_encrypted:
+                        try:
+                            reader.decrypt("")
+                        except Exception:
+                            raise HTTPException(status_code=422, detail="The PDF at this link is password-protected. Please remove password protection or upload directly.")
+                    pdf_pages = [page.extract_text() or "" for page in reader.pages]
+                    text = "\n\n".join(p.strip() for p in pdf_pages if p.strip())
+                    if max_link_chars != -1 and len(text) > max_link_chars:
+                        text = text[:max_link_chars]
+                    if not text or len(text.strip()) < 50:
+                        raise HTTPException(status_code=422, detail="The PDF at this URL contains no selectable text (scanned or image-only). Please upload it directly via Document Upload.")
+                    pdf_filename = os.path.basename(parsed.path)
+                    title = pdf_filename.replace(".pdf", "").replace("_", " ").title() if pdf_filename else "Online PDF Document"
+                except HTTPException:
+                    raise
+                except Exception as pdf_err:
+                    raise HTTPException(status_code=422, detail=f"Could not read PDF from link: {pdf_err}")
+            elif any(content_type.startswith(m) for m in ("image/", "video/", "audio/", "application/zip", "application/octet-stream")):
+                clean_type = content_type.split(";")[0]
+                raise HTTPException(status_code=422, detail=f"Direct media/binary links ({clean_type}) are not supported. Please upload files directly or provide a YouTube URL.")
+            else:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                    tag.decompose()
+                # Truncate to plan-based link character limit
+                text = " ".join(soup.get_text(separator=" ").split())
+                if max_link_chars != -1 and len(text) > max_link_chars:
+                    text = text[:max_link_chars]
+                page_title = soup.find("title")
+                title = page_title.get_text().strip() if page_title else urlparse(url).netloc
         except requests.exceptions.Timeout:
             raise HTTPException(status_code=422, detail="The website took too long to respond (timeout). Please check if the URL is accessible and try again.")
         except requests.exceptions.ConnectionError:

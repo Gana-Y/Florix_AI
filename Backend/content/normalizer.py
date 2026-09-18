@@ -293,7 +293,30 @@ class ContentNormalizer:
 
         if st == "pdf":
             if isinstance(data, list):
+                parsed_pages = []
+                for item in data:
+                    if isinstance(item, (list, tuple)) and len(item) == 2:
+                        parsed_pages.append((int(item[0]), str(item[1])))
+                    elif isinstance(item, dict) and "page" in item and "text" in item:
+                        parsed_pages.append((int(item["page"]), str(item["text"])))
+                if parsed_pages:
+                    return cls.normalize_pdf(parsed_pages, title=title, metadata=meta)
                 return cls.normalize_pdf(data, title=title, metadata=meta)
+            elif isinstance(data, str) and re.search(r"\[Page \d+\]", data):
+                parts = re.split(r"(?:^|\n\n)\[Page (\d+)\]\n", data)
+                parsed_pages = []
+                if len(parts) > 1:
+                    for i in range(1, len(parts), 2):
+                        try:
+                            p_num = int(parts[i])
+                            p_txt = parts[i+1].strip()
+                            if p_txt:
+                                parsed_pages.append((p_num, p_txt))
+                        except Exception:
+                            pass
+                if parsed_pages:
+                    return cls.normalize_pdf(parsed_pages, title=title, metadata=meta)
+                return cls.normalize_pdf([(1, str(data))], title=title, metadata=meta)
             else:
                 return cls.normalize_pdf([(1, str(data))], title=title, metadata=meta)
         elif st in ("youtube", "yt"):

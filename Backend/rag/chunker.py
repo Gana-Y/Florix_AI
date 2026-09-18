@@ -91,7 +91,30 @@ def chunk_section(
                 current_length = 0
 
             # Sentence splitting for oversized paragraph
-            sentences = re.split(r"(?<=[.!?])\s+", para_clean)
+            raw_sentences = re.split(r"(?<=[.!?])\s+", para_clean)
+            sentences = []
+            for raw_s in raw_sentences:
+                raw_s = raw_s.strip()
+                if not raw_s:
+                    continue
+                if len(raw_s) > chunk_size:
+                    # Break oversized sentence/line by words so chunks never exceed chunk_size
+                    words = raw_s.split(" ")
+                    curr_w: List[str] = []
+                    curr_w_len = 0
+                    for w in words:
+                        if curr_w_len + len(w) + 1 > chunk_size and curr_w:
+                            sentences.append(" ".join(curr_w))
+                            curr_w = [w]
+                            curr_w_len = len(w)
+                        else:
+                            curr_w.append(w)
+                            curr_w_len += len(w) + 1
+                    if curr_w:
+                        sentences.append(" ".join(curr_w))
+                else:
+                    sentences.append(raw_s)
+
             sub_chunk = []
             sub_len = 0
             for sent in sentences:

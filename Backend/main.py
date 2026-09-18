@@ -1170,9 +1170,13 @@ def process_upload_in_background(
         update_pipeline_progress(progress_id, 3, "Text chunking", "Extracting structural sections and semantic chunks...", "active")
         try:
             from content import ContentNormalizer
+            pdf_pages = None
+            if source_type == "pdf" and session.doc_metadata and isinstance(session.doc_metadata, dict):
+                pdf_pages = session.doc_metadata.get("pages")
+
             normalized = ContentNormalizer.normalize_any(
                 source_type=source_type,
-                data=text,
+                data=pdf_pages if pdf_pages else text,
                 title=session.filename,
                 metadata={"session_id": session_id, "user_id": session.user_id, "source_type": source_type}
             )
@@ -3143,7 +3147,13 @@ async def upload_file(
                         raise
                     except Exception:
                         raise HTTPException(status_code=422, detail="This PDF is password-protected. Please upload an unprotected PDF or remove the password first.")
-                text = "\n".join(page.extract_text() or "" for page in reader.pages)
+                pages_data = []
+                for idx, page in enumerate(reader.pages, start=1):
+                    raw_page_text = page.extract_text() or ""
+                    clean_page_text = raw_page_text.replace("\x00", "").strip()
+                    if clean_page_text:
+                        pages_data.append((idx, clean_page_text))
+                text = "\n\n".join(f"[Page {p[0]}]\n{p[1]}" for p in pages_data)
             except HTTPException:
                 raise  # Re-raise our own HTTP exceptions
             except Exception as e:
@@ -3196,7 +3206,8 @@ async def upload_file(
         project_id=assigned_space_id,
         processing_status=ProcessingStatus.UPLOADED,
         page_count=len(reader.pages) if is_pdf else 1,
-        char_count=len(session_content)
+        char_count=len(session_content),
+        doc_metadata={"pages": pages_data, "page_count": len(reader.pages)} if is_pdf else {}
     )
     db.add(new_session)
     log_activity(db, current_user.id, f"Uploaded {'PDF' if is_pdf else 'Screenshot'}", f"Processed: {display_title}")
@@ -3468,7 +3479,10 @@ async def process_link(
             max_link_chars = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get("max_link_chars", 10000)
 
             # Detect direct PDF link
+            is_pdf_link = False
+            pdf_pages = []
             if "application/pdf" in content_type or parsed.path.lower().endswith(".pdf"):
+                is_pdf_link = True
                 try:
                     import io
                     from pypdf import PdfReader
@@ -3478,8 +3492,11 @@ async def process_link(
                             reader.decrypt("")
                         except Exception:
                             raise HTTPException(status_code=422, detail="The PDF at this link is password-protected. Please remove password protection or upload directly.")
-                    pdf_pages = [page.extract_text() or "" for page in reader.pages]
-                    text = "\n\n".join(p.strip() for p in pdf_pages if p.strip())
+                    for idx, page in enumerate(reader.pages, start=1):
+                        raw_t = (page.extract_text() or "").replace("\x00", "").strip()
+                        if raw_t:
+                            pdf_pages.append((idx, raw_t))
+                    text = "\n\n".join(f"[Page {p[0]}]\n{p[1]}" for p in pdf_pages)
                     if max_link_chars != -1 and len(text) > max_link_chars:
                         text = text[:max_link_chars]
                     if not text or len(text.strip()) < 50:
@@ -3525,7 +3542,7 @@ async def process_link(
 
         update_pipeline_progress(progress_id, 2, "Content parsing", f"Scraped webpage successfully ({len(text)} characters)", "done")
         update_pipeline_progress(progress_id, 6, "AI summary generation", "Queued study guide generation from webpage content...", "active")
-        source_type = "url"
+        source_type = "pdf" if is_pdf_link else "url"
 
     # ── YouTube / Link Timeline & Basic Save ──
     display_title = title[:100]
@@ -3539,6 +3556,12 @@ async def process_link(
             "canonical_url": canonical_url if "canonical_url" in locals() else f"https://www.youtube.com/watch?v={video_id}",
             "source_url": url,
             "tier_used": tier_used if "tier_used" in locals() else "Tier 1",
+        }
+    elif source_type == "pdf" and "pdf_pages" in locals() and pdf_pages:
+        session_metadata = {
+            "pages": pdf_pages,
+            "page_count": len(pdf_pages),
+            "source_url": url,
         }
     new_session = StudySession(
         filename=display_title, ai_title=None, summary="Processing...", content=text,

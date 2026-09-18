@@ -1283,6 +1283,38 @@ def process_upload_in_background(
             session.processing_status = ProcessingStatus.READY
             db.commit()
 
+        # Step 4.5: Pre-generate and cache interactive Learning Timeline for YouTube
+        if source_type == "youtube":
+            try:
+                from content.timeline import detect_learning_sections
+                yt_id = ""
+                if session.doc_metadata and isinstance(session.doc_metadata, dict):
+                    yt_id = session.doc_metadata.get("video_id", "")
+                if not yt_id:
+                    yt_id = extract_youtube_video_id(session.filename) or ""
+                    if not yt_id and session.timeline:
+                        for ev in session.timeline:
+                            det = ev.get("detail", "")
+                            if "youtube.com" in det or "youtu.be" in det:
+                                yt_id = extract_youtube_video_id(det) or ""
+                                if yt_id:
+                                    break
+
+                timeline_data = detect_learning_sections(
+                    raw_transcript=session.content or text,
+                    video_title=session.ai_title or session.filename,
+                    video_id=yt_id,
+                    gemini_client=client
+                )
+                curr_meta = dict(session.doc_metadata or {})
+                curr_meta["learning_timeline"] = timeline_data
+                curr_meta["video_id"] = yt_id
+                session.doc_metadata = curr_meta
+                db.commit()
+                logger.info(f"✅ Generated and cached Learning Timeline for YouTube session {session.id}")
+            except Exception as yt_err:
+                logger.warning(f"⚠️ Could not pre-generate timeline in background for session {session_id}: {yt_err}")
+
         # Step 5: Mark all tasks complete in pipeline progress tracker
         for step_idx in range(1, 7):
             update_pipeline_progress(progress_id, step_idx, "Processing Complete", "All steps processed successfully", "done")
@@ -3454,12 +3486,21 @@ async def process_link(
     initial_timeline = [{"event": f"Processed {source_type.upper()}", "timestamp": datetime.utcnow().isoformat(), "detail": f"Source URL: {url}"}]
 
     assigned_space_id = ensure_session_space(db, current_user.id, request.project_id, display_title, "youtube" if source_type == "youtube" else "web")
+    session_metadata = {}
+    if source_type == "youtube" and "video_id" in locals() and video_id:
+        session_metadata = {
+            "video_id": video_id,
+            "canonical_url": canonical_url if "canonical_url" in locals() else f"https://www.youtube.com/watch?v={video_id}",
+            "source_url": url,
+            "tier_used": tier_used if "tier_used" in locals() else "Tier 1",
+        }
     new_session = StudySession(
         filename=display_title, ai_title=None, summary="Processing...", content=text,
         user_id=current_user.id, source_type=source_type,
         category="Processing...",
         timeline=initial_timeline,
         project_id=assigned_space_id,
+        doc_metadata=session_metadata
     )
     db.add(new_session)
     log_activity(db, current_user.id, f"Processed {'YouTube Video' if source_type == 'youtube' else 'Web URL'}", f"Analyzed: {display_title[:60]}")
@@ -4133,6 +4174,7 @@ def get_library_item(session_id: int, db: Session = Depends(get_db), current_use
         "timeline": session.timeline or [],
         "insights": session.insights or {},
         "notes": session.notes or "",
+        "doc_metadata": session.doc_metadata or {},
     }
 
 
@@ -4458,6 +4500,274 @@ def share_study_session(
         "share_type": session.share_type,
         "message": "Link configured successfully"
     }
+
+
+# ── YouTube Learning Timeline Endpoints ────────────────────────────────────────
+
+class SectionExplainRequest(BaseModel):
+    section_title: Optional[str] = None
+    timestamp_str: Optional[str] = None
+    what_video_says: Optional[str] = None
+    concept_tags: Optional[List[str]] = None
+
+
+class SectionQuizRequest(BaseModel):
+    section_title: Optional[str] = None
+    timestamp_str: Optional[str] = None
+    what_video_says: Optional[str] = None
+    concept_tags: Optional[List[str]] = None
+
+
+class SectionProgressRequest(BaseModel):
+    section_id: str
+    status: str  # "viewed" | "explained" | "quizzed" | "mastered"
+    score: Optional[int] = None
+
+
+@app.get("/sessions/{session_id}/learning-timeline", tags=["Learning Timeline"])
+@app.get("/learning-timeline/{session_id}", tags=["Learning Timeline"])
+def get_learning_timeline(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Fetch or generate the interactive YouTube Learning Timeline for a study session.
+    Enforces strict tenant isolation and caches the timeline in SQLite doc_metadata.
+    """
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
+
+    doc_meta = dict(session.doc_metadata or {})
+    if "learning_timeline" in doc_meta and isinstance(doc_meta["learning_timeline"], dict):
+        tl = dict(doc_meta["learning_timeline"])
+        tl["progress"] = doc_meta.get("learning_timeline_progress", {})
+        return tl
+
+    # Generate on demand
+    from content.timeline import detect_learning_sections
+    yt_id = doc_meta.get("video_id", "")
+    if not yt_id:
+        yt_id = extract_youtube_video_id(session.filename) or ""
+        if not yt_id and session.timeline:
+            for ev in session.timeline:
+                det = ev.get("detail", "")
+                if "youtube.com" in det or "youtu.be" in det:
+                    yt_id = extract_youtube_video_id(det) or ""
+                    if yt_id:
+                        break
+
+    timeline_data = detect_learning_sections(
+        raw_transcript=session.content or session.summary or "",
+        video_title=session.ai_title or session.filename,
+        video_id=yt_id,
+        gemini_client=client
+    )
+
+    doc_meta["learning_timeline"] = timeline_data
+    doc_meta["video_id"] = yt_id
+    session.doc_metadata = doc_meta
+    db.commit()
+
+    timeline_data["progress"] = doc_meta.get("learning_timeline_progress", {})
+    return timeline_data
+
+
+@app.post("/sessions/{session_id}/learning-timeline/sections/{section_id}/explain", tags=["Learning Timeline"])
+def explain_learning_section(
+    session_id: int,
+    section_id: str,
+    req: SectionExplainRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generates an explanation focused specifically on this timestamped learning section.
+    """
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
+
+    sec_ctx = (
+        f"Section: {req.section_title or section_id}\n"
+        f"Timestamp Range: {req.timestamp_str or ''}\n"
+        f"Transcript Excerpt / Summary: {req.what_video_says or ''}\n"
+        f"Concepts: {', '.join(req.concept_tags or [])}\n"
+    )
+
+    instruction = (
+        f"You are an expert Florix academic tutor. The student is reviewing this exact video section:\n"
+        f"{sec_ctx}\n\n"
+        f"Provide a focused, grounded explanation of this specific section. Break down the core intuition, "
+        f"give a clear real-world analogy or example, and highlight why this concept is important. "
+        f"Always reference the timestamp range [{req.timestamp_str or ''}] as the authoritative citation."
+    )
+
+    try:
+        resp = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=instruction
+        )
+        explanation = resp.text.strip() if resp and resp.text else "Unable to generate section explanation at this time."
+    except Exception as e:
+        logger.warning(f"Section explanation generation failed: {e}")
+        explanation = f"In this section ({req.timestamp_str or ''}), the video covers {req.section_title or section_id}. {req.what_video_says or ''}"
+
+    try:
+        ev = LearningEvent(
+            user_id=current_user.id,
+            session_id=session_id,
+            event_type="SECTION_EXPLAINED",
+            payload={"section_id": section_id, "title": req.section_title, "timestamp": req.timestamp_str}
+        )
+        db.add(ev)
+        db.commit()
+    except Exception:
+        pass
+
+    return {
+        "section_id": section_id,
+        "explanation": explanation,
+        "citation": {
+            "source_type": "youtube",
+            "timestamp_str": req.timestamp_str,
+            "document_title": session.ai_title or session.filename
+        }
+    }
+
+
+@app.post("/sessions/{session_id}/learning-timeline/sections/{section_id}/quiz", tags=["Learning Timeline"])
+def quiz_learning_section(
+    session_id: int,
+    section_id: str,
+    req: SectionQuizRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generates a multiple-choice question testing understanding of this specific video section.
+    """
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
+
+    sec_ctx = (
+        f"Section Title: {req.section_title or section_id}\n"
+        f"Timestamp: {req.timestamp_str or ''}\n"
+        f"Section Content: {req.what_video_says or ''}\n"
+        f"Key Concepts: {', '.join(req.concept_tags or [])}\n"
+    )
+
+    prompt = f"""You are an elite academic assessment author for Florix AI.
+Create ONE challenging, high-yield multiple-choice question testing the student's comprehension of this specific video section:
+{sec_ctx}
+
+Rules:
+1. Ground the question strictly in what was taught in this section.
+2. Provide 4 distinct options.
+3. Indicate the zero-based index of the correct option (0, 1, 2, or 3).
+4. Provide a clear pedagogical explanation of why that option is correct.
+
+Return ONLY valid JSON with this exact schema:
+{{
+  "question": "Question text here",
+  "options": ["Option A", "Option B", "Option C", "Option D"],
+  "correct_index": 0,
+  "explanation": "Why this answer is correct according to the section."
+}}
+"""
+    question_data = None
+    try:
+        resp = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt
+        )
+        txt = resp.text.strip() if resp and resp.text else ""
+        if txt.startswith("```"):
+            txt = re.sub(r"^```[a-zA-Z]*\n?", "", txt)
+            txt = re.sub(r"\n?```$", "", txt).strip()
+        question_data = json.loads(txt)
+    except Exception as e:
+        logger.warning(f"Section quiz generation error: {e}")
+        question_data = {
+            "question": f"What is the central concept discussed in the section '{req.section_title or 'this topic'}'?",
+            "options": [
+                req.section_title or "The core topic presented",
+                "A completely unrelated historical premise",
+                "Computational limitations of legacy systems",
+                "None of the above"
+            ],
+            "correct_index": 0,
+            "explanation": f"The section focuses on: {req.what_video_says or 'the specified concept'}."
+        }
+
+    try:
+        ev = LearningEvent(
+            user_id=current_user.id,
+            session_id=session_id,
+            event_type="SECTION_QUIZ_GENERATED",
+            payload={"section_id": section_id, "title": req.section_title}
+        )
+        db.add(ev)
+        db.commit()
+    except Exception:
+        pass
+
+    return {
+        "section_id": section_id,
+        "quiz": question_data
+    }
+
+
+@app.post("/sessions/{session_id}/learning-timeline/progress", tags=["Learning Timeline"])
+def update_section_progress(
+    session_id: int,
+    req: SectionProgressRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates the student's progress for a learning section (viewed, explained, quizzed).
+    """
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id, StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
+
+    doc_meta = dict(session.doc_metadata or {})
+    prog = dict(doc_meta.get("learning_timeline_progress", {}))
+
+    sec_prog = dict(prog.get(req.section_id, {}))
+    sec_prog[req.status] = True
+    if req.score is not None:
+        sec_prog["score"] = req.score
+    sec_prog["updated_at"] = datetime.utcnow().isoformat()
+    prog[req.section_id] = sec_prog
+
+    doc_meta["learning_timeline_progress"] = prog
+    session.doc_metadata = doc_meta
+
+    try:
+        ev = LearningEvent(
+            user_id=current_user.id,
+            session_id=session_id,
+            event_type=f"SECTION_{req.status.upper()}",
+            payload={"section_id": req.section_id, "score": req.score}
+        )
+        db.add(ev)
+    except Exception:
+        pass
+
+    db.commit()
+    return {"status": "ok", "progress": prog}
 
 
 class DownloadTrackRequest(BaseModel):

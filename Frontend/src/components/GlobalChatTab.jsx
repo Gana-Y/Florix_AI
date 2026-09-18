@@ -270,7 +270,7 @@ const GlobalChatMessageBubble = React.memo(({ msg }) => {
   (prev.msg.citations?.length === next.msg.citations?.length)
 ));
 
-const GlobalChatTab = ({ sessionId, documentTitle }) => {
+const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandled }) => {
   const { prefs } = useContext(PreferencesContext);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -398,6 +398,17 @@ const GlobalChatTab = ({ sessionId, documentTitle }) => {
       setIsLoading(false);
     }
   };
+
+  // ── Handle external prompts triggered by floating toolbar or other UI triggers ──
+  useEffect(() => {
+    if (externalPrompt && typeof externalPrompt === 'string' && externalPrompt.trim() && !isLoading) {
+      const promptText = externalPrompt.trim();
+      handleSend(promptText);
+      if (onPromptHandled) {
+        onPromptHandled();
+      }
+    }
+  }, [externalPrompt, isLoading]);
 
   const quickStudyTools = [
     {

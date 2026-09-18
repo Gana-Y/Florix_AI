@@ -25,4 +25,16 @@ __all__ = [
     "MockTranscriptionProvider",
     "extract_timestamped_segments",
     "parse_timestamp_str",
+    "detect_learning_sections",
+    "validate_learning_sections",
+    "build_fallback_timeline_from_transcript",
+    "get_youtube_thumbnail_url",
+    "get_youtube_watch_url",
 ]
+from .timeline import (
+    detect_learning_sections,
+    validate_learning_sections,
+    build_fallback_timeline_from_transcript,
+    get_youtube_thumbnail_url,
+    get_youtube_watch_url,
+)

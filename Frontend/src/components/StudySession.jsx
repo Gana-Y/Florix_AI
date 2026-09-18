@@ -11,6 +11,8 @@ import {
 const PDFExport = lazy(() => import('./PDFExport'));
 import api from '../utils/api';
 import GlobalChatTab from './GlobalChatTab';
+import FloatingSelectionToolbar from './FloatingSelectionToolbar';
+import YouTubeLearningTimeline from './YouTubeLearningTimeline';
 import { PreferencesContext } from '../context/PreferencesContext';
 import { useToast } from '../context/ToastContext';
 
@@ -18,6 +20,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
   const { prefs } = useContext(PreferencesContext);
   const { addToast } = useToast();
   const [activeView, setActiveView] = useState('summary'); 
+  const [youtubeView, setYoutubeView] = useState('timeline'); // 'timeline' | 'guide'
   const [regenerating, setRegenerating] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -95,6 +98,58 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
   const textareaRef = useRef(null);
   const sessionRootRef = useRef(null);
   const markdownScrollRef = useRef(null);
+
+  // 🪄 Floating Selection Contextual Actions
+  const [externalChatPrompt, setExternalChatPrompt] = useState('');
+
+  const handleFloatingExplain = useCallback((text) => {
+    setActiveView('summary');
+    setExternalChatPrompt(`Explain this concept clearly with an intuitive example: "${text}"`);
+    addToast('Asking AI tutor to explain snippet...', 'info');
+  }, [addToast]);
+
+  const handleFloatingFlashcard = useCallback((text) => {
+    setActiveView('summary');
+    setExternalChatPrompt(`Create an active recall flashcard based on this concept (Front: Concept/Question, Back: Clear Explanation): "${text}"`);
+    addToast('Generating flashcard in Chat...', 'info');
+  }, [addToast]);
+
+  const handleFloatingQuiz = useCallback((text) => {
+    setActiveView('summary');
+    setExternalChatPrompt(`Generate a single multiple-choice quiz question with 4 options to test my understanding of this exact concept: "${text}"`);
+    addToast('Generating quiz question in Chat...', 'info');
+  }, [addToast]);
+
+  const handleFloatingFormat = useCallback((formatType, text) => {
+    try {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        if (formatType === 'highlight') {
+          const mark = document.createElement('mark');
+          mark.className = 'bg-amber-300/30 dark:bg-amber-400/25 text-inherit rounded px-1 transition-colors';
+          mark.appendChild(range.extractContents());
+          range.insertNode(mark);
+          sel.removeAllRanges();
+          addToast('Highlighted in Study Guide', 'success');
+          return;
+        } else {
+          const tag = formatType === 'bold' ? 'strong'
+            : formatType === 'italic' ? 'em'
+            : formatType === 'underline' ? 'u'
+            : 's';
+          const el = document.createElement(tag);
+          el.appendChild(range.extractContents());
+          range.insertNode(el);
+          sel.removeAllRanges();
+          addToast(`Formatted as ${formatType}`, 'info');
+          return;
+        }
+      }
+    } catch {
+      addToast(`Selected: "${text.slice(0, 35)}..."`, 'info');
+    }
+  }, [addToast]);
 
   useEffect(() => {
     if (sessionRootRef.current) {
@@ -970,9 +1025,40 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                 <div className="flex items-center gap-2">
                   <Sparkles size={14} className="text-indigo-500" />
                   <span className="text-xs font-bold text-slate-700 dark:text-zinc-200">
-                    {aiOutput ? (aiOutput === 'revision' ? 'Revision Sheet' : 'Interview Q&A') : 'AI Study Guide'}
+                    {aiOutput
+                      ? (aiOutput === 'revision' ? 'Revision Sheet' : 'Interview Q&A')
+                      : (sessionDetail?.source_type === 'youtube' ? 'Interactive Video Learning' : 'AI Study Guide')}
                   </span>
                 </div>
+
+                {/* View Switcher for YouTube Sessions */}
+                {sessionDetail?.source_type === 'youtube' && !aiOutput && (
+                  <div className="flex items-center p-0.5 rounded-xl bg-slate-200/70 dark:bg-zinc-800/80 border border-slate-300/60 dark:border-zinc-700/60 text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setYoutubeView('timeline')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        youtubeView === 'timeline'
+                          ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      ⚡ Learning Timeline
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setYoutubeView('guide')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        youtubeView === 'guide'
+                          ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      📄 Study Guide
+                    </button>
+                  </div>
+                )}
+
                 {aiOutput && (
                   <button
                     onClick={() => setAiOutput(null)}
@@ -1009,6 +1095,26 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                       )}
                     </article>
                   </div>
+                ) : sessionDetail?.source_type === 'youtube' && youtubeView === 'timeline' ? (
+                  <div className="max-w-3xl mx-auto">
+                    <YouTubeLearningTimeline
+                      sessionId={data?.id}
+                      sessionDetail={sessionDetail}
+                      onAskThisMoment={(sec) => {
+                        setActiveView('summary');
+                        setExternalChatPrompt(`[Regarding moment ${sec.timestamp_str} — "${sec.title}"]: Explain what the speaker means when they discuss: "${sec.what_video_says}"`);
+                        addToast(`Ask AI Tutor about ${sec.timestamp_str}`, 'info');
+                      }}
+                      onAddNote={(noteText) => {
+                        setNotes(prev => (prev ? prev + noteText : noteText.trim()));
+                        addToast('Appended timestamped note to Personal Notes', 'success');
+                      }}
+                      onOpenChat={(prompt) => {
+                        setActiveView('summary');
+                        setExternalChatPrompt(prompt);
+                      }}
+                    />
+                  </div>
                 ) : (
                   <div className="max-w-3xl mx-auto h-full">
                     {loadingSession || (sessionDetail && sessionDetail.summary === 'Processing...') || (!currentSummary && !data?.summary) ? (
@@ -1027,6 +1133,15 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                   </div>
                 )}
               </div>
+
+              {/* Contextual Floating Selection Toolbar */}
+              <FloatingSelectionToolbar
+                containerRef={markdownScrollRef}
+                onExplain={handleFloatingExplain}
+                onFlashcard={handleFloatingFlashcard}
+                onQuiz={handleFloatingQuiz}
+                onFormat={handleFloatingFormat}
+              />
             </div>
 
             {/* DRAG HANDLE */}
@@ -1055,6 +1170,8 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                     <GlobalChatTab
                       sessionId={data?.id}
                       documentTitle={sessionDetail?.ai_title || sessionDetail?.filename || data?.title || 'Document'}
+                      externalPrompt={externalChatPrompt}
+                      onPromptHandled={() => setExternalChatPrompt('')}
                     />
                   </div>
                 </div>

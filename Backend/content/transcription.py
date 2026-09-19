@@ -48,36 +48,43 @@ def extract_timestamped_segments(raw_text: str) -> List[ContentSegment]:
         return segments
 
     # Try JSON array first
+    raw_json = None
     json_match = re.search(r"```json\s*(\[.*?\])\s*```", raw_text, re.DOTALL)
-    if not json_match:
+    if json_match:
+        raw_json = json_match.group(1)
+    else:
         # Check if entire text or bracketed portion is JSON
         bracket_match = re.search(r"(\[\s*\{.*\}\s*\])", raw_text, re.DOTALL)
         if bracket_match:
-            try:
-                data = json.loads(bracket_match.group(1))
-                if isinstance(data, list) and data and isinstance(data[0], dict):
-                    for idx, item in enumerate(data, start=1):
-                        t_start = float(item.get("start", item.get("timestamp_start", 0.0)))
-                        t_end = float(item.get("end", item.get("timestamp_end", t_start + 15.0)))
-                        speaker = item.get("speaker")
-                        text = item.get("text", "").strip()
-                        if text:
-                            segments.append(ContentSegment(
-                                segment_id=idx,
-                                text=text,
-                                timestamp_start=t_start,
-                                timestamp_end=t_end,
-                                speaker=speaker,
-                                content_type=ContentType.TEXT
-                            ))
-                    if segments:
-                        return segments
-            except Exception:
-                pass
+            raw_json = bracket_match.group(1)
 
-    # Pattern for timestamp brackets: [MM:SS - MM:SS] or [MM:SS]
+    if raw_json:
+        try:
+            data = json.loads(raw_json)
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                for idx, item in enumerate(data, start=1):
+                    t_start = float(item.get("start", item.get("timestamp_start", 0.0)))
+                    t_end = float(item.get("end", item.get("timestamp_end", t_start + 15.0)))
+                    speaker = item.get("speaker")
+                    text = item.get("text", "").strip()
+                    if text:
+                        segments.append(ContentSegment(
+                            segment_id=idx,
+                            text=text,
+                            timestamp_start=t_start,
+                            timestamp_end=t_end,
+                            speaker=speaker,
+                            content_type=ContentType.TEXT
+                        ))
+                if segments:
+                    return segments
+        except Exception:
+            pass
+
+    # Pattern for timestamp brackets: [MM:SS - MM:SS], [MM:SS], or [HH:MM:SS]
+    # Includes lookahead for markdown headings (\n#[#\s]) to prevent study guide contamination
     pattern = re.compile(
-        r"\[(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\]\s*(?:([A-Za-z0-9\s]+):)?\s*(.*?)(?=(?:\[\d{1,2}:\d{2}|$))",
+        r"\[(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\]\s*(?:([A-Za-z0-9\s\.\-_]+):)?\s*(.*?)(?=(?:\[\d{1,2}:\d{2}|(?:\n#[#\s])|$))",
         re.DOTALL
     )
 

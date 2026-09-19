@@ -124,6 +124,7 @@ class GroundedGenerator:
         models_to_try = [self.model_name] + [m for m in self.fallback_models if m != self.model_name]
         stream_started = False
         last_error = None
+        full_response = ""
 
         for model in models_to_try:
             try:
@@ -134,6 +135,7 @@ class GroundedGenerator:
                 ):
                     if chunk and chunk.text:
                         stream_started = True
+                        full_response += chunk.text
                         yield f"data: {json.dumps({'token': chunk.text})}\n\n"
                 if stream_started:
                     break
@@ -149,10 +151,14 @@ class GroundedGenerator:
             logger.error(f"❌ Error during RAG streaming across models: {last_error}")
             yield f"data: {json.dumps({'error': 'AI engine temporarily unavailable. Please retry.'})}\n\n"
 
-        # Send citation metadata packet right before [DONE]
+        # Send citation metadata packet right before [DONE] (filtered to active citations)
         if citations:
+            used_indices = set(int(m) for m in re.findall(r"\[(\d+)\]", full_response))
+            active_citations = [c for c in citations if c.source_index in used_indices]
+            if not active_citations and citations:
+                active_citations = citations[:2]
             citation_payload = {
-                "citations": [c.to_dict() for c in citations]
+                "citations": [c.to_dict() for c in active_citations]
             }
             yield f"data: {json.dumps(citation_payload)}\n\n"
 

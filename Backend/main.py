@@ -16,7 +16,7 @@ import hashlib
 import logging
 import socket
 import ipaddress
-from typing import List, Optional, AsyncGenerator, Tuple, Union
+from typing import List, Dict, Any, Optional, AsyncGenerator, Tuple, Union
 from datetime import timedelta, datetime
 from contextlib import asynccontextmanager
 
@@ -30,7 +30,7 @@ import razorpay
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func, text
 
@@ -412,6 +412,19 @@ class ChatRequest(BaseModel):
     session_id: Optional[int] = None
     context_text: str | None = None
     response_style: str | None = None
+    history: Optional[List[Dict[str, str]]] = None
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Message cannot be empty or whitespace only")
+        clean = v.replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Message cannot be empty after sanitization")
+        if len(clean) > 20000:
+            raise ValueError("Message exceeds maximum allowed length of 20,000 characters")
+        return clean
 
 class LinkRequest(BaseModel):
     url: str
@@ -429,6 +442,18 @@ class ConversationCreate(BaseModel):
 class MessageCreate(BaseModel):
     message: str
     response_style: str | None = None
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Message cannot be empty or whitespace only")
+        clean = v.replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Message cannot be empty after sanitization")
+        if len(clean) > 20000:
+            raise ValueError("Message exceeds maximum allowed length of 20,000 characters")
+        return clean
 
 class ConversationTitleUpdate(BaseModel):
     title: str
@@ -4385,6 +4410,9 @@ async def chat_with_document(
 ):
     check_plan_limit(current_user, "chats_per_day", db)
 
+    conv = None
+    conv_history = []
+
     if request.session_id:
         session = db.query(StudySession).filter(
             StudySession.id == request.session_id, StudySession.user_id == current_user.id
@@ -4392,8 +4420,40 @@ async def chat_with_document(
         if not session:
             raise HTTPException(status_code=404, detail="Study session not found")
 
+        # Find or create linked ChatConversation for this session
+        conv = db.query(ChatConversation).filter(
+            ChatConversation.session_id == session.id,
+            ChatConversation.user_id == current_user.id
+        ).first()
+        if not conv:
+            conv = ChatConversation(
+                title=f"Chat: {session.filename[:45]}",
+                user_id=current_user.id,
+                session_id=session.id,
+                project_id=session.project_id
+            )
+            db.add(conv)
+            db.commit()
+            db.refresh(conv)
+
+        # Build conversation history
+        if request.history:
+            conv_history = request.history[-6:]
+        else:
+            recent_msgs = conv.messages[-6:] if conv.messages else []
+            conv_history = [{"role": m.role, "content": m.content} for m in recent_msgs]
+
+        # Multi-turn coreference resolution for RAG query
+        retrieval_query = request.message
+        if conv_history:
+            last_user_q = next((m["content"] for m in reversed(conv_history) if m.get("role") == "user"), "")
+            trigger_terms = {"it", "its", "that", "this", "they", "them", "these", "those", "second", "third", "first", "why", "how", "what", "more", "another"}
+            words = set(request.message.lower().split())
+            if last_user_q and (len(request.message) < 25 or bool(words & trigger_terms)):
+                retrieval_query = f"{last_user_q} {request.message}".strip()
+
         # 🔍 Perform Semantic Hybrid RAG Search with strict user isolation
-        chunks = retrieve_relevant_chunks(session.id, request.message, db, top_k=5, user_id=current_user.id)
+        chunks = retrieve_relevant_chunks(session.id, retrieval_query, db, top_k=5, user_id=current_user.id)
         if chunks:
             source_candidates = [
                 RetrievalCandidate(
@@ -4427,12 +4487,25 @@ async def chat_with_document(
             query=request.message,
             context=enhanced_context,
             citations=citations,
-            response_style=request.response_style or "balanced"
+            response_style=request.response_style or "balanced",
+            history=conv_history
         )
         cleaned_reply, valid_indices, warnings = GroundingValidator.validate_and_clean_citations(
             reply=grounded_res.reply,
             available_citations=grounded_res.citations
         )
+
+        # Persist conversation turn to DB
+        try:
+            db.add(ChatMessage(role="user", content=request.message, conversation_id=conv.id))
+            db.add(ChatMessage(role="assistant", content=cleaned_reply, conversation_id=conv.id))
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            log_activity(db, current_user.id, "Chat Message", f"Chatted on {session.filename}")
+        except Exception as pe:
+            logger.warning(f"Failed to persist chat messages: {pe}")
+            db.rollback()
+
         return {
             "reply": cleaned_reply,
             "citations": [c.to_dict() for c in grounded_res.citations],
@@ -4448,7 +4521,8 @@ async def chat_with_document(
             query=request.message,
             context="",
             citations=[],
-            response_style=request.response_style or "balanced"
+            response_style=request.response_style or "balanced",
+            history=request.history or []
         )
         return {
             "reply": grounded_res.reply,
@@ -4475,8 +4549,39 @@ async def chat_stream(
         if not session:
             raise HTTPException(status_code=404, detail="Study session not found")
 
+        conv = db.query(ChatConversation).filter(
+            ChatConversation.session_id == session.id,
+            ChatConversation.user_id == current_user.id
+        ).first()
+        if not conv:
+            conv = ChatConversation(
+                title=f"Chat: {session.filename[:45]}",
+                user_id=current_user.id,
+                session_id=session.id,
+                project_id=session.project_id
+            )
+            db.add(conv)
+            db.commit()
+            db.refresh(conv)
+
+        # Build conversation history
+        if request.history:
+            conv_history = request.history[-6:]
+        else:
+            recent_msgs = conv.messages[-6:] if conv.messages else []
+            conv_history = [{"role": m.role, "content": m.content} for m in recent_msgs]
+
+        # Multi-turn coreference resolution for RAG query
+        retrieval_query = request.message
+        if conv_history:
+            last_user_q = next((m["content"] for m in reversed(conv_history) if m.get("role") == "user"), "")
+            trigger_terms = {"it", "its", "that", "this", "they", "them", "these", "those", "second", "third", "first", "why", "how", "what", "more", "another"}
+            words = set(request.message.lower().split())
+            if last_user_q and (len(request.message) < 25 or bool(words & trigger_terms)):
+                retrieval_query = f"{last_user_q} {request.message}".strip()
+
         # 🔍 Perform Semantic Hybrid RAG Search
-        chunks = retrieve_relevant_chunks(session.id, request.message, db, top_k=5, user_id=current_user.id)
+        chunks = retrieve_relevant_chunks(session.id, retrieval_query, db, top_k=5, user_id=current_user.id)
         if chunks:
             source_candidates = [
                 RetrievalCandidate(
@@ -4484,11 +4589,11 @@ async def chat_stream(
                     session_id=session.id,
                     user_id=current_user.id,
                     text=c["text_content"],
-                    page_number=c.get("page_number", 1) or 1,
+                    page_number=c.get("page_number") if (session.source_type != "pdf" or c.get("page_number") is None) else (c.get("page_number", 1) or 1),
                     section_heading=c.get("section_heading", "") or "",
                     content_type=ContentType(c.get("content_type", "text") or "text"),
                     final_score=c.get("score", 0.0),
-                    source_type=c.get("source_type", "pdf"),
+                    source_type=c.get("source_type") or session.source_type or "text",
                     metadata=c.get("metadata", {}),
                     document_title=session.filename
                 )
@@ -4505,13 +4610,24 @@ async def chat_stream(
         scaffold = TeachingEngine.get_scaffolding_instruction(mode, intent)
         enhanced_context = f"{scaffold}\n\n{doc_context}"
 
+        # Record user message
+        try:
+            db.add(ChatMessage(role="user", content=request.message, conversation_id=conv.id))
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            log_activity(db, current_user.id, "Chat Message", f"Chatted on {session.filename}")
+        except Exception as pe:
+            logger.warning(f"Failed to record user chat message: {pe}")
+            db.rollback()
+
         generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
         return StreamingResponse(
             generator.generate_stream(
                 query=request.message,
                 context=enhanced_context,
                 citations=citations,
-                response_style=request.response_style or "balanced"
+                response_style=request.response_style or "balanced",
+                history=conv_history
             ),
             media_type="text/event-stream",
             headers={
@@ -4526,7 +4642,8 @@ async def chat_stream(
                 query=request.message,
                 context="",
                 citations=[],
-                response_style=request.response_style or "balanced"
+                response_style=request.response_style or "balanced",
+                history=request.history or []
             ),
             media_type="text/event-stream",
             headers={
@@ -5686,6 +5803,15 @@ def list_conversations(
 
 @app.post("/conversations", tags=["Chat"])
 def create_conversation(data: ConversationCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if data.session_id:
+        sess = db.query(StudySession).filter(StudySession.id == data.session_id, StudySession.user_id == current_user.id).first()
+        if not sess:
+            raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
+    if data.project_id:
+        proj = db.query(Project).filter(Project.id == data.project_id, Project.user_id == current_user.id).first()
+        if not proj:
+            raise HTTPException(status_code=404, detail="Space/Project not found or unauthorized")
+
     conv = ChatConversation(
         title=data.title,
         user_id=current_user.id,
@@ -5876,6 +6002,24 @@ def rename_conversation(conv_id: int, data: ConversationTitleUpdate, db: Session
     conv.title = data.title
     db.commit()
     return {"id": conv.id, "title": conv.title}
+
+
+@app.get("/user/chat-count", tags=["Chat"])
+def get_user_chat_count(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Return today's chat count, plan limit, and remaining messages for current user."""
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    count = db.query(ChatMessage).join(ChatConversation).filter(
+        ChatConversation.user_id == current_user.id,
+        ChatMessage.role == "user",
+        ChatMessage.created_at >= today_start
+    ).count()
+    limit = PLAN_LIMITS.get(current_user.plan or "free", {}).get("chats_per_day", 10)
+    remaining = max(0, limit - count) if limit != -1 else -1
+    return {
+        "count": count,
+        "limit": limit,
+        "remaining": remaining
+    }
 
 
 # =============================================================================

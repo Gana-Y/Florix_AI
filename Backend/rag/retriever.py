@@ -177,18 +177,24 @@ class HybridRetriever:
 
                         sim_score = max(0.0, 1.0 - dist)
                         cid = f"sess_{session_id}_chunk_{meta.get('chunk_index', idx)}"
-                        is_web_cand = meta.get("source_type") in ("url", "web")
+                        meta_source = meta.get("source_type", "pdf")
+                        raw_page = meta.get("page_number", meta.get("page"))
+                        is_non_pdf = meta_source not in ("pdf",) or raw_page in (-1, None)
+                        try:
+                            c_type = ContentType(meta.get("content_type", "text"))
+                        except (ValueError, TypeError):
+                            c_type = ContentType.TEXT
                         dense_candidates.append(RetrievalCandidate(
                             chunk_id=cid,
                             session_id=session_id,
                             user_id=user_id,
                             text=doc,
-                            page_number=None if is_web_cand else meta.get("page_number", meta.get("page", 1)),
+                            page_number=None if is_non_pdf else (raw_page or 1),
                             section_heading=meta.get("section_heading", meta.get("heading", "")),
-                            content_type=ContentType(meta.get("content_type", "text")),
+                            content_type=c_type,
                             dense_score=sim_score,
                             final_score=sim_score,
-                            source_type=meta.get("source_type", "pdf"),
+                            source_type=meta_source,
                             metadata=meta
                         ))
             except Exception as e:
@@ -203,16 +209,21 @@ class HybridRetriever:
                     if score > 0.05:
                         cid = f"sess_{session_id}_chunk_{c.chunk_index}"
                         c_meta = getattr(c, "chunk_metadata", None) or {}
-                        c_source = c_meta.get("source_type", "url" if "url" in c_meta else "pdf")
-                        is_web_cand = c_source in ("url", "web")
+                        c_source = c_meta.get("source_type") or getattr(c, "source_type", None) or "pdf"
+                        raw_page = getattr(c, "page_number", None)
+                        is_non_pdf = c_source not in ("pdf",) or raw_page in (-1, None)
+                        try:
+                            c_type = ContentType(getattr(c, "content_type", "text") or "text")
+                        except (ValueError, TypeError):
+                            c_type = ContentType.TEXT
                         lexical_candidates.append(RetrievalCandidate(
                             chunk_id=cid,
                             session_id=session_id,
                             user_id=user_id,
                             text=c.text_content,
-                            page_number=None if is_web_cand else (getattr(c, "page_number", 1) or 1),
+                            page_number=None if is_non_pdf else (raw_page or 1),
                             section_heading=getattr(c, "section_heading", "") or "",
-                            content_type=ContentType(getattr(c, "content_type", "text") or "text"),
+                            content_type=c_type,
                             lexical_score=score,
                             final_score=score,
                             source_type=c_source,

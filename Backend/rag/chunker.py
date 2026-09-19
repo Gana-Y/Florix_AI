@@ -202,15 +202,24 @@ def chunk_section(
     return chunks
 
 
+def _format_seconds_ts(sec: float) -> str:
+    total = max(0, int(sec))
+    m, s = divmod(total, 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
 def _format_ts_span(t_start: Optional[float], t_end: Optional[float]) -> Optional[str]:
-    """Formats start and end seconds into [MM:SS - MM:SS] representation."""
+    """Formats start and end seconds into [MM:SS - MM:SS] or [HH:MM:SS - HH:MM:SS] representation."""
     if t_start is None:
         return None
-    sm, ss = divmod(int(t_start), 60)
+    s_str = _format_seconds_ts(t_start)
     if t_end is not None:
-        em, es = divmod(int(t_end), 60)
-        return f"{sm:02d}:{ss:02d} - {em:02d}:{es:02d}"
-    return f"{sm:02d}:{ss:02d}"
+        e_str = _format_seconds_ts(t_end)
+        return f"{s_str} - {e_str}"
+    return s_str
 
 
 def _create_media_chunk(
@@ -326,7 +335,29 @@ def chunk_normalized_content(
                     curr_segs = []
                     curr_len = 0
 
-                sentences = re.split(r"(?<=[.!?])\s+", seg_text)
+                raw_sentences = re.split(r"(?<=[.!?])\s+", seg_text)
+                sentences = []
+                for raw_s in raw_sentences:
+                    raw_s = raw_s.strip()
+                    if not raw_s:
+                        continue
+                    if len(raw_s) > chunk_size:
+                        # Break oversized speech block by words so chunks never exceed chunk_size
+                        words = raw_s.split(" ")
+                        curr_w: List[str] = []
+                        curr_w_len = 0
+                        for w in words:
+                            if curr_w_len + len(w) + 1 > chunk_size and curr_w:
+                                sentences.append(" ".join(curr_w))
+                                curr_w = [w]
+                                curr_w_len = len(w)
+                            else:
+                                curr_w.append(w)
+                                curr_w_len += len(w) + 1
+                        if curr_w:
+                            sentences.append(" ".join(curr_w))
+                    else:
+                        sentences.append(raw_s)
                 sub_texts = []
                 sub_len = 0
                 s_start = getattr(seg, "timestamp_start", 0.0) or 0.0
@@ -385,7 +416,30 @@ def chunk_normalized_content(
 
         return chunks
 
-    # Otherwise: group by page_number or plain text
+    # For web or non-paged content without timestamps, preserve page_number=None
+    if media_type_val in ("web", "url") or all(getattr(s, "page_number", None) is None for s in segments):
+        source_url_val = (
+            getattr(normalized, "metadata", {}).get("source_url")
+            or getattr(normalized, "metadata", {}).get("url")
+        )
+        full_text = "\n\n".join(s.text for s in segments if s.text.strip())
+        sections = extract_structural_sections(full_text, page_number=None)
+        if not sections:
+            sections = [ParsedSection(title=getattr(normalized, "title", "Web Article"), page_number=None, content=full_text)]
+        chunks: List[EnrichedChunk] = []
+        current_idx = 0
+        for sec in sections:
+            sec_chunks = chunk_section(sec, chunk_size=chunk_size, overlap=overlap, start_chunk_index=current_idx)
+            for c in sec_chunks:
+                c.page_number = None
+                if source_url_val:
+                    c.metadata["source_url"] = source_url_val
+                    c.metadata["url"] = source_url_val
+                chunks.append(c)
+                current_idx += 1
+        return chunks
+
+    # Otherwise: group by page_number for documents
     page_dict: Dict[int, List[str]] = {}
     for s in segments:
         p_num = getattr(s, "page_number", 1) or 1

@@ -259,12 +259,14 @@ class ContentNormalizer:
             segments.append(ContentSegment(
                 segment_id=idx,
                 text=p,
-                page_number=1,
-                content_type=detect_content_type(p)
+                page_number=None,
+                content_type=detect_content_type(p),
+                metadata={"url": url, "source_url": url, "source_type": "url"}
             ))
 
         meta.update({
             "url": url,
+            "source_url": url,
             "segment_count": len(segments)
         })
 
@@ -368,12 +370,19 @@ class ContentNormalizer:
                 return cls.normalize_audio(segs, title=title, raw_text=str(data), metadata=meta)
         elif st == "video":
             if isinstance(data, list) and data and isinstance(data[0], ContentSegment):
+                for s in data:
+                    if hasattr(s, "metadata") and isinstance(s.metadata, dict):
+                        s.metadata.setdefault("source_type", "video")
                 return cls.normalize_video(data, title=title, metadata=meta)
             else:
                 from .transcription import extract_timestamped_segments
                 segs = extract_timestamped_segments(str(data))
+                for s in segs:
+                    if hasattr(s, "metadata") and isinstance(s.metadata, dict):
+                        s.metadata.setdefault("source_type", "video")
                 return cls.normalize_video(segs, title=title, raw_text=str(data), metadata=meta)
         elif st in ("web", "url"):
-            return cls.normalize_web(str(data), title=title, url=meta.get("url", ""), metadata=meta)
+            web_url = meta.get("url") or meta.get("source_url") or ""
+            return cls.normalize_web(str(data), title=title, url=web_url, metadata=meta)
         else:
             return cls.normalize_text(str(data), title=title, metadata=meta)

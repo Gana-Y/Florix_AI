@@ -117,7 +117,7 @@ def parse_pdf_pages(file_path: str) -> List[Tuple[int, str]]:
     return pages_text
 
 
-def extract_structural_sections(text: str, page_number: int = 1) -> List[ParsedSection]:
+def extract_structural_sections(text: str, page_number: Optional[int] = 1) -> List[ParsedSection]:
     """
     Parses a text block into logical sections by identifying headings.
     Ensures headings and their child paragraphs remain structurally linked.
@@ -127,7 +127,7 @@ def extract_structural_sections(text: str, page_number: int = 1) -> List[ParsedS
 
     lines = text.splitlines()
     sections: List[ParsedSection] = []
-    current_title = f"Page {page_number} Section"
+    current_title = f"Page {page_number} Section" if page_number is not None else "Document Section"
     current_lines: List[str] = []
 
     for line in lines:

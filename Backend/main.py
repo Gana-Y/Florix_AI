@@ -14,14 +14,16 @@ import random
 import secrets
 import hashlib
 import logging
-from typing import List, Optional, AsyncGenerator
+import socket
+import ipaddress
+from typing import List, Optional, AsyncGenerator, Tuple, Union
 from datetime import timedelta, datetime
 from contextlib import asynccontextmanager
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from youtube_transcript_api import YouTubeTranscriptApi
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urljoin
 import chromadb
 import razorpay
 
@@ -124,8 +126,8 @@ MODEL_CASCADE = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-flash-late
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_ENABLED = bool(
-    RAZORPAY_KEY_ID 
-    and RAZORPAY_KEY_SECRET 
+    RAZORPAY_KEY_ID
+    and RAZORPAY_KEY_SECRET
     and not RAZORPAY_KEY_ID.startswith("rzp_test_REPLACE_WITH_YOUR")
 )
 razorpay_client = None
@@ -205,7 +207,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Florix AI starting up...")
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Database tables verified")
-    
+
     # Run database migration checks
     db = SessionLocal()
     try:
@@ -223,7 +225,7 @@ async def lifespan(app: FastAPI):
         db.rollback()
     finally:
         db.close()
-        
+
     yield
     logger.info("🛑 Florix AI shutting down")
 
@@ -264,7 +266,7 @@ def update_pipeline_progress(progress_id: str, step: int, label: str, detail: st
             {"step": 5, "total": 6, "label": "Indexing in ChromaDB", "detail": "Pending...", "status": "pending"},
             {"step": 6, "total": 6, "label": "AI summary generation", "detail": "Pending...", "status": "pending"}
         ]
-    
+
     for s in pipeline_progress[progress_id]:
         if s["step"] == step:
             s["label"] = label
@@ -276,31 +278,31 @@ async def progress_streamer(progress_id: str):
     import json
     import asyncio
     last_sent = None
-    
+
     # Wait for the initialization of progress_id
     for _ in range(30):
         if progress_id in pipeline_progress:
             break
         await asyncio.sleep(0.5)
-        
+
     while True:
         if progress_id not in pipeline_progress:
             yield "data: {\"error\": \"Not initialized\"}\n\n"
             break
-            
+
         current = pipeline_progress[progress_id]
         current_str = json.dumps(current)
-        
+
         if current_str != last_sent:
             yield f"data: {current_str}\n\n"
             last_sent = current_str
-            
+
         all_done = all(s["status"] == "done" for s in current)
         if all_done:
             # Let it linger briefly so frontend can see 100% completion before connection closes
             await asyncio.sleep(1.0)
             break
-            
+
         await asyncio.sleep(0.5)
 
 from fastapi.responses import StreamingResponse
@@ -333,7 +335,7 @@ def track_gemini_tokens(response):
             p_tokens = getattr(meta, "prompt_token_count", 0) or 0
             c_tokens = getattr(meta, "candidates_token_count", 0) or 0
             t_tokens = getattr(meta, "total_token_count", 0) or 0
-            
+
             server_metrics["gemini_token_usage"]["prompt_tokens"] += p_tokens
             server_metrics["gemini_token_usage"]["candidates_tokens"] += c_tokens
             server_metrics["gemini_token_usage"]["total_tokens"] += t_tokens
@@ -356,12 +358,12 @@ async def metrics_middleware(request: Request, call_next):
 
     # Update metrics
     server_metrics["total_requests"] += 1
-    
+
     normalized_path = re.sub(r"/\d+", "/{id}", path)
     endpoint_norm = f"{request.method} {normalized_path}"
-    
+
     server_metrics["requests_by_endpoint"][endpoint_norm] = server_metrics["requests_by_endpoint"].get(endpoint_norm, 0) + 1
-    
+
     if endpoint_norm not in server_metrics["latency_by_endpoint"]:
         server_metrics["latency_by_endpoint"][endpoint_norm] = []
     server_metrics["latency_by_endpoint"][endpoint_norm].append(duration_ms)
@@ -375,7 +377,7 @@ async def metrics_middleware(request: Request, call_next):
         "status_code": response.status_code,
         "latency_ms": duration_ms
     })
-    
+
     return response
 
 # =============================================================================
@@ -575,7 +577,7 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
             if _is_quota_or_transient_error(e):
                 logger.warning(f"⚠️ Gemini model '{model}' hit rate limit/quota or transient error ({e}). Cascading to next available model...")
                 continue
-            elif (isinstance(e, google_exceptions.NotFound) or 
+            elif (isinstance(e, google_exceptions.NotFound) or
                   (isinstance(e, genai_errors.APIError) and getattr(e, "code", None) == 404)):
                 logger.warning(f"⚠️ Gemini model '{model}' not found (404). Cascading to next available model...")
                 continue
@@ -865,10 +867,10 @@ def generate_smart_title(text: str, source_type: str = "document") -> str:
         )
         track_gemini_tokens(response)
         title = (response.text or "").strip().strip('"').strip("'").strip("`").strip()[:100]
-        
+
         # Robust validation filters to eliminate generic placeholder terms:
         blacklist = {"summary", "new session", "untitled", "ai summary", "generated notes", "text summary", "document summary", "notes summary", "pdf summary", "image summary", "audio summary", "youtube summary", "web summary"}
-        
+
         if not title or len(title) < 3 or title.lower() in blacklist or any(b in title.lower() for b in ["generated summary", "untitled session", "study session", "new document"]):
             # Intelligent local fallback: Parse first page/lines to extract first meaningful capitalized phrase
             clean_lines = [line.strip() for line in re.split(r'[\r\n]+', snippet) if line.strip() and not line.strip().startswith('#')]
@@ -881,12 +883,12 @@ def generate_smart_title(text: str, source_type: str = "document") -> str:
                 words = [w for w in re.sub(r'[^\w\s]', '', snippet).split() if len(w) > 3][:6]
                 fallback_title = " ".join(words).title() if words else f"Study Session on {source_type.title()}"
             title = fallback_title
-            
+
         # Guarantee word count constraint of 3-8 words
         title_words = title.split()
         if len(title_words) > 8:
             title = " ".join(title_words[:8])
-            
+
         return title
     except Exception as e:
         logger.warning(f"Smart title generation failed: {e}")
@@ -980,7 +982,7 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> List[str
     chunks = []
     current_chunk = []
     current_length = 0
-    
+
     for sentence in sentences:
         sentence = sentence.strip()
         if not sentence:
@@ -993,7 +995,7 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> List[str
                 current_length = 0
             chunks.append(sentence)
             continue
-            
+
         if current_length + sentence_len + 1 > chunk_size:
             chunks.append(" ".join(current_chunk))
             overlap_chunk = []
@@ -1009,7 +1011,7 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> List[str
         else:
             current_chunk.append(sentence)
             current_length += sentence_len + 1
-            
+
     if current_chunk:
         chunks.append(" ".join(current_chunk))
     return chunks
@@ -1081,32 +1083,89 @@ def process_upload_in_background(
 
         elif source_type == "video" and file_path:
             update_pipeline_progress(progress_id, 2, "Content parsing", "Uploading video to Gemini and running transcript...", "active")
-            with open(file_path, "rb") as vf:
-                video_file = client.files.upload(file=vf, config={"mime_type": mime_type})
-            instruction = (
-                "You are an expert educational content analyzer. Watch and analyze this video comprehensively.\n"
-                "Extract spoken content and visual context with timestamps formatted as:\n"
-                "[MM:SS - MM:SS] Speaker: Spoken transcript & visual highlights\n\n"
-                "Create a comprehensive study guide in Markdown format with: "
-                "# Video Title, ## Transcription Highlights, ## Key Topics Covered, ## Summary, ## Important Points, ## Key Takeaways."
-            )
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[instruction, video_file],
-            )
-            full_text = response.text if response and response.text else ""
-            summary = full_text
-            text = full_text
-            session.content = text
-            session.summary = summary
-            db.commit()
-            update_pipeline_progress(progress_id, 2, "Content parsing", f"Video processing complete ({len(full_text)} characters)", "done")
+            video_file = None
+            try:
+                with open(file_path, "rb") as vf:
+                    video_file = client.files.upload(file=vf, config={"mime_type": mime_type})
+                instruction = (
+                    "You are an expert educational content analyzer. Watch and analyze this video comprehensively.\n"
+                    "Extract spoken content and visual context with timestamps formatted as:\n"
+                    "[MM:SS - MM:SS] Speaker: Spoken transcript & visual highlights\n\n"
+                    "Create a comprehensive study guide in Markdown format with: "
+                    "# Video Title, ## Transcription Highlights, ## Key Topics Covered, ## Summary, ## Important Points, ## Key Takeaways."
+                )
+
+                # Resilient generation with model cascade
+                models_to_try = [m for m in [MODEL_NAME] + MODEL_CASCADE if m]
+                response = None
+                last_video_err = None
+                for model_candidate in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_candidate,
+                            contents=[instruction, video_file],
+                        )
+                        if response and response.text:
+                            break
+                    except Exception as ve:
+                        last_video_err = ve
+                        if _is_quota_or_transient_error(ve):
+                            logger.warning(f"⚠️ Video generation on '{model_candidate}' hit rate limit ({ve}). Cascading...")
+                            continue
+                        elif (isinstance(ve, google_exceptions.NotFound) or
+                              (isinstance(ve, genai_errors.APIError) and getattr(ve, "code", None) == 404)):
+                            logger.warning(f"⚠️ Video generation on '{model_candidate}' returned 404. Cascading...")
+                            continue
+                        else:
+                            raise ve
+
+                if not response or not response.text:
+                    if last_video_err:
+                        raise last_video_err
+                    raise ValueError("Gemini returned empty response for video analysis.")
+
+                full_text = response.text
+
+                # Partition transcript and study guide cleanly
+                guide_match = re.search(r"(?:\n|^)(#[#\s].*)", full_text, re.DOTALL)
+                guide_part = guide_match.group(1).strip() if guide_match else full_text.strip()
+
+                # Extract timestamped segments if present anywhere in full_text
+                from content.transcription import extract_timestamped_segments
+                from rag.chunker import _format_ts_span
+                segs = extract_timestamped_segments(full_text)
+                if segs:
+                    transcript_lines = []
+                    for s in segs:
+                        spk = f"{s.speaker}: " if s.speaker else ""
+                        span_str = _format_ts_span(s.timestamp_start, s.timestamp_end)
+                        transcript_lines.append(f"[{span_str}] {spk}{s.text}".strip())
+                    transcript_part = "\n".join(transcript_lines)
+                elif guide_match and guide_match.start() > 0:
+                    transcript_part = full_text[:guide_match.start()].strip()
+                else:
+                    transcript_part = full_text.strip()
+
+                text = transcript_part or full_text
+                summary = guide_part or full_text
+                session.content = text
+                session.summary = summary
+                db.commit()
+                update_pipeline_progress(progress_id, 2, "Content parsing", f"Video processing complete ({len(full_text)} characters)", "done")
+            finally:
+                # Immediate cleanup of temporary local video file
+                if file_path and os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        logger.info(f"🗑️ Cleaned up background temp video file: {file_path}")
+                    except Exception as fe:
+                        logger.warning(f"Failed to delete temp video file {file_path}: {fe}")
 
         elif source_type in ("pdf", "url", "text", "youtube"):
             # Text was parsed synchronously in HTTP thread. Just generate summary now.
             update_pipeline_progress(progress_id, 2, "Content parsing", "Text content ready", "done")
             update_pipeline_progress(progress_id, 6, "AI summary generation", "Running study guide generator...", "active")
-            
+
             if source_type == "pdf":
                 instruction = (
                     "You are an expert academic content summarizer. Analyze the following document and create a "
@@ -1174,11 +1233,21 @@ def process_upload_in_background(
             if source_type == "pdf" and session.doc_metadata and isinstance(session.doc_metadata, dict):
                 pdf_pages = session.doc_metadata.get("pages")
 
+            source_url = None
+            if session.doc_metadata and isinstance(session.doc_metadata, dict):
+                source_url = session.doc_metadata.get("source_url") or session.doc_metadata.get("url")
+
             normalized = ContentNormalizer.normalize_any(
                 source_type=source_type,
                 data=pdf_pages if pdf_pages else text,
                 title=session.filename,
-                metadata={"session_id": session_id, "user_id": session.user_id, "source_type": source_type}
+                metadata={
+                    "session_id": session_id,
+                    "user_id": session.user_id,
+                    "source_type": source_type,
+                    "url": source_url or "",
+                    "source_url": source_url or ""
+                }
             )
             enriched_chunks = build_semantic_chunks(normalized, chunk_size=800, overlap=150)
         except Exception as norm_err:
@@ -1188,7 +1257,7 @@ def process_upload_in_background(
         chunks = [c.text for c in enriched_chunks]
         if enriched_chunks:
             update_pipeline_progress(progress_id, 3, "Text chunking", f"Split into {len(enriched_chunks)} academic semantic chunks", "done")
-            
+
             session.processing_status = ProcessingStatus.EMBEDDING
             db.commit()
             update_pipeline_progress(progress_id, 4, "Generating vector embeddings", f"Creating embeddings for {len(enriched_chunks)} chunks...", "active")
@@ -1196,7 +1265,7 @@ def process_upload_in_background(
             all_embeddings = []
             for i in range(0, len(chunks), batch_size):
                 batch_chunks = chunks[i : i + batch_size]
-                
+
                 # Resilient Embedding Call
                 response = None
                 max_emb_retries = 3
@@ -1212,13 +1281,13 @@ def process_upload_in_background(
                             raise e
                         wait_time = (2 ** emb_attempt) + random.random()
                         time.sleep(wait_time)
-                
+
                 if response and response.embeddings:
                     for emb in response.embeddings:
                         all_embeddings.append(emb.values)
 
             update_pipeline_progress(progress_id, 4, "Generating vector embeddings", "Generated embeddings successfully", "done")
-            
+
             session.processing_status = ProcessingStatus.INDEXING
             db.commit()
             update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "Writing metadata to SQLite & ChromaDB...", "active")
@@ -1247,10 +1316,11 @@ def process_upload_in_background(
                             "session_id": session_id,
                             "user_id": session.user_id,
                             "chunk_index": idx,
-                            "page_number": chk.page_number,
                             "section_heading": chk.section_heading or "",
                             "content_type": chk.content_type.value if hasattr(chk.content_type, "value") else str(chk.content_type),
                         }
+                        if chk.page_number is not None:
+                            meta_dict["page_number"] = chk.page_number
                         if chk.metadata:
                             if "timestamp_start" in chk.metadata and chk.metadata["timestamp_start"] is not None:
                                 meta_dict["timestamp_start"] = float(chk.metadata["timestamp_start"])
@@ -1262,10 +1332,16 @@ def process_upload_in_background(
                                 meta_dict["source_type"] = str(chk.metadata["source_type"])
                             elif source_type:
                                 meta_dict["source_type"] = str(source_type)
+                            if "source_url" in chk.metadata and chk.metadata["source_url"]:
+                                meta_dict["source_url"] = str(chk.metadata["source_url"])
+                            elif source_url:
+                                meta_dict["source_url"] = str(source_url)
                             if "speaker" in chk.metadata and chk.metadata["speaker"]:
                                 meta_dict["speaker"] = str(chk.metadata["speaker"])
                         elif source_type:
                             meta_dict["source_type"] = str(source_type)
+                            if source_url:
+                                meta_dict["source_url"] = str(source_url)
                         chroma_metadatas.append(meta_dict)
 
                     chroma_collection.upsert(
@@ -1326,6 +1402,11 @@ def process_upload_in_background(
 
     except Exception as e:
         logger.error(f"❌ Background task error: {e}")
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
         try:
             session = db.query(StudySession).filter(StudySession.id == session_id).first()
             if session:
@@ -1358,17 +1439,17 @@ def embed_and_store_document(session_id: int, text: str, progress_id: str = None
             update_pipeline_progress(progress_id, 4, "Generating vector embeddings", "Skipped (no chunks)", "done")
             update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "Skipped", "done")
             return
-            
+
         logger.info(f"Generated {len(chunks)} chunks for session {session_id}")
         update_pipeline_progress(progress_id, 3, "Text chunking", f"Split into {len(chunks)} semantic chunks", "done")
-        
+
         # 2. Get embeddings in batches (max 50 per batch)
         update_pipeline_progress(progress_id, 4, "Generating vector embeddings", f"Requesting Gemini embeddings for {len(chunks)} chunks...", "active")
         batch_size = 50
         all_embeddings = []
         for i in range(0, len(chunks), batch_size):
             batch_chunks = chunks[i : i + batch_size]
-            
+
             # Resilient Embedding Call with Retry Backoff
             response = None
             max_emb_retries = 3
@@ -1385,12 +1466,12 @@ def embed_and_store_document(session_id: int, text: str, progress_id: str = None
                     wait_time = (2 ** emb_attempt) + random.random()
                     logger.warning(f"Embedding API errored: {e}. Retrying in {wait_time:.1f}s (attempt {emb_attempt+1}/{max_emb_retries})...")
                     time.sleep(wait_time)
-            
+
             for emb in response.embeddings:
                 all_embeddings.append(emb.values)
-                
+
         update_pipeline_progress(progress_id, 4, "Generating vector embeddings", f"Created 3072-dimensional embeddings via Gemini", "done")
-        
+
         # 3. Store in SQLite
         update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "Writing vectors and metadata to SQLite & ChromaDB...", "active")
         db_chunks = []
@@ -1403,7 +1484,7 @@ def embed_and_store_document(session_id: int, text: str, progress_id: str = None
             )
             db_chunk.session_id = session_id  # ensure exact binding
             db_chunks.append(db_chunk)
-            
+
         db.add_all(db_chunks)
         db.commit()
         logger.info(f"✅ Successfully indexed {len(db_chunks)} chunks in SQLite for session {session_id}")
@@ -1422,7 +1503,7 @@ def embed_and_store_document(session_id: int, text: str, progress_id: str = None
                 logger.info(f"✅ Successfully indexed {len(chunks)} chunks in ChromaDB for session {session_id}")
             except Exception as e:
                 logger.error(f"⚠️ Failed to index chunks in ChromaDB: {e}")
-                
+
         update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "HNSW cosine similarity index successfully updated", "done")
     except Exception as e:
         db.rollback()
@@ -1668,7 +1749,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email address is required")
     if " " in email_clean:
         raise HTTPException(status_code=400, detail="Email address must not contain spaces")
-    
+
     # Strict regex for standard RFC email structures
     email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
     if not re.match(email_regex, email_clean):
@@ -1686,7 +1767,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Full name must be at least 3 characters")
     if len(name_clean) > 50:
         raise HTTPException(status_code=400, detail="Full name must not exceed 50 characters")
-    
+
     # Ensure name has only standard alphabetical characters, spaces, hyphens, and periods
     name_regex = r"^[a-zA-Z\s\.-]+$"
     if not re.match(name_regex, name_clean):
@@ -1702,7 +1783,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Password must contain at least one lowercase letter")
     if not any(c.isdigit() for c in password_val):
         raise HTTPException(status_code=400, detail="Password must contain at least one digit/number")
-    
+
     # Check for at least one special character
     special_chars = r"[!@#$%^&*(),.?\":{}|<>]"
     if not re.search(special_chars, password_val):
@@ -1794,7 +1875,7 @@ def oauth_login(data: OAuthRequest, db: Session = Depends(get_db)):
     """Logs in or registers a user via OAuth (Google or GitHub). Protects admin accounts and prevents account hijacking."""
     email = data.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
-    
+
     if user:
         # Prevent account takeover: Admin accounts cannot be accessed via unverified simulated OAuth
         if getattr(user, "is_admin", False):
@@ -1856,7 +1937,7 @@ def update_profile(data: ProfileUpdate, db: Session = Depends(get_db), current_u
         raise HTTPException(status_code=400, detail="Full name must be at least 3 characters")
     if len(name_clean) > 50:
         raise HTTPException(status_code=400, detail="Full name must not exceed 50 characters")
-    
+
     # Ensure name has only standard alphabetical characters, spaces, hyphens, and periods
     name_regex = r"^[a-zA-Z\s\.-]+$"
     if not re.match(name_regex, name_clean):
@@ -1872,7 +1953,7 @@ def update_profile(data: ProfileUpdate, db: Session = Depends(get_db), current_u
 def change_password(data: PasswordChange, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not verify_password(data.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    
+
     password_val = data.new_password
     if len(password_val) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
@@ -1882,7 +1963,7 @@ def change_password(data: PasswordChange, db: Session = Depends(get_db), current
         raise HTTPException(status_code=400, detail="Password must contain at least one lowercase letter")
     if not any(c.isdigit() for c in password_val):
         raise HTTPException(status_code=400, detail="Password must contain at least one digit/number")
-    
+
     # Check for at least one special character
     special_chars = r"[!@#$%^&*(),.?\":{}|<>]"
     if not re.search(special_chars, password_val):
@@ -2207,7 +2288,7 @@ async def verify_razorpay_payment(
     if not is_sandbox:
         if not RAZORPAY_ENABLED:
             raise HTTPException(status_code=503, detail="Razorpay is not configured.")
-        
+
         # Verify the signature
         params_dict = {
             'razorpay_order_id': data.razorpay_order_id,
@@ -2224,7 +2305,7 @@ async def verify_razorpay_payment(
     current_user.plan = data.plan
     current_user.plan_expires_at = datetime.utcnow() + timedelta(days=30)
     db.commit()
-    
+
     upgrade_source = "Sandbox Mode" if is_sandbox else "Razorpay"
     log_activity(db, current_user.id, "Plan Upgraded", f"Upgraded to {data.plan.upper()} via {upgrade_source}")
     db.commit()
@@ -2239,7 +2320,7 @@ async def razorpay_webhook(
     db: Session = Depends(get_db)
 ):
     """
-    Listen to Razorpay Webhooks. 
+    Listen to Razorpay Webhooks.
     Verifies webhook signature and updates plans for events like 'order.paid' or 'payment.captured'.
     """
     payload = await request.body()
@@ -2247,7 +2328,7 @@ async def razorpay_webhook(
 
     # Webhook signature secret from env if configured
     webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
-    
+
     if RAZORPAY_ENABLED:
         if not webhook_secret:
             logger.error("Razorpay webhook received but RAZORPAY_WEBHOOK_SECRET is not configured.")
@@ -2261,21 +2342,21 @@ async def razorpay_webhook(
     try:
         event = json.loads(payload)
         event_name = event.get("event")
-        
+
         # We upgrade on payment.captured or order.paid
         if event_name in ("order.paid", "payment.captured"):
             payload_data = event.get("payload", {})
-            
+
             # Extract notes from payment or order
             notes = {}
             if "payment" in payload_data:
                 notes = payload_data["payment"]["entity"].get("notes", {})
             elif "order" in payload_data:
                 notes = payload_data["order"]["entity"].get("notes", {})
-                
+
             user_id = notes.get("user_id")
             plan = notes.get("plan")
-            
+
             if user_id and plan:
                 try:
                     uid = int(user_id)
@@ -2291,7 +2372,7 @@ async def razorpay_webhook(
                     logger.warning(f"Invalid user_id format in Razorpay notes: {user_id}")
     except Exception as e:
         logger.error(f"Error handling Razorpay webhook: {e}")
-        
+
     return {"status": "ok"}
 
 
@@ -2305,18 +2386,18 @@ def submit_payment(
     """Submit a manual payment (UPI/Mobile payment UTR) for verification."""
     if data.plan not in ("pro", "premium"):
         raise HTTPException(status_code=400, detail="Invalid plan chosen.")
-    
+
     # Clean transaction reference ID
     tx_id_cleaned = re.sub(r"\s+", "", data.transaction_id).strip()
-    
+
     # Edge case: Validate pattern and length of reference ID to block spam and fraud.
     # Accepts 8 to 18 character alphanumeric codes with no special characters.
     if not tx_id_cleaned or not re.match(r"^[A-Za-z0-9]{8,18}$", tx_id_cleaned):
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Invalid Transaction Reference ID. UTR must be an 8 to 18 character alphanumeric code with no spaces or special symbols."
         )
-    
+
     # Check if this transaction ID has already been submitted
     existing = db.query(PaymentSubmission).filter(
         PaymentSubmission.transaction_id == tx_id_cleaned
@@ -2348,7 +2429,7 @@ async def get_admin_metrics(
 ):
     if not getattr(current_user, "is_admin", False):
         raise HTTPException(status_code=403, detail="Forbidden. Admin access required.")
-        
+
     # Aggregate latency lists into averages (to make it easy for frontend to chart)
     latency_summary = {}
     for endpoint, latencies in server_metrics["latency_by_endpoint"].items():
@@ -2356,10 +2437,10 @@ async def get_admin_metrics(
             latency_summary[endpoint] = round(sum(latencies) / len(latencies), 2)
         else:
             latency_summary[endpoint] = 0.0
-            
+
     # Convert deque log to a serializable list
     log_list = list(server_metrics["recent_requests_log"])
-    
+
     return {
         "total_requests": server_metrics["total_requests"],
         "requests_by_endpoint": server_metrics["requests_by_endpoint"],
@@ -2376,11 +2457,11 @@ async def get_system_health(
 ):
     if not getattr(current_user, "is_admin", False):
         raise HTTPException(status_code=403, detail="Forbidden. Admin access required.")
-        
+
     import platform
     import sys
     uptime_seconds = time.time() - system_start_time
-    
+
     # Process memory
     memory_mb = 0
     try:
@@ -2393,7 +2474,7 @@ async def get_system_health(
             memory_mb = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2)
         except Exception:
             memory_mb = 114.2  # robust fallback
-            
+
     # DB stats
     try:
         total_users = db.query(User).count()
@@ -2404,7 +2485,7 @@ async def get_system_health(
         total_users = 0
         total_sessions = 0
         total_chunks = 0
-        
+
     # ChromaDB stats
     chromadb_status = "uninitialized"
     chromadb_count = 0
@@ -2415,7 +2496,7 @@ async def get_system_health(
         except Exception as e:
             logger.warning(f"Error counting ChromaDB collection elements: {e}")
             chromadb_status = f"error: {str(e)}"
-            
+
     return {
         "status": "healthy",
         "uptime": round(uptime_seconds, 2),
@@ -2560,7 +2641,7 @@ def approve_payment(
         user_to_upgrade.plan = submission.plan
         user_to_upgrade.plan_expires_at = datetime.utcnow() + timedelta(days=30)
         log_activity(db, user_to_upgrade.id, "Plan Upgraded", f"Upgraded to {submission.plan.upper()} (UTR Verified)")
-        
+
     submission.status = "approved"
     log_activity(db, current_user.id, "Payment Approved", f"Approved payment for {user_to_upgrade.email if user_to_upgrade else 'User'}")
     # Notify the approved user in their activity log
@@ -2608,10 +2689,10 @@ def submit_feedback(
     """Submit user feedback (Bug Report, Feature Request, Billing, General). Captures user's name and Gmail."""
     if not feedback.description.strip():
         raise HTTPException(status_code=400, detail="Feedback description cannot be empty.")
-    
+
     valid_types = ["Bug Report", "Feature Request", "Auth and Billing", "General Feedback"]
     ftype = feedback.feedback_type if feedback.feedback_type in valid_types else "General Feedback"
-    
+
     new_fb = Feedback(
         user_id=current_user.id,
         user_name=current_user.name,
@@ -2719,7 +2800,7 @@ def get_user_projects(db: Session = Depends(get_db), current_user: User = Depend
     projects = db.query(Project).filter(Project.user_id == current_user.id).order_by(
         Project.is_pinned.desc(), Project.created_at.desc()
     ).all()
-    
+
     result = []
     for p in projects:
         session_count = len(p.sessions)
@@ -2758,7 +2839,7 @@ def get_project_details(
     p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Space not found.")
-    
+
     subchats = [
         {
             "id": c.id,
@@ -2770,7 +2851,7 @@ def get_project_details(
         }
         for c in sorted(p.conversations, key=lambda x: (not x.is_pinned, x.updated_at), reverse=True)
     ]
-    
+
     sessions = [
         {
             "id": s.id,
@@ -2784,7 +2865,7 @@ def get_project_details(
         }
         for s in p.sessions
     ]
-    
+
     master_flashcards = []
     space_quizzes = []
     for s in p.sessions:
@@ -2837,7 +2918,7 @@ def create_project(
     """Create a new project/folder for organizing study materials."""
     if not data.name.strip():
         raise HTTPException(status_code=400, detail="Project name cannot be empty.")
-    
+
     proj = Project(
         user_id=current_user.id,
         name=data.name.strip(),
@@ -2873,7 +2954,7 @@ def update_project(
     proj = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found.")
-        
+
     if data.name is not None and data.name.strip():
         proj.name = data.name.strip()
     if data.color is not None:
@@ -2884,7 +2965,7 @@ def update_project(
         proj.is_pinned = data.is_pinned
     if data.description is not None:
         proj.description = data.description.strip() if data.description else None
-        
+
     db.commit()
     db.refresh(proj)
     session_count = db.query(StudySession).filter(StudySession.project_id == proj.id).count()
@@ -2910,7 +2991,7 @@ def delete_project(
     proj = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found.")
-        
+
     # Unlink sessions
     db.query(StudySession).filter(StudySession.project_id == project_id).update({"project_id": None})
     db.delete(proj)
@@ -2930,7 +3011,7 @@ def move_session_to_project(
     session = db.query(StudySession).filter(StudySession.id == session_id, StudySession.user_id == current_user.id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Study session not found.")
-        
+
     if req.project_id is not None:
         proj = db.query(Project).filter(Project.id == req.project_id, Project.user_id == current_user.id).first()
         if not proj:
@@ -2940,7 +3021,7 @@ def move_session_to_project(
     else:
         session.project_id = None
         msg = "Removed from project"
-        
+
     db.commit()
     return {"message": msg, "session_id": session.id, "project_id": session.project_id}
 
@@ -3342,10 +3423,37 @@ async def upload_video(
         raise HTTPException(status_code=413, detail=f"Video file too large. Server maximum is {max_video_mb}MB. Your file is {len(contents) / 1024 / 1024:.1f}MB.")
 
     update_pipeline_progress(progress_id, 1, "File received", f"Received video file {file.filename} ({len(contents) / 1024 / 1024:.2f} MB)", "done")
+
+    # 🔍 Duplicate video detection: check SHA256 hash against existing sessions
+    content_hash = hashlib.sha256(contents).hexdigest()
+    existing = db.query(StudySession).filter(
+        StudySession.user_id == current_user.id,
+        StudySession.content_hash == content_hash
+    ).first()
+    if existing:
+        if not existing.project_id:
+            existing.project_id = ensure_session_space(db, current_user.id, project_id, existing.filename, "video")
+            db.commit()
+        if progress_id:
+            for step in range(2, 7):
+                update_pipeline_progress(progress_id, step, "Retrieved from cache", "Retrieved from cache", "done")
+        return {
+            "summary": existing.summary,
+            "filename": existing.filename,
+            "id": existing.id,
+            "project_id": existing.project_id,
+            "duplicate": True,
+            "message": "This video was already uploaded. Returning your existing study session."
+        }
+
     update_pipeline_progress(progress_id, 2, "Content parsing", "Preparing video analysis pipeline...", "active")
 
     os.makedirs("uploads", exist_ok=True)
-    clean_name = re.sub(r"[^\w\.-]", "_", file.filename)
+    unique_prefix = uuid.uuid4().hex[:8]
+    raw_basename = os.path.basename(file.filename.replace("\\", "/"))
+    clean_base = re.sub(r"[^\w\.-]", "_", raw_basename)
+    clean_base = re.sub(r"\.{2,}", "_", clean_base)
+    clean_name = f"{unique_prefix}_{clean_base}"
     file_path = f"uploads/{clean_name}"
     with open(file_path, "wb") as f:
         f.write(contents)
@@ -3366,6 +3474,7 @@ async def upload_video(
         category="Processing...",
         timeline=initial_timeline,
         project_id=assigned_space_id,
+        content_hash=content_hash,
     )
     db.add(new_session)
     log_activity(db, current_user.id, "Uploaded Video", f"Processed video: {display_title}")
@@ -3387,6 +3496,248 @@ async def upload_video(
     return {"summary": "Processing...", "filename": display_title, "id": new_session.id, "project_id": assigned_space_id}
 
 
+MAX_URL_LENGTH = 2048
+MAX_WEB_REDIRECTS = 5
+MAX_WEB_RESPONSE_BYTES = 15 * 1024 * 1024  # 15 MB
+ALLOWED_SCHEMES = ("http", "https")
+ALLOWED_WEB_PORTS = {80, 443, 8080, 8443}
+
+
+def is_ip_blocked(ip_obj: Union[ipaddress.IPv4Address, ipaddress.IPv6Address]) -> bool:
+    """Returns True if the IP is private, loopback, link-local, reserved, multicast, unspecified, or cloud metadata."""
+    if isinstance(ip_obj, ipaddress.IPv6Address):
+        # Handle RFC 6052 / RFC 6146 NAT64 well-known prefix (64:ff9b::/96)
+        nat64_net = ipaddress.ip_network("64:ff9b::/96")
+        if ip_obj in nat64_net:
+            embedded_v4 = ipaddress.IPv4Address(ip_obj.packed[-4:])
+            return is_ip_blocked(embedded_v4)
+
+    if (
+        ip_obj.is_loopback
+        or ip_obj.is_private
+        or ip_obj.is_link_local
+        or ip_obj.is_reserved
+        or ip_obj.is_multicast
+        or ip_obj.is_unspecified
+    ):
+        return True
+    ip_str = str(ip_obj)
+    if ip_str in ("169.254.169.254", "0.0.0.0", "::"):
+        return True
+    return False
+
+
+def validate_safe_url(url: str) -> Tuple[str, str, int]:
+    """
+    Validates a URL against SSRF, dangerous schemes, ports, and internal destinations.
+    Returns (cleaned_url, hostname, port).
+    Raises HTTPException(400) or HTTPException(422) if invalid or unsafe.
+    """
+    if not url or not url.strip():
+        raise HTTPException(status_code=400, detail="URL cannot be empty.")
+
+    clean_url = url.strip()
+    if len(clean_url) > MAX_URL_LENGTH:
+        raise HTTPException(status_code=400, detail=f"URL too long. Maximum allowed length is {MAX_URL_LENGTH} characters.")
+
+    parsed = urlparse(clean_url)
+    if not parsed.scheme or parsed.scheme.lower() not in ALLOWED_SCHEMES:
+        raise HTTPException(status_code=400, detail="Invalid URL. Must start with http:// or https://")
+
+    if not parsed.netloc or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Invalid URL format. Please enter a valid website address (e.g. https://example.com).")
+
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="URLs containing embedded credentials (user:password@) are not permitted.")
+
+    hostname = parsed.hostname.lower().strip(".")
+    if not hostname:
+        raise HTTPException(status_code=400, detail="Invalid hostname in URL.")
+
+    blocked_hostnames = {
+        "localhost", "localhost.localdomain", "localtest.me", "metadata.google.internal",
+        "instance-data"
+    }
+    if hostname in blocked_hostnames or hostname.endswith(".local") or hostname.endswith(".internal"):
+        raise HTTPException(status_code=422, detail="Access to local or internal network destinations is prohibited.")
+
+    port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    if port not in ALLOWED_WEB_PORTS:
+        raise HTTPException(status_code=400, detail=f"Port {port} is not permitted. Only standard web ports (80, 443, 8080, 8443) are allowed.")
+
+    # Check if direct IP literal
+    try:
+        ip_obj = ipaddress.ip_address(hostname)
+        if is_ip_blocked(ip_obj):
+            raise HTTPException(status_code=422, detail="Access to private or local network addresses is prohibited.")
+    except ValueError:
+        if "." not in hostname:
+            raise HTTPException(status_code=400, detail="Invalid URL format. Please enter a valid website address (e.g. https://example.com).")
+
+        # DNS Resolution Validation
+        try:
+            addr_info = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
+            if not addr_info:
+                raise HTTPException(status_code=422, detail=f"Could not resolve host '{hostname}'. The domain may not exist.")
+            for entry in addr_info:
+                sockaddr = entry[4]
+                ip_str = sockaddr[0]
+                ip_obj = ipaddress.ip_address(ip_str)
+                if is_ip_blocked(ip_obj):
+                    raise HTTPException(status_code=422, detail=f"Destination address '{ip_str}' for host '{hostname}' is a private or local network address. Access is prohibited.")
+        except socket.gaierror:
+            raise HTTPException(status_code=422, detail=f"Could not resolve domain '{hostname}'. The URL may be broken or offline.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Could not validate destination host: {str(e)}")
+
+    return clean_url, hostname, port
+
+
+def safe_fetch_url(url: str, timeout: int = 20) -> requests.Response:
+    """
+    Safely fetches a web URL following up to MAX_WEB_REDIRECTS redirects,
+    validating each hop against SSRF and enforcing a 15MB download size limit.
+    """
+    current_url = url
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    }
+
+    visited_urls = set()
+
+    for hop in range(MAX_WEB_REDIRECTS + 1):
+        clean_url, _, _ = validate_safe_url(current_url)
+        if clean_url in visited_urls:
+            raise HTTPException(status_code=422, detail="Redirect loop detected while fetching URL.")
+        visited_urls.add(clean_url)
+
+        try:
+            resp = requests.get(clean_url, headers=headers, timeout=timeout, allow_redirects=False, stream=True)
+        except requests.exceptions.Timeout:
+            raise HTTPException(status_code=422, detail="The website took too long to respond (timeout). Please check if the URL is accessible and try again.")
+        except requests.exceptions.ConnectionError:
+            raise HTTPException(status_code=422, detail="Could not connect to the website. The URL may be broken, expired, or the server is down.")
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Could not fetch URL: {str(e)}")
+
+        # Check redirect status codes (301, 302, 303, 307, 308)
+        status_code = getattr(resp, "status_code", 200)
+        if isinstance(status_code, int) and status_code in (301, 302, 303, 307, 308):
+            if hop >= MAX_WEB_REDIRECTS:
+                raise HTTPException(status_code=422, detail=f"Too many redirects (exceeded maximum of {MAX_WEB_REDIRECTS}).")
+            location = resp.headers.get("Location") if hasattr(resp, "headers") else None
+            if not location:
+                raise HTTPException(status_code=422, detail="Redirect response missing Location header.")
+            current_url = urljoin(clean_url, location)
+            continue
+
+        # Status validation
+        if isinstance(status_code, int):
+            if status_code == 403:
+                raise HTTPException(status_code=422, detail="Access denied (403 Forbidden). This website restricts automated access.")
+            elif status_code == 404:
+                raise HTTPException(status_code=422, detail="Page not found (404). The URL may be broken or the content has been removed.")
+            elif status_code >= 500:
+                raise HTTPException(status_code=422, detail=f"The website returned a server error ({status_code}). Please try again later.")
+            elif status_code >= 400:
+                raise HTTPException(status_code=422, detail=f"Could not fetch URL: HTTP {status_code} error.")
+
+        # Check Content-Length if present
+        if hasattr(resp, "headers"):
+            cl = resp.headers.get("Content-Length")
+            if cl:
+                try:
+                    if int(cl) > MAX_WEB_RESPONSE_BYTES:
+                        raise HTTPException(status_code=422, detail="The webpage exceeds the maximum allowable download size (15 MB).")
+                except ValueError:
+                    pass
+
+        # Stream content up to MAX_WEB_RESPONSE_BYTES
+        content_chunks = []
+        downloaded = 0
+        if hasattr(resp, "iter_content") and callable(resp.iter_content):
+            try:
+                for chunk in resp.iter_content(chunk_size=65536):
+                    if isinstance(chunk, (bytes, bytearray)):
+                        downloaded += len(chunk)
+                        if downloaded > MAX_WEB_RESPONSE_BYTES:
+                            if hasattr(resp, "close") and callable(resp.close):
+                                resp.close()
+                            raise HTTPException(status_code=422, detail="The webpage content exceeded the maximum allowable download size (15 MB).")
+                        content_chunks.append(chunk)
+                if content_chunks:
+                    resp._content = b"".join(content_chunks)
+            except TypeError:
+                pass
+
+        return resp
+
+    raise HTTPException(status_code=422, detail=f"Too many redirects (exceeded maximum of {MAX_WEB_REDIRECTS}).")
+
+
+def extract_html_article_text(html_content: str) -> Tuple[str, str]:
+    """
+    Extracts clean, structured text from HTML content preserving headings,
+    paragraphs, lists, and tables as Markdown-like structural blocks.
+    Returns (structured_text, page_title).
+    """
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    # Extract title before decomposing header/title
+    page_title = ""
+    title_tag = soup.find("title")
+    if title_tag and title_tag.get_text().strip():
+        page_title = title_tag.get_text().strip()
+    elif soup.find("h1") and soup.find("h1").get_text().strip():
+        page_title = soup.find("h1").get_text().strip()
+
+    # Decompose non-content / boilerplate / hostile elements
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "svg", "template", "form", "iframe", "object", "embed"]):
+        tag.decompose()
+
+    # Strip HTML comments
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+
+    # Transform headings to Markdown-style headings to preserve structure
+    for level in range(1, 7):
+        for h_tag in soup.find_all(f"h{level}"):
+            h_text = h_tag.get_text().strip()
+            if h_text:
+                prefix = "#" * min(level, 3)
+                h_tag.replace_with(f"\n\n{prefix} {h_text}\n\n")
+
+    # Format list items
+    for li in soup.find_all("li"):
+        li_text = li.get_text().strip()
+        if li_text:
+            li.replace_with(f"\n- {li_text}\n")
+
+    # Separate block paragraphs / divs / blockquotes / table rows
+    for block_tag in soup.find_all(["p", "blockquote", "tr", "pre"]):
+        b_text = block_tag.get_text().strip()
+        if b_text:
+            block_tag.replace_with(f"\n\n{b_text}\n\n")
+
+    raw_text = soup.get_text(separator="\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in raw_text.splitlines()]
+    clean_lines = []
+    prev_blank = False
+    for line in lines:
+        if not line:
+            if not prev_blank and clean_lines:
+                clean_lines.append("")
+                prev_blank = True
+        else:
+            clean_lines.append(line)
+            prev_blank = False
+
+    structured_text = "\n".join(clean_lines).strip()
+    return structured_text, page_title
+
+
 @app.post("/process-link", tags=["Content"])
 async def process_link(
     background_tasks: BackgroundTasks,
@@ -3396,16 +3747,10 @@ async def process_link(
     current_user: User = Depends(get_current_user)
 ):
     check_plan_limit(current_user, "sessions", db)
-    url = request.url.strip()
+    raw_url = request.url.strip()
 
-    # 🔒 URL format validation
-    if not url:
-        raise HTTPException(status_code=400, detail="URL cannot be empty.")
-    parsed = urlparse(url)
-    if not parsed.scheme or parsed.scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail="Invalid URL. Must start with http:// or https://")
-    if not parsed.netloc or "." not in parsed.netloc:
-        raise HTTPException(status_code=400, detail="Invalid URL format. Please enter a valid website address (e.g. https://example.com).")
+    # 🔒 URL format & SSRF destination validation
+    url, hostname, port = validate_safe_url(raw_url)
 
     update_pipeline_progress(progress_id, 1, "File received", f"Received URL to process: {url}", "done")
     update_pipeline_progress(progress_id, 2, "Content parsing", "Fetching and parsing website/YouTube content...", "active")
@@ -3469,73 +3814,57 @@ async def process_link(
         update_pipeline_progress(progress_id, 6, "AI summary generation", "Queued study guide generation...", "active")
     else:
         # ── Web URL ──
-        try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
-            resp = requests.get(url, timeout=20, headers=headers, allow_redirects=True)
-            resp.raise_for_status()
+        resp = safe_fetch_url(url, timeout=20)
+        content_type = resp.headers.get("Content-Type", "").lower()
+        clean_type = content_type.split(";")[0].strip()
+        plan = current_user.plan or "free"
+        max_link_chars = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get("max_link_chars", 10000)
 
-            content_type = resp.headers.get("Content-Type", "").lower()
-            plan = current_user.plan or "free"
-            max_link_chars = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get("max_link_chars", 10000)
-
-            # Detect direct PDF link
-            is_pdf_link = False
-            pdf_pages = []
-            if "application/pdf" in content_type or parsed.path.lower().endswith(".pdf"):
-                is_pdf_link = True
-                try:
-                    import io
-                    from pypdf import PdfReader
-                    reader = PdfReader(io.BytesIO(resp.content))
-                    if reader.is_encrypted:
-                        try:
-                            reader.decrypt("")
-                        except Exception:
-                            raise HTTPException(status_code=422, detail="The PDF at this link is password-protected. Please remove password protection or upload directly.")
-                    for idx, page in enumerate(reader.pages, start=1):
-                        raw_t = (page.extract_text() or "").replace("\x00", "").strip()
-                        if raw_t:
-                            pdf_pages.append((idx, raw_t))
-                    text = "\n\n".join(f"[Page {p[0]}]\n{p[1]}" for p in pdf_pages)
-                    if max_link_chars != -1 and len(text) > max_link_chars:
-                        text = text[:max_link_chars]
-                    if not text or len(text.strip()) < 50:
-                        raise HTTPException(status_code=422, detail="The PDF at this URL contains no selectable text (scanned or image-only). Please upload it directly via Document Upload.")
-                    pdf_filename = os.path.basename(parsed.path)
-                    title = pdf_filename.replace(".pdf", "").replace("_", " ").title() if pdf_filename else "Online PDF Document"
-                except HTTPException:
-                    raise
-                except Exception as pdf_err:
-                    raise HTTPException(status_code=422, detail=f"Could not read PDF from link: {pdf_err}")
-            elif any(content_type.startswith(m) for m in ("image/", "video/", "audio/", "application/zip", "application/octet-stream")):
-                clean_type = content_type.split(";")[0]
-                raise HTTPException(status_code=422, detail=f"Direct media/binary links ({clean_type}) are not supported. Please upload files directly or provide a YouTube URL.")
-            else:
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
-                    tag.decompose()
-                # Truncate to plan-based link character limit
-                text = " ".join(soup.get_text(separator=" ").split())
+        # Detect direct PDF link
+        is_pdf_link = False
+        pdf_pages = []
+        parsed = urlparse(url)
+        if "application/pdf" in clean_type or parsed.path.lower().endswith(".pdf"):
+            is_pdf_link = True
+            try:
+                import io
+                from pypdf import PdfReader
+                reader = PdfReader(io.BytesIO(resp.content))
+                if reader.is_encrypted:
+                    try:
+                        reader.decrypt("")
+                    except Exception:
+                        raise HTTPException(status_code=422, detail="The PDF at this link is password-protected. Please remove password protection or upload directly.")
+                for idx, page in enumerate(reader.pages, start=1):
+                    raw_t = (page.extract_text() or "").replace("\x00", "").strip()
+                    if raw_t:
+                        pdf_pages.append((idx, raw_t))
+                text = "\n\n".join(f"[Page {p[0]}]\n{p[1]}" for p in pdf_pages)
                 if max_link_chars != -1 and len(text) > max_link_chars:
                     text = text[:max_link_chars]
-                page_title = soup.find("title")
-                title = page_title.get_text().strip() if page_title else urlparse(url).netloc
-        except requests.exceptions.Timeout:
-            raise HTTPException(status_code=422, detail="The website took too long to respond (timeout). Please check if the URL is accessible and try again.")
-        except requests.exceptions.ConnectionError:
-            raise HTTPException(status_code=422, detail="Could not connect to the website. The URL may be broken, expired, or the server is down.")
-        except requests.exceptions.HTTPError as he:
-            status = he.response.status_code if he.response else 0
-            if status == 403:
-                raise HTTPException(status_code=422, detail="Access denied (403 Forbidden). This website restricts automated access.")
-            elif status == 404:
-                raise HTTPException(status_code=422, detail="Page not found (404). The URL may be broken or the content has been removed.")
-            elif status >= 500:
-                raise HTTPException(status_code=422, detail=f"The website returned a server error ({status}). Please try again later.")
-            else:
-                raise HTTPException(status_code=422, detail=f"Could not fetch URL: HTTP {status} error.")
-        except Exception as e:
-            raise HTTPException(status_code=422, detail=f"Could not fetch URL: {str(e)}")
+                if not text or len(text.strip()) < 50:
+                    raise HTTPException(status_code=422, detail="The PDF at this URL contains no selectable text (scanned or image-only). Please upload it directly via Document Upload.")
+                pdf_filename = os.path.basename(parsed.path)
+                title = pdf_filename.replace(".pdf", "").replace("_", " ").title() if pdf_filename else "Online PDF Document"
+            except HTTPException:
+                raise
+            except Exception as pdf_err:
+                raise HTTPException(status_code=422, detail=f"Could not read PDF from link: {pdf_err}")
+        elif clean_type in ("text/html", "application/xhtml+xml", ""):
+            structured_text, page_title = extract_html_article_text(resp.text)
+            text = structured_text
+            if max_link_chars != -1 and len(text) > max_link_chars:
+                text = text[:max_link_chars]
+            title = page_title if page_title else parsed.netloc
+        elif clean_type in ("text/plain", "text/markdown", "text/csv"):
+            text = resp.text.strip()
+            if max_link_chars != -1 and len(text) > max_link_chars:
+                text = text[:max_link_chars]
+            title = os.path.basename(parsed.path) or parsed.netloc
+        elif any(clean_type.startswith(m) for m in ("image/", "video/", "audio/", "application/zip", "application/octet-stream", "application/x-", "application/gzip")):
+            raise HTTPException(status_code=422, detail=f"Direct media/binary links ({clean_type}) are not supported. Please upload files directly or provide a YouTube URL.")
+        else:
+            raise HTTPException(status_code=422, detail=f"Unsupported web content type ({clean_type}). Only web pages (HTML), online PDFs, and plain text articles are supported.")
 
         if not text or len(text.strip()) < 50:
             raise HTTPException(status_code=422, detail="The webpage returned very little readable content. It may require login, use heavy JavaScript rendering, or be a restricted page.")
@@ -3563,9 +3892,18 @@ async def process_link(
             "page_count": len(pdf_pages),
             "source_url": url,
         }
+    elif source_type == "url":
+        session_metadata = {
+            "source_url": url,
+            "url": url,
+            "domain": urlparse(url).netloc,
+        }
+
+    content_hash_val = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
     new_session = StudySession(
         filename=display_title, ai_title=None, summary="Processing...", content=text,
         user_id=current_user.id, source_type=source_type,
+        content_hash=content_hash_val,
         category="Processing...",
         timeline=initial_timeline,
         project_id=assigned_space_id,
@@ -4312,7 +4650,7 @@ def rename_session(session_id: int, request: RenameRequest, db: Session = Depend
         raise HTTPException(status_code=400, detail="Filename cannot be empty")
 
     session.filename = new_name
-    
+
     # Record in timeline
     timeline = list(session.timeline or [])
     timeline.append({
@@ -4339,7 +4677,7 @@ def pin_session(session_id: int, db: Session = Depends(get_db), current_user: Us
         raise HTTPException(status_code=404, detail="Study session not found")
 
     session.is_pinned = not (session.is_pinned or False)
-    
+
     # Record in timeline
     timeline = list(session.timeline or [])
     timeline.append({
@@ -4367,7 +4705,7 @@ def update_session_category(session_id: int, request: CategoryRequest, db: Sessi
 
     category = request.category.strip()
     session.category = category
-    
+
     # Record in timeline
     timeline = list(session.timeline or [])
     timeline.append({
@@ -4456,17 +4794,17 @@ def get_session_intelligence(session_id: int, db: Session = Depends(get_db), cur
     quiz_results = db.query(QuizResult).filter(QuizResult.session_id == session_id, QuizResult.user_id == current_user.id).all()
     quizzes_done = len(quiz_results)
     avg_score = sum(q.percentage for q in quiz_results) / quizzes_done if quizzes_done > 0 else 0
-    
+
     # Count bookmark, chat, flashcard reviews etc.
     flashcard_reviews = db.query(FlashcardProgress).filter(FlashcardProgress.session_id == session_id, FlashcardProgress.user_id == current_user.id).count()
-    
+
     # Chat messages for this session
     chat_conv = db.query(ChatConversation).filter(ChatConversation.session_id == session_id, ChatConversation.user_id == current_user.id).first()
     chat_messages = db.query(ChatMessage).filter(ChatMessage.conversation_id == chat_conv.id).count() if chat_conv else 0
-    
+
     # Calculate score
     score = min(100, int((chat_messages * 5) + (quizzes_done * 20) + (flashcard_reviews * 8) + 15))
-    
+
     # Categorize depth
     if score < 30:
         depth = "Beginner"
@@ -4476,7 +4814,7 @@ def get_session_intelligence(session_id: int, db: Session = Depends(get_db), cur
         depth = "Advanced"
     else:
         depth = "Expert"
-        
+
     intel = {
         "score": score,
         "depth": depth,
@@ -4485,7 +4823,7 @@ def get_session_intelligence(session_id: int, db: Session = Depends(get_db), cur
         "flashcards_reviewed": flashcard_reviews,
         "chat_interactions": chat_messages
     }
-    
+
     # Sync with DB
     session.intelligence_score = score
     db.commit()
@@ -4512,7 +4850,7 @@ def update_session_notes(session_id: int, request: NotesRequest, db: Session = D
         raise HTTPException(status_code=404, detail="Study session not found")
 
     session.notes = request.notes
-    
+
     # Record in timeline (avoid duplicates)
     timeline = list(session.timeline or [])
     has_note_event = any(t.get("event") == "Notes Modified" for t in timeline[-3:]) # check last 3
@@ -4542,18 +4880,18 @@ def share_study_session(
         StudySession.id == session_id,
         StudySession.user_id == current_user.id
     ).first()
-    
+
     if not session:
         raise HTTPException(status_code=404, detail="Study session not found or you do not have permission to access it.")
-        
+
     if not session.summary:
         raise HTTPException(status_code=400, detail="Cannot share this session because it has no summary content yet.")
-        
+
     if not session.share_token:
         session.share_token = secrets.token_urlsafe(16)
-        
+
     session.share_type = request.share_type
-    
+
     # Timeline event
     timeline = list(session.timeline or [])
     timeline.append({
@@ -4562,7 +4900,7 @@ def share_study_session(
         "detail": f"Generated public/private/team link type: {request.share_type}"
     })
     session.timeline = timeline
-    
+
     db.commit()
     return {
         "share_token": session.share_token,
@@ -4881,7 +5219,7 @@ def track_download(
         check_plan_limit(current_user, "downloads_per_day", db)
         log_activity(db, current_user.id, "Downloaded Content", f"Downloaded {data.type.capitalize()}: {data.title[:60]}")
         db.commit()
-    
+
     return get_download_quota(db, current_user)
 
 
@@ -4890,7 +5228,7 @@ def get_shared_session(share_token: str, request: Request, db: Session = Depends
     session = db.query(StudySession).filter(StudySession.share_token == share_token).first()
     if not session:
         raise HTTPException(status_code=404, detail="Shared study session not found or link has expired.")
-        
+
     # Optional authentication check from Authorization header
     authenticated_user = None
     auth_header = request.headers.get("Authorization")
@@ -4907,14 +5245,14 @@ def get_shared_session(share_token: str, request: Request, db: Session = Depends
             logger.debug(f"Optional token validation in shared link failed: {e}")
 
     share_type = session.share_type or "public"
-    
+
     if share_type == "private":
         if not authenticated_user or authenticated_user.id != session.user_id:
             raise HTTPException(
                 status_code=403,
                 detail="Access denied: This study session is private and can only be accessed by the owner."
             )
-            
+
     elif share_type == "team":
         if not authenticated_user:
             raise HTTPException(
@@ -4944,7 +5282,7 @@ def get_shared_session(share_token: str, request: Request, db: Session = Depends
 def search_knowledge_vault(q: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not q or len(q.strip()) < 2:
         return []
-    
+
     # 1. Fetch all user sessions
     sessions = db.query(StudySession).filter(StudySession.user_id == current_user.id).all()
     session_map = {s.id: s for s in sessions}
@@ -5293,15 +5631,15 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
         )
 
         reply = generate_with_fallback(current_prompt, agent_instruction)
-        
+
         # Check if the model wants to call a tool
         tool_call_match = re.search(r"\[CALL_TOOL:\s*(\w+)\((.*?)\)\]", reply)
         if tool_call_match:
             tool_name = tool_call_match.group(1)
             tool_args_raw = tool_call_match.group(2).strip()
-            
+
             logger.info(f"🤖 Agent loop {loop+1}: requested tool {tool_name}({tool_args_raw})")
-            
+
             try:
                 if tool_name == "search_user_library":
                     q = tool_args_raw.strip("\"'")
@@ -5315,7 +5653,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
                     res = f"Error: Tool '{tool_name}' is not recognized."
             except Exception as ex:
                 res = f"Error executing tool: {str(ex)}"
-                
+
             logger.info(f"🤖 Tool Output: {res[:100]}...")
             tool_results.append(f"Tool {tool_name}({tool_args_raw}) returned:\n{res}")
             continue

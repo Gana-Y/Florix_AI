@@ -48,8 +48,8 @@ class QueryIntent(str, Enum):
 class ParsedSection:
     """Represents a structural document section before chunking."""
     title: str
-    page_number: int
     content: str
+    page_number: Optional[int] = None
     content_type: ContentType = ContentType.TEXT
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -59,7 +59,7 @@ class EnrichedChunk:
     """An enriched semantic chunk ready for embedding and storage."""
     text: str
     chunk_index: int
-    page_number: int = 1
+    page_number: Optional[int] = 1
     section_heading: str = ""
     content_type: ContentType = ContentType.TEXT
     token_count: int = 0
@@ -88,7 +88,7 @@ class RetrievalCandidate:
     session_id: int
     user_id: int
     text: str
-    page_number: int = 1
+    page_number: Optional[int] = 1
     section_heading: str = ""
     content_type: ContentType = ContentType.TEXT
     dense_score: float = 0.0
@@ -121,23 +121,25 @@ class Citation:
     source_index: int  # 1, 2, 3...
     document_title: str
     session_id: int
-    page_number: int
-    section_heading: str
-    snippet: str
+    page_number: Optional[int] = None
+    section_heading: str = ""
+    snippet: str = ""
     timestamp_start: Optional[float] = None
     timestamp_end: Optional[float] = None
     source_type: Optional[str] = None
     media_timestamp_str: Optional[str] = None
+    source_url: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data = {
             "source_index": self.source_index,
             "document_title": self.document_title,
             "session_id": self.session_id,
-            "page_number": self.page_number,
             "section_heading": self.section_heading,
             "snippet": self.snippet
         }
+        if self.page_number is not None:
+            data["page_number"] = self.page_number
         if self.timestamp_start is not None:
             data["timestamp_start"] = self.timestamp_start
         if self.timestamp_end is not None:
@@ -146,6 +148,8 @@ class Citation:
             data["source_type"] = self.source_type
         if self.media_timestamp_str is not None:
             data["media_timestamp_str"] = self.media_timestamp_str
+        if self.source_url is not None:
+            data["source_url"] = self.source_url
         return data
 
 

@@ -106,7 +106,7 @@ class DocumentChunk(Base):
     embedding = Column(JSON, nullable=False)  # Stores the 3072-dimensional float list as JSON
 
     # Phase 2 — Academic RAG metadata
-    page_number = Column(Integer, default=1, nullable=True)
+    page_number = Column(Integer, default=None, nullable=True)
     section_heading = Column(String, nullable=True)
     content_type = Column(String, default="text")  # text|code|table|equation|definition|heading|list
     chunk_metadata = Column(JSON, default=lambda: {})

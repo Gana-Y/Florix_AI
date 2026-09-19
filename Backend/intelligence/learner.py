@@ -340,12 +340,14 @@ class LearnerEngine:
             elif progress.repetitions == 1:
                 progress.interval = 6
             else:
-                progress.interval = max(1, int(round(progress.interval * (progress.ease_factor / 100.0))))
+                progress.interval = min(3650, max(1, int(round(progress.interval * (progress.ease_factor / 100.0)))))
             progress.repetitions += 1
 
         progress.last_quality = q
         progress.updated_at = now
-        progress.next_review = now + timedelta(days=progress.interval)
+        safe_interval = min(3650, max(1, progress.interval or 1))
+        progress.interval = safe_interval
+        progress.next_review = now + timedelta(days=safe_interval)
 
         # Log event
         event = LearningEvent(

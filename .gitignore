@@ -9,6 +9,7 @@
 *.sqlite
 *.sqlite3
 florix.db
+chroma_db/
 
 # Virtual environments
 .venv/

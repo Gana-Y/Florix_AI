@@ -42,9 +42,12 @@ class ContextBuilder:
 
             is_media = s_type.lower() in ("audio", "video", "youtube") or (ts_start is not None)
             is_web = s_type.lower() in ("url", "web")
+            is_text = s_type.lower() in ("text", "paste", "notes")
 
             media_ts_str = None
             source_url_val = None
+            sec_info = f', Section "{cand.section_heading}"' if cand.section_heading else ""
+
             if is_media and (ts_start is not None or ts_str):
                 if ts_str:
                     media_ts_str = ts_str
@@ -69,11 +72,13 @@ class ContextBuilder:
                 source_url_val = cand_meta.get("url") or cand_meta.get("source_url") or ""
                 source_label = "Web Page"
                 loc_info = f"URL <{source_url_val}>" if source_url_val else "Online Article"
+            elif is_text:
+                source_label = "Notes"
+                loc_info = "Notes"
             else:
                 loc_info = f"Page {cand.page_number}" if cand.page_number else "Page 1"
                 source_label = "Document"
 
-            sec_info = f', Section "{cand.section_heading}"' if cand.section_heading else ""
             header = f"[SOURCE {idx}: {source_label} \"{cand.document_title}\", {loc_info}{sec_info}]"
 
             block = f"{header}\n{cand.text.strip()}\n"
@@ -94,7 +99,7 @@ class ContextBuilder:
                 source_index=idx,
                 document_title=cand.document_title,
                 session_id=cand.session_id,
-                page_number=None if is_web else cand.page_number,
+                page_number=None if (is_web or is_text) else cand.page_number,
                 section_heading=cand.section_heading,
                 snippet=snippet,
                 timestamp_start=ts_start,

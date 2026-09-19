@@ -1577,7 +1577,7 @@ def retrieve_relevant_chunks(
                 "page_number": c.page_number,
                 "section_heading": c.section_heading,
                 "content_type": c.content_type.value if hasattr(c.content_type, "value") else str(c.content_type),
-                "source_type": getattr(c, "source_type", "pdf"),
+                "source_type": getattr(c, "source_type", session.source_type if session else "pdf"),
                 "metadata": getattr(c, "metadata", {}) or {},
                 "document_title": session.filename if session else "Study Material"
             } for c in reranked]
@@ -1592,10 +1592,10 @@ def retrieve_relevant_chunks(
             "chunk_index": c.chunk_index,
             "text_content": c.text_content,
             "score": 0.5,
-            "page_number": getattr(c, "page_number", 1) or 1,
+            "page_number": getattr(c, "page_number", None) if (session and session.source_type != "pdf") else (getattr(c, "page_number", 1) or 1),
             "section_heading": getattr(c, "section_heading", "") or "",
             "content_type": getattr(c, "content_type", "text") or "text",
-            "source_type": (getattr(c, "chunk_metadata", {}) or {}).get("source_type", "pdf"),
+            "source_type": (getattr(c, "chunk_metadata", {}) or {}).get("source_type") or (session.source_type if session else "pdf"),
             "metadata": getattr(c, "chunk_metadata", {}) or {},
             "document_title": session.filename if session else "Study Material"
         } for c in chunks[:top_k]]
@@ -3934,7 +3934,9 @@ async def process_text(
     current_user: User = Depends(get_current_user)
 ):
     check_plan_limit(current_user, "sessions", db)
-    text = request.text.strip()
+    # Sanitize null bytes and control characters while preserving newlines and tabs
+    raw_text = request.text.replace("\x00", "")
+    text = raw_text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty. Please paste some content.")
     if len(text) < 50:
@@ -3945,36 +3947,69 @@ async def process_text(
     update_pipeline_progress(progress_id, 1, "File received", f"Received text input ({len(text)} characters)", "done")
     update_pipeline_progress(progress_id, 2, "Content parsing", "Parsing text content and removing markup...", "active")
 
-    # Strip HTML tags if user pasted HTML content
+    # Structural HTML extraction if user pasted HTML markup
     import html as html_module
-    if "<" in text and ">" in text:
+    has_html_tags = bool(re.search(r"<\s*(html|body|div|p|h[1-6]|ul|ol|li|table|thead|tbody|tr|td|th|script|style|iframe|section|article|header|footer|b|i|strong|em|a|blockquote|code|pre|span|br)\b", text, re.IGNORECASE))
+    if has_html_tags:
         from bs4 import BeautifulSoup as BS
-        text = BS(text, "html.parser").get_text(separator=" ")
-        text = html_module.unescape(text).strip()
-        if len(text) < 50:
+        soup = BS(text, "html.parser")
+        # Strictly decompose dangerous script/style/iframe tags
+        for dangerous_tag in soup(["script", "style", "iframe", "object", "embed", "applet", "form", "svg"]):
+            dangerous_tag.decompose()
+        # Convert structural elements preserving Markdown/paragraph boundaries
+        for h in soup.find_all(re.compile(r"^h[1-6]$")):
+            level = int(h.name[1])
+            h.replace_with(f"\n\n{'#' * level} {h.get_text().strip()}\n\n")
+        for p in soup.find_all("p"):
+            p.replace_with(f"\n\n{p.get_text().strip()}\n\n")
+        for li in soup.find_all("li"):
+            li.replace_with(f"\n* {li.get_text().strip()}")
+        for br in soup.find_all("br"):
+            br.replace_with("\n")
+        clean_extracted = soup.get_text()
+        clean_extracted = html_module.unescape(clean_extracted).strip()
+        clean_extracted = re.sub(r"\n{3,}", "\n\n", clean_extracted).strip()
+        if len(clean_extracted) < 50:
             raise HTTPException(status_code=400, detail="After removing HTML markup, the text content is too short. Please provide more substantive text.")
+        text = clean_extracted
 
-    instruction = (
-        "You are an expert academic content summarizer. Analyze the following text and create a "
-        "comprehensive study guide in Markdown format with: "
-        "# Title, ## Key Concepts, ## Summary, ## Important Points, ## Key Terms."
-    )
+    # 🔍 Deduplication / Idempotency check via content hash
+    content_hash_val = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+    existing = db.query(StudySession).filter(
+        StudySession.user_id == current_user.id,
+        StudySession.content_hash == content_hash_val
+    ).first()
+    if existing:
+        if not existing.project_id:
+            existing.project_id = ensure_session_space(db, current_user.id, request.project_id, existing.filename, "text")
+            db.commit()
+        if progress_id:
+            for step in range(2, 7):
+                update_pipeline_progress(progress_id, step, "Retrieved from cache", "Retrieved from cache", "done")
+        return {
+            "summary": existing.summary,
+            "filename": existing.filename,
+            "id": existing.id,
+            "project_id": existing.project_id,
+            "duplicate": True,
+            "message": "This text was already submitted. Returning your existing study session."
+        }
+
     update_pipeline_progress(progress_id, 2, "Content parsing", f"Successfully validated text content ({len(text)} characters)", "done")
-    update_pipeline_progress(progress_id, 6, "AI summary generation", "Generating study guide from pasted text...", "active")
-    summary = generate_with_fallback(text, instruction)
-    title = f"Pasted Text — {datetime.utcnow().strftime('%b %d, %Y')}"
+    update_pipeline_progress(progress_id, 6, "AI summary generation", "Queued study guide generation from pasted text...", "active")
 
-    title = f"Pasted Text — {datetime.utcnow().strftime('%b %d, %Y')}"
-    display_title = title
+    display_title = f"Pasted Text — {datetime.utcnow().strftime('%b %d, %Y')}"
     initial_timeline = [{"event": "Processed Text Input", "timestamp": datetime.utcnow().isoformat(), "detail": f"Length: {len(text)} characters"}]
 
     assigned_space_id = ensure_session_space(db, current_user.id, request.project_id, display_title, "text")
     new_session = StudySession(
         filename=display_title, ai_title=None, summary="Processing...", content=text,
         user_id=current_user.id, source_type="text",
+        content_hash=content_hash_val,
         category="Processing...",
         timeline=initial_timeline,
         project_id=assigned_space_id,
+        doc_metadata={"source_type": "text", "char_count": len(text)}
     )
     db.add(new_session)
     log_activity(db, current_user.id, "Pasted Text", f"Processed text: {display_title}")
@@ -4215,11 +4250,11 @@ async def chat_with_document(
                     session_id=session.id,
                     user_id=current_user.id,
                     text=c["text_content"],
-                    page_number=c.get("page_number", 1) or 1,
+                    page_number=c.get("page_number") if (session.source_type != "pdf" or c.get("page_number") is None) else (c.get("page_number", 1) or 1),
                     section_heading=c.get("section_heading", "") or "",
                     content_type=ContentType(c.get("content_type", "text") or "text"),
                     final_score=c.get("score", 0.0),
-                    source_type=c.get("source_type", "pdf"),
+                    source_type=c.get("source_type") or session.source_type or "text",
                     metadata=c.get("metadata", {}),
                     document_title=session.filename
                 )

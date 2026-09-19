@@ -103,7 +103,17 @@ def chunk_section(
                     curr_w: List[str] = []
                     curr_w_len = 0
                     for w in words:
-                        if curr_w_len + len(w) + 1 > chunk_size and curr_w:
+                        if len(w) > chunk_size:
+                            # Hard split oversized single word/token (e.g. minified code, base64, unbroken repetition)
+                            if curr_w:
+                                sentences.append(" ".join(curr_w))
+                                curr_w = []
+                                curr_w_len = 0
+                            for i in range(0, len(w), chunk_size):
+                                part = w[i:i + chunk_size]
+                                if part:
+                                    sentences.append(part)
+                        elif curr_w_len + len(w) + 1 > chunk_size and curr_w:
                             sentences.append(" ".join(curr_w))
                             curr_w = [w]
                             curr_w_len = len(w)
@@ -416,8 +426,8 @@ def chunk_normalized_content(
 
         return chunks
 
-    # For web or non-paged content without timestamps, preserve page_number=None
-    if media_type_val in ("web", "url") or all(getattr(s, "page_number", None) is None for s in segments):
+    # For web, text/notes, or non-paged content without timestamps, preserve page_number=None
+    if media_type_val in ("web", "url", "text", "notes") or all(getattr(s, "page_number", None) is None for s in segments):
         source_url_val = (
             getattr(normalized, "metadata", {}).get("source_url")
             or getattr(normalized, "metadata", {}).get("url")
@@ -425,7 +435,7 @@ def chunk_normalized_content(
         full_text = "\n\n".join(s.text for s in segments if s.text.strip())
         sections = extract_structural_sections(full_text, page_number=None)
         if not sections:
-            sections = [ParsedSection(title=getattr(normalized, "title", "Web Article"), page_number=None, content=full_text)]
+            sections = [ParsedSection(title=getattr(normalized, "title", "Study Material"), page_number=None, content=full_text)]
         chunks: List[EnrichedChunk] = []
         current_idx = 0
         for sec in sections:
@@ -435,6 +445,8 @@ def chunk_normalized_content(
                 if source_url_val:
                     c.metadata["source_url"] = source_url_val
                     c.metadata["url"] = source_url_val
+                if media_type_val in ("text", "notes"):
+                    c.metadata["source_type"] = "text"
                 chunks.append(c)
                 current_idx += 1
         return chunks

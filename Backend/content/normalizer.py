@@ -109,8 +109,9 @@ class ContentNormalizer:
             segments.append(ContentSegment(
                 segment_id=idx,
                 text=p_clean,
-                page_number=1,
-                content_type=c_type
+                page_number=None,
+                content_type=c_type,
+                metadata={"source_type": "text"}
             ))
 
         content_hash = compute_sha256(clean_text)

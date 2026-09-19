@@ -32,3 +32,11 @@
     - Content-Type routing (HTML, `text/plain`, PDF pass-through, binary/media HTTP 422 rejection).
     - Web-to-RAG traceability: `page_number=None` preserved across entire pipeline (Normalizer, Chunker, SQLite `DocumentChunk`, ChromaDB, Retriever, Citations) with authentic `source_url` and zero fabricated Page 1.
     - Verified with live public URL ingestion (`https://httpbin.org/html`), 70/70 Audit #4 tests passing, and 291/291 total backend regression passing.
+- **Audit #5 — Paste / Raw Text Ingestion Deep Audit & Hardening**:
+  - **Status**: LOCKED & Approved.
+  - **Coverage**:
+    - Complete input boundary & encoding matrix: 60 adversarial cases covering empty strings, boundaries, Unicode, emojis, CJK, Indian languages (Hindi/Devanagari), RTL (Arabic/Hebrew), combining chars, zero-width chars, null byte sanitization, tabs, CRLF/LF normalization.
+    - Security & injection neutralization: Scripts, styles, iframes, objects, embeds, SVGs, and HTML event handlers decomposed via BeautifulSoup; SQL injection, shell commands, Python code, XML XXE, YAML deserialization, CSV formula injections, and passive prompt injections treated strictly as inert raw educational text.
+    - Architectural hardening: Offloaded synchronous `generate_with_fallback` from HTTP request thread to `BackgroundTasks`, added SHA-256 `content_hash` idempotency cache check returning existing sessions with `duplicate: True`.
+    - Text-to-RAG traceability: Hardcoded `page_number=1` eliminated across `normalize_text`, `chunk_normalized_content`, `chunk_section` (oversized unbroken token slicing), `ContextBuilder` (`Notes` formatting without "Page 1"), and Citations (`source_type="text"`, `page_number=None`).
+    - Verified with 64/64 Audit #5 tests passing, and 355/355 total backend platform regression passing across all 12 test suites.

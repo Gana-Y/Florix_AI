@@ -139,8 +139,8 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
 
   const handleSpeechSubmit = async () => {
     const text = (speakTranscript + interimTranscript).trim();
-    if (!text || text.length < 10) {
-      addToast('Text is too short. Please speak at least a few words.', 'warning');
+    if (!text || text.length < 50) {
+      addToast('Text is too short. Please speak at least 50 characters for meaningful analysis.', 'warning');
       return;
     }
     stopSpeakRecognition();
@@ -221,7 +221,7 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
       formData.append('project_id', activeSpaceId);
     }
     try {
-      const isAudio = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac'].some(ext => file.name.toLowerCase().endsWith(ext));
+      const isAudio = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm'].some(ext => file.name.toLowerCase().endsWith(ext));
       const endpoint = isAudio ? `/upload-audio?progress_id=${progressId}` : `/upload?progress_id=${progressId}`;
       const response = await api.post(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },

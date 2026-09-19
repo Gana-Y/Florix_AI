@@ -99,7 +99,7 @@ class ContextBuilder:
                 source_index=idx,
                 document_title=cand.document_title,
                 session_id=cand.session_id,
-                page_number=None if (is_web or is_text) else cand.page_number,
+                page_number=cand.page_number if s_type.lower() == "pdf" else None,
                 section_heading=cand.section_heading,
                 snippet=snippet,
                 timestamp_start=ts_start,

@@ -1061,25 +1061,102 @@ def process_upload_in_background(
 
         elif source_type == "audio" and file_path:
             update_pipeline_progress(progress_id, 2, "Content parsing", "Uploading audio to Gemini and transcribing...", "active")
-            with open(file_path, "rb") as af:
-                audio_file = client.files.upload(file=af, config={"mime_type": mime_type})
-            instruction = (
-                "You are an expert academic audio transcriber. Transcribe this audio accurately with timestamps.\n"
-                "Format spoken segments as:\n"
-                "[MM:SS - MM:SS] Speaker: Transcript text\n\n"
-                "Then create a comprehensive study guide in Markdown format including key points, summary, and important concepts."
-            )
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[instruction, audio_file],
-            )
-            full_text = response.text if response and response.text else ""
-            summary = full_text
-            text = full_text
-            session.content = text
-            session.summary = summary
-            db.commit()
-            update_pipeline_progress(progress_id, 2, "Content parsing", f"Audio transcription complete ({len(full_text)} characters)", "done")
+            audio_file = None
+            try:
+                try:
+                    with open(file_path, "rb") as af:
+                        audio_file = client.files.upload(file=af, config={"mime_type": mime_type})
+                except Exception as upload_err:
+                    logger.error(f"Gemini audio upload failed: {upload_err}")
+                    session.processing_status = ProcessingStatus.FAILED
+                    session.summary = f"Audio upload failed: {str(upload_err)}"
+                    db.commit()
+                    update_pipeline_progress(progress_id, 2, "Content parsing", f"Upload error: {str(upload_err)}", "failed")
+                    return
+
+                instruction = (
+                    "You are an expert academic audio transcriber. Transcribe this audio accurately with timestamps.\n"
+                    "Format spoken segments as:\n"
+                    "[MM:SS - MM:SS] Speaker: Transcript text\n\n"
+                    "Then create a comprehensive study guide in Markdown format including key points, summary, and important concepts."
+                )
+
+                # Resilient generation with model cascade
+                models_to_try = [m for m in [MODEL_NAME] + MODEL_CASCADE if m]
+                response = None
+                last_audio_err = None
+                try:
+                    for model_candidate in models_to_try:
+                        try:
+                            response = client.models.generate_content(
+                                model=model_candidate,
+                                contents=[instruction, audio_file],
+                            )
+                            if response and response.text and response.text.strip():
+                                break
+                        except Exception as ae:
+                            last_audio_err = ae
+                            if _is_quota_or_transient_error(ae):
+                                logger.warning(f"⚠️ Audio transcription on '{model_candidate}' hit rate limit ({ae}). Cascading...")
+                                continue
+                            elif (isinstance(ae, google_exceptions.NotFound) or
+                                  (isinstance(ae, genai_errors.APIError) and getattr(ae, "code", None) == 404)):
+                                logger.warning(f"⚠️ Audio transcription on '{model_candidate}' returned 404. Cascading...")
+                                continue
+                            else:
+                                raise ae
+
+                    if not response or not response.text or not response.text.strip():
+                        if last_audio_err:
+                            raise last_audio_err
+                        session.processing_status = ProcessingStatus.FAILED
+                        session.summary = "Audio transcription produced no text. The audio may be silent, indistinct, or corrupted."
+                        db.commit()
+                        update_pipeline_progress(progress_id, 2, "Content parsing", "Audio transcription produced no text", "failed")
+                        return
+
+                    full_text = response.text.strip()
+                except Exception as gen_err:
+                    logger.error(f"Gemini audio transcription failed: {gen_err}")
+                    session.processing_status = ProcessingStatus.FAILED
+                    session.summary = f"Audio transcription failed: {str(gen_err)}"
+                    db.commit()
+                    update_pipeline_progress(progress_id, 2, "Content parsing", f"Transcription error: {str(gen_err)}", "failed")
+                    return
+
+                # Partition transcript and study guide cleanly
+                guide_match = re.search(r"(?:\n|^)(#[#\s].*)", full_text, re.DOTALL)
+                guide_part = guide_match.group(1).strip() if guide_match else full_text.strip()
+
+                from content.transcription import extract_timestamped_segments
+                from rag.chunker import _format_ts_span
+                segs = extract_timestamped_segments(full_text)
+                if segs:
+                    transcript_lines = []
+                    for s in segs:
+                        spk = f"{s.speaker}: " if s.speaker else ""
+                        span_str = _format_ts_span(s.timestamp_start, s.timestamp_end)
+                        transcript_lines.append(f"[{span_str}] {spk}{s.text}".strip())
+                    transcript_part = "\n".join(transcript_lines)
+                elif guide_match and guide_match.start() > 0:
+                    transcript_part = full_text[:guide_match.start()].strip()
+                else:
+                    transcript_part = full_text.strip()
+
+                text = transcript_part or full_text
+                summary = guide_part or full_text
+                session.content = text
+                session.summary = summary
+                db.commit()
+                update_pipeline_progress(progress_id, 2, "Content parsing", f"Audio transcription complete ({len(full_text)} characters)", "done")
+            finally:
+                # Immediate cleanup of temporary local audio file
+                if file_path and os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        logger.info(f"🗑️ Cleaned up background temp audio file: {file_path}")
+                    except Exception as fe:
+                        logger.warning(f"Failed to delete temp audio file {file_path}: {fe}")
 
         elif source_type == "video" and file_path:
             update_pipeline_progress(progress_id, 2, "Content parsing", "Uploading video to Gemini and running transcript...", "active")
@@ -3319,6 +3396,32 @@ async def upload_file(
     return {"summary": "Processing...", "filename": display_title, "id": new_session.id, "project_id": assigned_space_id}
 
 
+def is_valid_audio_content(contents: bytes, ext: str) -> bool:
+    """Validate audio header magic bytes to prevent renamed non-audio or corrupted uploads."""
+    if len(contents) < 12:
+        return False
+    ext = ext.lower().strip()
+    if ext == ".wav":
+        return (contents[:4] in (b"RIFF", b"RF64")) and contents[8:12] == b"WAVE"
+    elif ext == ".mp3":
+        if contents.startswith(b"ID3"):
+            return True
+        return contents[0] == 0xFF and (contents[1] & 0xE0) == 0xE0
+    elif ext == ".ogg":
+        return contents.startswith(b"OggS")
+    elif ext == ".flac":
+        return contents.startswith(b"fLaC")
+    elif ext == ".webm":
+        return contents.startswith(b"\x1a\x45\xdf\xa3")
+    elif ext in (".m4a", ".mp4"):
+        return len(contents) >= 8 and contents[4:8] == b"ftyp"
+    elif ext == ".aac":
+        if contents.startswith(b"ID3"):
+            return True
+        return contents[0] == 0xFF and (contents[1] & 0xF0) == 0xF0
+    return False
+
+
 @app.post("/upload-audio", tags=["Content"])
 async def upload_audio(
     background_tasks: BackgroundTasks,
@@ -3350,14 +3453,61 @@ async def upload_audio(
     if len(contents) > max_audio_mb * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"Audio file too large. Server maximum is {max_audio_mb}MB. Your file is {len(contents) / 1024 / 1024:.1f}MB.")
 
+    # Validate audio magic bytes
+    if not is_valid_audio_content(contents, ext):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid audio content. The file header does not match a valid {ext.upper().lstrip('.')} audio stream."
+        )
+
     update_pipeline_progress(progress_id, 1, "File received", f"Received audio file {file.filename} ({len(contents) / 1024 / 1024:.2f} MB)", "done")
+
+    # 🔍 Deduplication / Idempotency check via content hash
+    content_hash_val = hashlib.sha256(contents).hexdigest()
+    existing = db.query(StudySession).filter(
+        StudySession.user_id == current_user.id,
+        StudySession.content_hash == content_hash_val,
+        StudySession.source_type == "audio"
+    ).first()
+    if existing:
+        if not existing.project_id:
+            existing.project_id = ensure_session_space(db, current_user.id, project_id, existing.filename, "audio")
+            db.commit()
+        if progress_id:
+            for step in range(1, 7):
+                update_pipeline_progress(progress_id, step, "Retrieved from cache", "Retrieved from cache", "done")
+        return {
+            "summary": existing.summary,
+            "filename": existing.filename,
+            "id": existing.id,
+            "project_id": existing.project_id,
+            "duplicate": True,
+            "message": "This audio file was already uploaded. Returning your existing study session."
+        }
+
     update_pipeline_progress(progress_id, 2, "Content parsing", "Preparing audio transcript pipeline...", "active")
 
     os.makedirs("uploads", exist_ok=True)
-    clean_name = re.sub(r"[^\w\.-]", "_", file.filename)
+    unique_prefix = uuid.uuid4().hex[:8]
+    raw_basename = os.path.basename(file.filename.replace("\\", "/"))
+    clean_base = re.sub(r"[^\w\.-]", "_", raw_basename)
+    clean_base = re.sub(r"\.{2,}", "_", clean_base)
+    clean_name = f"{unique_prefix}_{clean_base}"
     file_path = f"uploads/{clean_name}"
     with open(file_path, "wb") as f:
         f.write(contents)
+
+    # Map extensions to MIME types
+    mime_map = {
+        ".mp3": "audio/mp3",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".webm": "audio/webm",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
+        ".aac": "audio/aac",
+    }
+    mime_type = mime_map.get(ext, f"audio/{ext.lstrip('.')}")
 
     title = file.filename.replace(ext, "").replace("_", " ").title()
     display_title = f"Audio: {title}"
@@ -3371,6 +3521,7 @@ async def upload_audio(
         category="Processing...",
         timeline=initial_timeline,
         project_id=assigned_space_id,
+        content_hash=content_hash_val,
     )
     db.add(new_session)
     log_activity(db, current_user.id, "Uploaded Audio", f"Processed audio: {display_title}")
@@ -3383,7 +3534,7 @@ async def upload_audio(
         session_id=new_session.id,
         source_type="audio",
         file_path=file_path,
-        mime_type=f"audio/{ext.lstrip('.')}",
+        mime_type=mime_type,
         progress_id=progress_id
     )
 

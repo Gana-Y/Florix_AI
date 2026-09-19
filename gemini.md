@@ -39,4 +39,12 @@
     - Security & injection neutralization: Scripts, styles, iframes, objects, embeds, SVGs, and HTML event handlers decomposed via BeautifulSoup; SQL injection, shell commands, Python code, XML XXE, YAML deserialization, CSV formula injections, and passive prompt injections treated strictly as inert raw educational text.
     - Architectural hardening: Offloaded synchronous `generate_with_fallback` from HTTP request thread to `BackgroundTasks`, added SHA-256 `content_hash` idempotency cache check returning existing sessions with `duplicate: True`.
     - Text-to-RAG traceability: Hardcoded `page_number=1` eliminated across `normalize_text`, `chunk_normalized_content`, `chunk_section` (oversized unbroken token slicing), `ContextBuilder` (`Notes` formatting without "Page 1"), and Citations (`source_type="text"`, `page_number=None`).
-    - Verified with 64/64 Audit #5 tests passing, and 355/355 total backend platform regression passing across all 12 test suites.
+- **Audit #6 — Speak / Voice Input Deep Audit & Hardening**:
+  - **Status**: LOCKED & Approved.
+  - **Coverage**:
+    - Complete audio codec & magic-byte validation matrix across 7 formats (`.wav`, `.mp3`, `.ogg`, `.flac`, `.webm`, `.m4a`, `.aac`) preventing renamed non-audio or corrupt uploads.
+    - Idempotency & deduplication: SHA-256 `content_hash` check returning existing sessions with `duplicate: True`, preventing duplicate processing and redundant billing.
+    - Resilient transcription: Google Gemini File API with automatic model cascade fallback (`gemini-2.5-flash` -> `gemini-3.5-flash-lite`), `.strip()` blank transcript checks, and immediate local temp file cleanup (`try...finally`).
+    - Audio-to-RAG traceability: `page_number=None` strictly enforced across `_create_media_chunk`, `_create_media_chunk_from_text`, SQLite `DocumentChunk`, ChromaDB, and `ContextBuilder` citations with zero fabricated pages.
+    - Spoken prompt injection neutralization: Hostile adversarial instructions treated strictly as inert educational transcript text.
+    - Verified with live authentic 21.54s acoustic speech audio recognizing markers `SPEAK_ALPHA_123`, `SPEAK_BETA_456`, `SPEAK_GAMMA_789`, 56/56 Audit #6 tests passing, 411/411 total backend platform regression passing across all 13 suites, and clean Frontend production build (`npm run build`).

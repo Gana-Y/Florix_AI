@@ -264,7 +264,7 @@ def _create_media_chunk(
     return EnrichedChunk(
         text=combined_text,
         chunk_index=chunk_index,
-        page_number=1,
+        page_number=None,
         section_heading=heading,
         content_type=ContentType.TEXT,
         token_count=_approx_token_count(combined_text),
@@ -299,7 +299,7 @@ def _create_media_chunk_from_text(
     return EnrichedChunk(
         text=text,
         chunk_index=chunk_index,
-        page_number=1,
+        page_number=None,
         section_heading=heading,
         content_type=ContentType.TEXT,
         token_count=_approx_token_count(text),

@@ -364,10 +364,16 @@ class ContentNormalizer:
                     return cls.normalize_text(str(data), title=title, metadata=meta)
         elif st == "audio":
             if isinstance(data, list) and data and isinstance(data[0], ContentSegment):
+                for s in data:
+                    if hasattr(s, "metadata") and isinstance(s.metadata, dict):
+                        s.metadata.setdefault("source_type", "audio")
                 return cls.normalize_audio(data, title=title, metadata=meta)
             else:
                 from .transcription import extract_timestamped_segments
                 segs = extract_timestamped_segments(str(data))
+                for s in segs:
+                    if hasattr(s, "metadata") and isinstance(s.metadata, dict):
+                        s.metadata.setdefault("source_type", "audio")
                 return cls.normalize_audio(segs, title=title, raw_text=str(data), metadata=meta)
         elif st == "video":
             if isinstance(data, list) and data and isinstance(data[0], ContentSegment):

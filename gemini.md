@@ -48,3 +48,17 @@
     - Audio-to-RAG traceability: `page_number=None` strictly enforced across `_create_media_chunk`, `_create_media_chunk_from_text`, SQLite `DocumentChunk`, ChromaDB, and `ContextBuilder` citations with zero fabricated pages.
     - Spoken prompt injection neutralization: Hostile adversarial instructions treated strictly as inert educational transcript text.
     - Verified with live authentic 21.54s acoustic speech audio recognizing markers `SPEAK_ALPHA_123`, `SPEAK_BETA_456`, `SPEAK_GAMMA_789`, 56/56 Audit #6 tests passing, 411/411 total backend platform regression passing across all 13 suites, and clean Frontend production build (`npm run build`).
+- **Audit #7 — Chat Subsystem Deep Audit & Hardening**:
+  - **Status**: LOCKED & Approved.
+  - **Commit Hash**: `13475d4`
+  - **Coverage**:
+    - Zero fake page numbers: `page_number=None` strictly enforced in both non-streaming `/chat` and SSE streaming `/chat/stream` for all non-PDF media types (Audio, Video, Web, Paste).
+    - Robust input validation: Pydantic field validators on `ChatRequest` and `MessageCreate` rejecting empty messages, whitespace, null-byte payloads, and messages exceeding 20,000 characters.
+    - Conversation history & multi-turn persistence: Automatic linking of sessions to `ChatConversation`, retrieval of recent turns, coreference query rewriting for pronouns/ordinal follow-ups, and user/assistant message persistence in SQLite.
+    - IDOR protection: Verification of session and project ownership in `POST /conversations`.
+    - Usage & rate limit observability: Implementation of `GET /user/chat-count` tracking today's messages against plan limits (`free`: 10, `pro`: 100, `premium`: unlimited).
+    - Prompt injection defense: Rule 6 ("DATA VS INSTRUCTION INTEGRITY") added to `SYSTEM_GROUNDED_TUTOR_PROMPT` and context tagged with `<untrusted_study_material>`.
+    - Streaming citation accuracy: Dynamic regex matching in `generate_stream` ensuring SSE streams emit only active, cited citations.
+    - Hybrid retriever resilience: Safe `ContentType` parsing preventing `ValueError` crashes and candidate page number preservation across dense and lexical retrieval.
+    - Verified with real deterministic live Gemini grounding on markers `CHAT_ALPHA_123`, `CHAT_BETA_456`, `CHAT_GAMMA_789`, honest refusal on `FlorixSecretOmega_999`, 22/22 Audit #7 tests passing, 433/433 total platform regression passing across all 14 suites, and clean frontend build (`npm run build`).
+

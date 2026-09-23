@@ -62,6 +62,7 @@
     - Hybrid retriever resilience: Safe `ContentType` parsing preventing `ValueError` crashes and candidate page number preservation across dense and lexical retrieval.
 - **Audit #8 — Quiz Subsystem Deep Audit & Hardening**:
   - **Status**: LOCKED & Approved.
+  - **Commit Hash**: `772d0c0`
   - **Coverage**:
     - Zero fake page numbers: `page_number=None` strictly enforced end-to-end across `AssessmentEngine.generate_quiz`, `AssessmentEngine.generate_flashcards`, `GroundedQuizQuestion`, `GroundedFlashcard`, and `POST /generate_quiz` for non-PDF media types (Audio, Video, Web, Paste), with authoritative chunk grounding that rejects prompt-echoed hallucinations.
     - Robust input validation: Pydantic field validators on `QuizRequest` (constraining `num_questions` between 1 and 30) and `QuizResultRequest` (enforcing `total_questions > 0`, `score >= 0`, and cross-field validation `score <= total_questions` to prevent `ZeroDivisionError` and impossible scores).

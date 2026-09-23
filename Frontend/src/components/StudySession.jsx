@@ -36,7 +36,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
   const [numFlashcards, setNumFlashcards] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [quizData, setQuizData] = useState([]);
-  const [flashcards, setFlashcards] = useState([]);
+  const [flashcards, setFlashcards] = useState(data?.flashcards || []);
 
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
@@ -438,6 +438,18 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
       };
       fetchTimeline();
     }
+
+    if (activeView === 'flashcards') {
+      const fetchFlashcards = async () => {
+        try {
+          const res = await api.get(`/library/${data.id}/flashcards`);
+          if (Array.isArray(res.data) && res.data.length > 0) {
+            setFlashcards(res.data);
+          }
+        } catch (_) {}
+      };
+      fetchFlashcards();
+    }
   }, [activeView, data?.id]);
 
   // 🔮 Debounced auto-save hook
@@ -700,13 +712,33 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
   };
 
 
-  const handleNextFlashcard = () => {
+  const handleRateFlashcard = async (quality = 4) => {
+    if (data?.id && flashcards.length > 0) {
+      try {
+        api.post('/learning/flashcard-review', {
+          session_id: data.id,
+          card_index: currentCardIndex,
+          quality: quality,
+          idempotency_key: `fc-${data.id}-${currentCardIndex}-${Date.now()}`
+        }).then(() => {
+          setIntelligence(prev => prev ? ({
+            ...prev,
+            flashcards_reviewed: (prev?.flashcards_reviewed || 0) + 1
+          }) : prev);
+        }).catch(() => {});
+      } catch (_) {}
+    }
+
     if (currentCardIndex < flashcards.length - 1) {
       setIsFlipped(false);
       setTimeout(() => setCurrentCardIndex(prev => prev + 1), 150);
     } else {
       setFlashcardsFinished(true);
     }
+  };
+
+  const handleNextFlashcard = () => {
+    handleRateFlashcard(4);
   };
 
   const resetAndReturn = () => {
@@ -1479,21 +1511,61 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                   <p className="text-sm text-slate-500 dark:text-zinc-400 mt-6 font-medium">
                     Card {currentCardIndex + 1} of {flashcards.length}
                   </p>
-                  <div className="flex gap-4 mt-4 w-full max-w-sm">
-                    <button
-                      disabled={currentCardIndex === 0}
-                      onClick={() => { setIsFlipped(false); setCurrentCardIndex(p => p - 1); }}
-                      className="flex-1 py-4 rounded-2xl bg-slate-100 dark:bg-zinc-800 dark:text-white font-bold disabled:opacity-30 transition-all hover:bg-slate-200 dark:hover:bg-zinc-700"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      onClick={handleNextFlashcard}
-                      className="flex-1 py-4 rounded-2xl bg-emerald-50 text-emerald-600 font-bold transition-all hover:bg-emerald-100"
-                    >
-                      {currentCardIndex === flashcards.length - 1 ? "Finish" : "Next Card"}
-                    </button>
-                  </div>
+                  {isFlipped ? (
+                    <div className="flex flex-col items-center gap-2 mt-4 w-full max-w-sm">
+                      <p className="text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Rate Your Recall</p>
+                      <div className="grid grid-cols-4 gap-2 w-full">
+                        <button
+                          onClick={() => handleRateFlashcard(1)}
+                          className="py-2.5 px-1.5 rounded-xl bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 font-semibold text-xs transition-all hover:bg-red-100 flex flex-col items-center gap-0.5"
+                          title="Forgot / Incorrect"
+                        >
+                          <span className="font-bold">Again</span>
+                          <span className="text-[10px] opacity-75">1m</span>
+                        </button>
+                        <button
+                          onClick={() => handleRateFlashcard(3)}
+                          className="py-2.5 px-1.5 rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400 font-semibold text-xs transition-all hover:bg-amber-100 flex flex-col items-center gap-0.5"
+                          title="Recalled with effort"
+                        >
+                          <span className="font-bold">Hard</span>
+                          <span className="text-[10px] opacity-75">1d</span>
+                        </button>
+                        <button
+                          onClick={() => handleRateFlashcard(4)}
+                          className="py-2.5 px-1.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-semibold text-xs transition-all hover:bg-blue-100 flex flex-col items-center gap-0.5"
+                          title="Good recall"
+                        >
+                          <span className="font-bold">Good</span>
+                          <span className="text-[10px] opacity-75">3d</span>
+                        </button>
+                        <button
+                          onClick={() => handleRateFlashcard(5)}
+                          className="py-2.5 px-1.5 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-semibold text-xs transition-all hover:bg-emerald-100 flex flex-col items-center gap-0.5"
+                          title="Instant, effortless recall"
+                        >
+                          <span className="font-bold">Easy</span>
+                          <span className="text-[10px] opacity-75">6d</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-4 mt-4 w-full max-w-sm">
+                      <button
+                        disabled={currentCardIndex === 0}
+                        onClick={() => { setIsFlipped(false); setCurrentCardIndex(p => p - 1); }}
+                        className="flex-1 py-4 rounded-2xl bg-slate-100 dark:bg-zinc-800 dark:text-white font-bold disabled:opacity-30 transition-all hover:bg-slate-200 dark:hover:bg-zinc-700"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={handleNextFlashcard}
+                        className="flex-1 py-4 rounded-2xl bg-emerald-50 text-emerald-600 font-bold transition-all hover:bg-emerald-100"
+                      >
+                        {currentCardIndex === flashcards.length - 1 ? "Finish" : "Next Card"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

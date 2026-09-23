@@ -41,12 +41,16 @@ def db_session():
 def test_users(db_session):
     u1 = db_session.query(User).filter(User.email == "yt1@test.com").first()
     if not u1:
-        u1 = User(name="YT Tester 1", email="yt1@test.com", hashed_password="hashed_pw_yt1")
+        u1 = User(name="YT Tester 1", email="yt1@test.com", hashed_password="hashed_pw_yt1", plan="pro")
         db_session.add(u1)
+    else:
+        u1.plan = "pro"
     u2 = db_session.query(User).filter(User.email == "yt2@test.com").first()
     if not u2:
-        u2 = User(name="YT Tester 2", email="yt2@test.com", hashed_password="hashed_pw_yt2")
+        u2 = User(name="YT Tester 2", email="yt2@test.com", hashed_password="hashed_pw_yt2", plan="pro")
         db_session.add(u2)
+    else:
+        u2.plan = "pro"
     db_session.commit()
     db_session.refresh(u1)
     db_session.refresh(u2)

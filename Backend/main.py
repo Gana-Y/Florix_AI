@@ -416,6 +416,15 @@ class FlashcardRequest(BaseModel):
     num_cards: int
     session_id: int
 
+    @field_validator("num_cards")
+    @classmethod
+    def validate_num_cards(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("num_cards must be at least 1")
+        if v > 50:
+            raise ValueError("num_cards cannot exceed 50")
+        return v
+
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[int] = None
@@ -4375,6 +4384,22 @@ def get_session_quizzes(
     ]
 
 
+@app.get("/library/{session_id}/flashcards", tags=["AI", "Learning"])
+def get_session_flashcards(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve saved flashcards for a session with tenant isolation."""
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id,
+        StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
+    return session.flashcards or []
+
+
 @app.post("/generate_flashcards", tags=["AI"])
 async def generate_flashcards(
     request: FlashcardRequest,
@@ -4427,12 +4452,36 @@ async def generate_flashcards(
         instruction = f"""Create exactly {n} study flashcards from the following text.
 Return ONLY valid JSON with no extra text:
 [{{"front": "Short question (max 12 words)?", "back": "Clear, concise answer or definition"}}]"""
-        raw = generate_with_fallback(session.content, instruction)
-        cards = clean_and_parse_json(raw)
+        try:
+            raw = generate_with_fallback(session.content, instruction)
+            cards = clean_and_parse_json(raw)
+        except Exception as e:
+            logger.warning(f"Fallback flashcard generation failed: {e}")
+            cards = []
 
-    if cards:
-        session.flashcards = cards
-        db.commit()
+    sanitized_cards = []
+    if cards and isinstance(cards, list):
+        is_pdf = (session.source_type or "").lower() == "pdf"
+        for card in cards:
+            if isinstance(card, dict) and card.get("front") and card.get("back"):
+                raw_page = card.get("page_number") if is_pdf else None
+                try:
+                    page_num = int(raw_page) if raw_page is not None else None
+                except (ValueError, TypeError):
+                    page_num = None
+                sanitized_cards.append({
+                    "front": str(card["front"]).strip(),
+                    "back": str(card["back"]).strip(),
+                    "topic": str(card.get("topic") or "General").strip(),
+                    "difficulty": str(card.get("difficulty") or "intermediate").strip(),
+                    "page_number": page_num,
+                })
+        cards = sanitized_cards
+        if cards:
+            session.flashcards = cards
+            db.commit()
+    else:
+        cards = []
 
     return cards
 
@@ -4812,6 +4861,20 @@ class FlashcardReviewRequest(BaseModel):
     quality: int  # 0 to 5
     idempotency_key: Optional[str] = None
 
+    @field_validator("quality")
+    @classmethod
+    def validate_quality(cls, v: int) -> int:
+        if v < 0 or v > 5:
+            raise ValueError("Quality rating must be between 0 and 5")
+        return v
+
+    @field_validator("card_index")
+    @classmethod
+    def validate_card_index(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("card_index must be non-negative")
+        return v
+
 
 @app.post("/learning/flashcard-review", tags=["AI", "Learning"])
 def review_flashcard_endpoint(
@@ -4923,6 +4986,7 @@ def get_library_item(session_id: int, db: Session = Depends(get_db), current_use
         "timeline": session.timeline or [],
         "insights": session.insights or {},
         "notes": session.notes or "",
+        "flashcards": session.flashcards or [],
         "doc_metadata": session.doc_metadata or {},
     }
 

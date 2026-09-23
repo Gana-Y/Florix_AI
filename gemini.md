@@ -71,5 +71,15 @@
     - Section quiz hardening: Routed YouTube section quiz generation through `generate_with_fallback()` cascade (`gemini-2.5-flash` -> `gemini-3.5-flash-lite`), enforced `check_plan_limit` on `quizzes_per_day` to protect against free-tier abuse, and replaced silent synthetic mock question fallbacks with explicit HTTP 503 controlled errors.
     - Tenant isolation: Strict verification of session ownership across `POST /generate_quiz`, `POST /quiz-result`, `GET /library/{id}/quizzes`, and section quiz endpoints.
     - Verified with 60/60 Audit #8 tests passing, 493/493 platform regression tests passing across all 15 suites, clean frontend build (`npm run build`), and zero runtime DB artifacts.
+- **Audit #9 — Flashcards Subsystem Deep Audit & Hardening**:
+  - **Status**: LOCKED & Approved.
+  - **Commit Hash**: `c36e2f6`
+  - **Coverage**:
+    - Complete input boundary & schema validation: Pydantic field validators on `FlashcardRequest` (`1 <= num_cards <= 50`) and `FlashcardReviewRequest` (`0 <= quality <= 5` and `card_index >= 0`).
+    - Stored deck persistence & retrieval: Dedicated endpoint `GET /library/{session_id}/flashcards` with tenant isolation (`session.user_id == current_user.id`), and included `"flashcards": session.flashcards or []` in `GET /library/{session_id}`.
+    - SM-2 spaced repetition integration: Connected frontend flip card UI in `StudySession.jsx` to backend SM-2 review pipeline via 4 recall rating buttons (Again [1], Hard [3], Good [4], Easy [5]), client idempotency keys, and live `intelligence.flashcards_reviewed` incrementing.
+    - Multi-source page number traceability: Strict enforcement of `page_number=None` across fallback generation and database persistence for all non-PDF media types (Audio, Video, Web, Paste), with authentic page numbers preserved for PDFs.
+    - Download quota exemption: Flashcard exports verified as exempt from daily download quota bounds.
+    - Verified with 40/40 Audit #9 tests passing, 533/533 platform regression tests passing across all 17 suites, clean frontend build (`npm run build`), and zero runtime DB artifacts.
 
 

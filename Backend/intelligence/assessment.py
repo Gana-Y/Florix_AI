@@ -51,14 +51,17 @@ class AssessmentEngine:
         for idx, c in enumerate(chunks[:8]):
             cid = f"chunk_{c.get('chunk_index', idx)}"
             chunk_map[cid] = c
-            p = c.get("page_number", 1)
+            p = c.get("page_number")
             sec = c.get("section_heading", "General")
             txt = c.get("text_content", "") or c.get("text", "")
-            evidence_text += f"\n--- SOURCE CHUNK [{cid}] (Page {p}, Section: {sec}) ---\n{txt}\n"
+            page_label = f"Page {p}" if p is not None else "N/A"
+            evidence_text += f"\n--- SOURCE CHUNK [{cid}] ({page_label}, Section: {sec}) ---\n{txt}\n"
 
         if not evidence_text.strip():
             logger.warning("No evidence chunks available for grounded quiz generation.")
             return []
+
+        has_pages = any(c.get("page_number") is not None for c in chunks)
 
         prompt = f"""You are an expert academic examiner.
 Generate exactly {num_questions} high-quality, evidence-grounded questions based SOLELY on the study context below.
@@ -69,7 +72,7 @@ DIFFICULTY LEVEL: {difficulty.upper()}
 STRICT GROUNDING INSTRUCTIONS:
 1. Every question and answer MUST be directly supported by facts in the provided chunks.
 2. DO NOT make up questions about concepts not mentioned in the source context.
-3. For each question, link the exact source chunk ID, page number, and section heading where the answer is verified.
+3. For each question, link the exact source chunk ID, page number (integer for PDF, null if N/A), and section heading where the answer is verified.
 4. "answer" must be the 0-based integer index of the correct option in the "options" list.
 5. Provide a clear, educational "explanation" citing the source evidence.
 
@@ -84,7 +87,7 @@ Return ONLY a valid JSON array of objects with no surrounding markdown or conver
     "difficulty": "{difficulty}",
     "topic": "{topic or 'Core Subject'}",
     "source_chunk_id": "chunk_0",
-    "page_number": 1,
+    "page_number": null,
     "section_heading": "Heading Name"
   }}
 ]
@@ -116,7 +119,8 @@ Return ONLY a valid JSON array of objects with no surrounding markdown or conver
             parsed_data = json.loads(cleaned)
         except Exception as parse_err:
             logger.warning(f"Initial JSON parse failed: {parse_err}. Attempting regex recovery.")
-            arr_match = re.search(r"\[([\s\S]*?)\]", cleaned)
+            # Use greedy match to capture the outermost [...] array, not inner brackets
+            arr_match = re.search(r"\[([\s\S]*)\]", cleaned)
             if arr_match:
                 try:
                     parsed_data = json.loads(f"[{arr_match.group(1)}]")
@@ -147,7 +151,15 @@ Return ONLY a valid JSON array of objects with no surrounding markdown or conver
 
                 cid = item.get("source_chunk_id")
                 matched_chunk = chunk_map.get(cid, {}) if cid else {}
-                page = item.get("page_number") or matched_chunk.get("page_number", 1)
+                # Ground truth: if chunk is known, its page_number is authoritative.
+                # If chunk is unknown but document is paginated, fallback to item.page_number.
+                # For unpaginated sources (audio/video/web/text), strictly enforce None.
+                if matched_chunk:
+                    raw_page = matched_chunk.get("page_number")
+                elif has_pages:
+                    raw_page = item.get("page_number")
+                else:
+                    raw_page = None
                 sec = item.get("section_heading") or matched_chunk.get("section_heading", "")
 
                 validated_quiz.append({
@@ -159,7 +171,7 @@ Return ONLY a valid JSON array of objects with no surrounding markdown or conver
                     "difficulty": item.get("difficulty", difficulty),
                     "topic": item.get("topic") or topic or "General",
                     "source_chunk_id": cid or (f"chunk_{matched_chunk.get('chunk_index', 0)}" if matched_chunk else None),
-                    "page_number": int(page) if page else 1,
+                    "page_number": int(raw_page) if raw_page is not None else None,
                     "section_heading": sec or ""
                 })
 
@@ -185,14 +197,17 @@ Return ONLY a valid JSON array of objects with no surrounding markdown or conver
 
         evidence_text = ""
         for idx, c in enumerate(chunks[:8]):
-            p = c.get("page_number", 1)
+            p = c.get("page_number")
             sec = c.get("section_heading", "General")
             txt = c.get("text_content", "") or c.get("text", "")
-            evidence_text += f"\n--- SOURCE CHUNK [{idx}] (Page {p}, Section: {sec}) ---\n{txt}\n"
+            page_label = f"Page {p}" if p is not None else "N/A"
+            evidence_text += f"\n--- SOURCE CHUNK [{idx}] ({page_label}, Section: {sec}) ---\n{txt}\n"
 
         if not evidence_text.strip():
             logger.warning("No evidence chunks available for flashcard generation.")
             return []
+
+        has_pages = any(c.get("page_number") is not None for c in chunks)
 
         prompt = f"""Create exactly {num_cards} high-yield academic study flashcards based SOLELY on the study context below.
 
@@ -203,7 +218,7 @@ STRICT GROUNDING INSTRUCTIONS:
 1. Every card MUST test a concrete concept, formula, rule, or definition present in the text.
 2. "front": Concise prompt, question, or term (maximum 15 words).
 3. "back": Crisp, accurate answer or definition (maximum 40 words).
-4. Tag each card with its topic, difficulty level, and page number.
+4. Tag each card with its topic, difficulty level, and page number (integer for PDF, null if N/A).
 
 Return ONLY a valid JSON array of objects with no markdown wrapping:
 [
@@ -212,7 +227,7 @@ Return ONLY a valid JSON array of objects with no markdown wrapping:
     "back": "Clear definition or answer grounded in the material.",
     "topic": "{topic or 'Core Subject'}",
     "difficulty": "{difficulty}",
-    "page_number": 1
+    "page_number": null
   }}
 ]
 
@@ -240,7 +255,7 @@ Return ONLY a valid JSON array of objects with no markdown wrapping:
             parsed_data = json.loads(cleaned)
         except Exception as parse_err:
             logger.warning(f"Flashcard JSON parse failed: {parse_err}. Attempting regex recovery.")
-            arr_match = re.search(r"\[([\s\S]*?)\]", cleaned)
+            arr_match = re.search(r"\[([\s\S]*)\]", cleaned)
             if arr_match:
                 try:
                     parsed_data = json.loads(f"[{arr_match.group(1)}]")
@@ -257,13 +272,13 @@ Return ONLY a valid JSON array of objects with no markdown wrapping:
                 if not front or not back:
                     continue
 
-                page = item.get("page_number", 1)
+                raw_page = item.get("page_number") if has_pages else None
                 validated_cards.append({
                     "front": front,
                     "back": back,
                     "topic": item.get("topic") or topic or "General",
                     "difficulty": item.get("difficulty", difficulty),
-                    "page_number": int(page) if page else 1
+                    "page_number": int(raw_page) if raw_page is not None else None
                 })
 
         return validated_cards[:num_cards]

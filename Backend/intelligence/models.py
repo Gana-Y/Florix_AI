@@ -58,7 +58,7 @@ class GroundedQuizQuestion(BaseModel):
     difficulty: str = "intermediate"  # beginner | intermediate | advanced
     topic: Optional[str] = None
     source_chunk_id: Optional[str] = None
-    page_number: Optional[int] = 1
+    page_number: Optional[int] = None
     section_heading: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -75,7 +75,7 @@ class GroundedFlashcard(BaseModel):
     topic: Optional[str] = None
     difficulty: str = "intermediate"  # beginner | intermediate | advanced
     source_chunk_id: Optional[str] = None
-    page_number: Optional[int] = 1
+    page_number: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return self.model_dump()

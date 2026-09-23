@@ -30,7 +30,7 @@ import razorpay
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func, text
 
@@ -403,6 +403,15 @@ class QuizRequest(BaseModel):
     num_questions: int
     session_id: int
 
+    @field_validator("num_questions")
+    @classmethod
+    def validate_num_questions(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("num_questions must be at least 1")
+        if v > 30:
+            raise ValueError("num_questions cannot exceed 30")
+        return v
+
 class FlashcardRequest(BaseModel):
     num_cards: int
     session_id: int
@@ -470,6 +479,28 @@ class QuizResultRequest(BaseModel):
     score: int
     total_questions: int
     details: Optional[List[dict]] = None
+
+    @field_validator("total_questions")
+    @classmethod
+    def validate_total_questions(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("total_questions must be a positive integer")
+        if v > 100:
+            raise ValueError("total_questions cannot exceed 100")
+        return v
+
+    @field_validator("score")
+    @classmethod
+    def validate_score(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("score cannot be negative")
+        return v
+
+    @model_validator(mode="after")
+    def validate_score_within_total(self):
+        if self.score > self.total_questions:
+            raise ValueError("score cannot exceed total_questions")
+        return self
 
 class BookmarkCreate(BaseModel):
     session_id: int
@@ -4230,7 +4261,7 @@ async def generate_quiz(
             {
                 "chunk_index": c.chunk_index,
                 "text_content": c.text_content,
-                "page_number": c.page_number or 1,
+                "page_number": c.page_number,
                 "section_heading": c.section_heading or "General",
                 "content_type": c.content_type or "text"
             }
@@ -4296,7 +4327,15 @@ def save_quiz_result(
             topic = d.get("topic") or session.filename
             is_correct = d.get("is_correct")
             if is_correct is None:
-                is_correct = (d.get("selected") == d.get("answer") or d.get("user_answer") == d.get("correct_answer"))
+                # Guard against None == None false positive: require keys to exist
+                sel = d.get("selected")
+                ans = d.get("answer")
+                u_ans = d.get("user_answer")
+                c_ans = d.get("correct_answer")
+                is_correct = (
+                    (sel is not None and ans is not None and sel == ans) or
+                    (u_ans is not None and c_ans is not None and u_ans == c_ans)
+                )
             LearnerEngine.record_topic_interaction(
                 db=db,
                 user_id=current_user.id,
@@ -4363,7 +4402,7 @@ async def generate_flashcards(
             {
                 "chunk_index": c.chunk_index,
                 "text_content": c.text_content,
-                "page_number": c.page_number or 1,
+                "page_number": c.page_number,
                 "section_heading": c.section_heading or "General",
                 "content_type": c.content_type or "text"
             }
@@ -5362,6 +5401,8 @@ def quiz_learning_section(
     """
     Generates a multiple-choice question testing understanding of this specific video section.
     """
+    check_plan_limit(current_user, "quizzes_per_day", db)
+
     session = db.query(StudySession).filter(
         StudySession.id == session_id, StudySession.user_id == current_user.id
     ).first()
@@ -5375,9 +5416,8 @@ def quiz_learning_section(
         f"Key Concepts: {', '.join(req.concept_tags or [])}\n"
     )
 
-    prompt = f"""You are an elite academic assessment author for Florix AI.
-Create ONE challenging, high-yield multiple-choice question testing the student's comprehension of this specific video section:
-{sec_ctx}
+    instruction = """You are an elite academic assessment author for Florix AI.
+Create ONE challenging, high-yield multiple-choice question testing the student's comprehension of this specific video section.
 
 Rules:
 1. Ground the question strictly in what was taught in this section.
@@ -5386,37 +5426,26 @@ Rules:
 4. Provide a clear pedagogical explanation of why that option is correct.
 
 Return ONLY valid JSON with this exact schema:
-{{
+{
   "question": "Question text here",
   "options": ["Option A", "Option B", "Option C", "Option D"],
   "correct_index": 0,
   "explanation": "Why this answer is correct according to the section."
-}}
-"""
+}"""
+
     question_data = None
     try:
-        resp = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt
-        )
-        txt = resp.text.strip() if resp and resp.text else ""
+        txt = generate_with_fallback(sec_ctx, instruction)
         if txt.startswith("```"):
             txt = re.sub(r"^```[a-zA-Z]*\n?", "", txt)
             txt = re.sub(r"\n?```$", "", txt).strip()
         question_data = json.loads(txt)
     except Exception as e:
-        logger.warning(f"Section quiz generation error: {e}")
-        question_data = {
-            "question": f"What is the central concept discussed in the section '{req.section_title or 'this topic'}'?",
-            "options": [
-                req.section_title or "The core topic presented",
-                "A completely unrelated historical premise",
-                "Computational limitations of legacy systems",
-                "None of the above"
-            ],
-            "correct_index": 0,
-            "explanation": f"The section focuses on: {req.what_video_says or 'the specified concept'}."
-        }
+        logger.error(f"Section quiz generation failed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="AI Brain was unable to generate a quiz question for this section. Please try again."
+        )
 
     try:
         ev = LearningEvent(

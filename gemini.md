@@ -60,5 +60,15 @@
     - Prompt injection defense: Rule 6 ("DATA VS INSTRUCTION INTEGRITY") added to `SYSTEM_GROUNDED_TUTOR_PROMPT` and context tagged with `<untrusted_study_material>`.
     - Streaming citation accuracy: Dynamic regex matching in `generate_stream` ensuring SSE streams emit only active, cited citations.
     - Hybrid retriever resilience: Safe `ContentType` parsing preventing `ValueError` crashes and candidate page number preservation across dense and lexical retrieval.
-    - Verified with real deterministic live Gemini grounding on markers `CHAT_ALPHA_123`, `CHAT_BETA_456`, `CHAT_GAMMA_789`, honest refusal on `FlorixSecretOmega_999`, 22/22 Audit #7 tests passing, 433/433 total platform regression passing across all 14 suites, and clean frontend build (`npm run build`).
+- **Audit #8 — Quiz Subsystem Deep Audit & Hardening**:
+  - **Status**: LOCKED & Approved.
+  - **Coverage**:
+    - Zero fake page numbers: `page_number=None` strictly enforced end-to-end across `AssessmentEngine.generate_quiz`, `AssessmentEngine.generate_flashcards`, `GroundedQuizQuestion`, `GroundedFlashcard`, and `POST /generate_quiz` for non-PDF media types (Audio, Video, Web, Paste), with authoritative chunk grounding that rejects prompt-echoed hallucinations.
+    - Robust input validation: Pydantic field validators on `QuizRequest` (constraining `num_questions` between 1 and 30) and `QuizResultRequest` (enforcing `total_questions > 0`, `score >= 0`, and cross-field validation `score <= total_questions` to prevent `ZeroDivisionError` and impossible scores).
+    - Scoring integrity: Complete neutralization of the `None == None` false-positive vulnerability in `is_correct` result evaluation via explicit `is not None` guards across `selected`/`answer` and `user_answer`/`correct_answer`.
+    - Resilient JSON array extraction: Replaced lazy regex `.*?` with greedy `\[([\s\S]*)\]` in `clean_json_string` and `AssessmentEngine` recovery blocks, correctly parsing multiline, nested, and prose-surrounded JSON without truncation.
+    - Section quiz hardening: Routed YouTube section quiz generation through `generate_with_fallback()` cascade (`gemini-2.5-flash` -> `gemini-3.5-flash-lite`), enforced `check_plan_limit` on `quizzes_per_day` to protect against free-tier abuse, and replaced silent synthetic mock question fallbacks with explicit HTTP 503 controlled errors.
+    - Tenant isolation: Strict verification of session ownership across `POST /generate_quiz`, `POST /quiz-result`, `GET /library/{id}/quizzes`, and section quiz endpoints.
+    - Verified with 60/60 Audit #8 tests passing, 493/493 platform regression tests passing across all 15 suites, clean frontend build (`npm run build`), and zero runtime DB artifacts.
+
 

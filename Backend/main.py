@@ -519,6 +519,16 @@ class BookmarkCreate(BaseModel):
     session_id: int
     note: str | None = None
 
+    @field_validator("note")
+    @classmethod
+    def validate_note(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        clean = v.replace("\x00", "").strip()
+        if len(clean) > 5000:
+            raise ValueError("Bookmark note cannot exceed 5000 characters.")
+        return clean
+
 class ForgotPasswordRequest(BaseModel):
     email: str
 
@@ -539,6 +549,16 @@ class PaymentSubmissionRequest(BaseModel):
 class RenameRequest(BaseModel):
     filename: str
 
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, v: str) -> str:
+        clean = (v or "").replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Filename cannot be empty or whitespace.")
+        if len(clean) > 255:
+            raise ValueError("Filename cannot exceed 255 characters.")
+        return clean
+
 
 class OAuthRequest(BaseModel):
     provider: str
@@ -550,13 +570,39 @@ class OAuthRequest(BaseModel):
 class CategoryRequest(BaseModel):
     category: str
 
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        clean = (v or "").replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Category cannot be empty or whitespace.")
+        if len(clean) > 50:
+            raise ValueError("Category cannot exceed 50 characters.")
+        return clean
+
 
 class NotesRequest(BaseModel):
     notes: str
 
+    @field_validator("notes")
+    @classmethod
+    def validate_notes(cls, v: str) -> str:
+        clean = (v or "").replace("\x00", "")
+        if len(clean) > 50000:
+            raise ValueError("Notes cannot exceed 50,000 characters.")
+        return clean
+
 
 class ShareRequest(BaseModel):
     share_type: str = "public"  # public | private | team
+
+    @field_validator("share_type")
+    @classmethod
+    def validate_share_type(cls, v: str) -> str:
+        clean = (v or "").strip().lower()
+        if clean not in {"public", "private", "team"}:
+            raise ValueError("share_type must be one of: 'public', 'private', 'team'")
+        return clean
 
 
 class FeedbackCreate(BaseModel):
@@ -1419,6 +1465,12 @@ def process_upload_in_background(
             session.processing_status = ProcessingStatus.INDEXING
             db.commit()
             update_pipeline_progress(progress_id, 5, "Indexing in ChromaDB", "Writing metadata to SQLite & ChromaDB...", "active")
+            # Guard against concurrent deletion
+            sess_check = db.query(StudySession.id).filter(StudySession.id == session_id).first()
+            if not sess_check:
+                logger.warning(f"⚠️ Session {session_id} was deleted before chunk indexing. Aborting background indexing.")
+                return
+
             db_chunks = []
             for index, (chk, embedding_vector) in enumerate(zip(enriched_chunks, all_embeddings)):
                 db_chunk = DocumentChunk(
@@ -4114,6 +4166,26 @@ async def process_link(
         }
 
     content_hash_val = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+    existing = db.query(StudySession).filter(
+        StudySession.user_id == current_user.id,
+        StudySession.content_hash == content_hash_val
+    ).first()
+    if existing:
+        if not existing.project_id and assigned_space_id:
+            existing.project_id = assigned_space_id
+            db.commit()
+        if progress_id:
+            for step in range(2, 7):
+                update_pipeline_progress(progress_id, step, "Retrieved from cache", "Retrieved from cache", "done")
+        return {
+            "summary": existing.summary,
+            "filename": existing.filename,
+            "id": existing.id,
+            "project_id": existing.project_id,
+            "duplicate": True,
+            "message": "This link content was already submitted. Returning your existing study session."
+        }
+
     new_session = StudySession(
         filename=display_title, ai_title=None, summary="Processing...", content=text,
         user_id=current_user.id, source_type=source_type,
@@ -4921,10 +4993,58 @@ def get_spaced_revision_endpoint(
 # =============================================================================
 
 @app.get("/library", tags=["Library"])
-def get_library(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    sessions = db.query(StudySession).filter(
-        StudySession.user_id == current_user.id
-    ).order_by(StudySession.upload_date.desc()).all()
+def get_library(
+    limit: Optional[int] = Query(None, ge=1, le=200),
+    offset: Optional[int] = Query(0, ge=0),
+    category: Optional[str] = Query(None),
+    source_type: Optional[str] = Query(None),
+    project_id: Optional[int] = Query(None),
+    is_pinned: Optional[bool] = Query(None),
+    q: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("date_desc"),  # date_desc, date_asc, title_asc, title_desc, size_desc
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(StudySession).filter(StudySession.user_id == current_user.id)
+
+    # Optional filters
+    if category:
+        query = query.filter(StudySession.category == category.strip())
+    if source_type:
+        query = query.filter(StudySession.source_type == source_type.strip().lower())
+    if project_id is not None:
+        query = query.filter(StudySession.project_id == project_id)
+    if is_pinned is not None:
+        query = query.filter(StudySession.is_pinned == is_pinned)
+    if q and q.strip():
+        search_term = f"%{q.strip().replace(chr(0), '')}%"
+        query = query.filter(
+            or_(
+                StudySession.filename.ilike(search_term),
+                StudySession.ai_title.ilike(search_term),
+                StudySession.summary.ilike(search_term),
+            )
+        )
+
+    # Sorting
+    if sort_by == "date_asc":
+        query = query.order_by(StudySession.upload_date.asc())
+    elif sort_by == "title_asc":
+        query = query.order_by(StudySession.filename.asc())
+    elif sort_by == "title_desc":
+        query = query.order_by(StudySession.filename.desc())
+    elif sort_by == "size_desc":
+        query = query.order_by(StudySession.char_count.desc())
+    else:
+        # Default: date_desc
+        query = query.order_by(StudySession.upload_date.desc())
+
+    if offset:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+
+    sessions = query.all()
 
     # Get bookmarked IDs for this user
     bookmarked_ids = {
@@ -4940,16 +5060,20 @@ def get_library(db: Session = Depends(get_db), current_user: User = Depends(get_
             "is_pinned": s.is_pinned or False,
             "intelligence_score": s.intelligence_score or 0,
             "source_type": s.source_type or "pdf",
-            "added": s.upload_date.strftime("%Y-%m-%d"),
-            "raw_date": s.upload_date.isoformat(),
+            "added": s.upload_date.strftime("%Y-%m-%d") if s.upload_date else datetime.utcnow().strftime("%Y-%m-%d"),
+            "raw_date": s.upload_date.isoformat() if s.upload_date else datetime.utcnow().isoformat(),
             "summary": s.summary[:150] + "..." if s.summary and len(s.summary) > 150 else (s.summary or ""),
-            "full_summary": s.summary,
+            "full_summary": s.summary or "",
             "size": len(s.content) if s.content else 0,
             "is_bookmarked": s.id in bookmarked_ids,
             "timeline": s.timeline or [],
             "insights": s.insights or {},
             "notes": s.notes or "",
             "project_id": s.project_id,
+            "processing_status": s.processing_status or "READY",
+            "processing_error": s.processing_error,
+            "page_count": s.page_count or 1,
+            "char_count": s.char_count or (len(s.content) if s.content else 0),
         }
         for s in sessions
     ]
@@ -4976,8 +5100,8 @@ def get_library_item(session_id: int, db: Session = Depends(get_db), current_use
         "is_pinned": session.is_pinned or False,
         "intelligence_score": session.intelligence_score or 0,
         "source_type": session.source_type or "pdf",
-        "added": session.upload_date.strftime("%Y-%m-%d"),
-        "raw_date": session.upload_date.isoformat(),
+        "added": session.upload_date.strftime("%Y-%m-%d") if session.upload_date else datetime.utcnow().strftime("%Y-%m-%d"),
+        "raw_date": session.upload_date.isoformat() if session.upload_date else datetime.utcnow().isoformat(),
         "summary": session.summary or "",
         "content": session.content or "",
         "is_bookmarked": is_bookmarked,
@@ -4986,6 +5110,10 @@ def get_library_item(session_id: int, db: Session = Depends(get_db), current_use
         "notes": session.notes or "",
         "flashcards": session.flashcards or [],
         "doc_metadata": session.doc_metadata or {},
+        "processing_status": session.processing_status or "READY",
+        "processing_error": session.processing_error,
+        "page_count": session.page_count or 1,
+        "char_count": session.char_count or (len(session.content) if session.content else 0),
     }
 
 
@@ -5120,13 +5248,20 @@ def delete_library_item(session_id: int, db: Session = Depends(get_db), current_
     if not session:
         raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
 
-    # Clean up ChromaDB vectors for this session
+    # Unlink any ChatConversation that references this session to preserve chat history and avoid foreign key crash
+    db.query(ChatConversation).filter(ChatConversation.session_id == session_id).update({ChatConversation.session_id: None})
+
+    # Clean up ChromaDB vectors for this session (both integer and string session_id metadata)
     if chroma_collection is not None:
         try:
             chroma_collection.delete(where={"session_id": session_id})
             logger.info(f"🗑️ Purged ChromaDB vectors for session {session_id}")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to purge ChromaDB vectors for session {session_id}: {e}")
+            logger.warning(f"⚠️ Failed to purge ChromaDB vectors (int) for session {session_id}: {e}")
+        try:
+            chroma_collection.delete(where={"session_id": str(session_id)})
+        except Exception:
+            pass
 
     filename = session.filename
     db.delete(session)
@@ -5769,26 +5904,58 @@ def get_shared_session(share_token: str, request: Request, db: Session = Depends
 
 @app.get("/knowledge-vault/search", tags=["Library"])
 def search_knowledge_vault(q: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not q or len(q.strip()) < 2:
+    clean_q = (q or "").replace("\x00", "").strip()
+    if not clean_q or len(clean_q) < 2 or len(clean_q) > 500:
         return []
 
-    # 1. Fetch all user sessions
-    sessions = db.query(StudySession).filter(StudySession.user_id == current_user.id).all()
+    # 1. Fetch user sessions excluding FAILED sessions
+    sessions = db.query(StudySession).filter(
+        StudySession.user_id == current_user.id,
+        StudySession.processing_status != ProcessingStatus.FAILED
+    ).all()
     session_map = {s.id: s for s in sessions}
     session_ids = list(session_map.keys())
     if not session_ids:
         return []
 
+    # Helper function for lexical keyword fallback
+    def _lexical_search_fallback():
+        lexical_results = db.query(StudySession).filter(
+            StudySession.user_id == current_user.id,
+            StudySession.processing_status != ProcessingStatus.FAILED,
+            or_(
+                StudySession.filename.ilike(f"%{clean_q}%"),
+                StudySession.ai_title.ilike(f"%{clean_q}%"),
+                StudySession.summary.ilike(f"%{clean_q}%"),
+                StudySession.content.ilike(f"%{clean_q}%")
+            )
+        ).limit(10).all()
+        return [
+            {
+                "session_id": s.id,
+                "session_title": s.ai_title or s.filename,
+                "excerpt": (s.summary[:300] + "...") if s.summary and len(s.summary) > 300 else (s.summary or (s.content[:300] if s.content else "")),
+                "score": 0.5,
+                "category": s.category or "Study"
+            }
+            for s in lexical_results
+        ]
+
     # 2. Embed the search query
+    query_embedding = None
     try:
         response = client.models.embed_content(
             model="models/gemini-embedding-2",
-            contents=q
+            contents=clean_q
         )
-        query_embedding = response.embeddings[0].values
+        if response and response.embeddings and len(response.embeddings) > 0:
+            query_embedding = response.embeddings[0].values
     except Exception as e:
-        logger.error(f"Gemini embedding failed in knowledge vault: {e}")
-        return []
+        logger.error(f"Gemini embedding failed in knowledge vault, falling back to lexical search: {e}")
+        return _lexical_search_fallback()
+
+    if not query_embedding:
+        return _lexical_search_fallback()
 
     # 3. Try ChromaDB first (fast HNSW cosine similarity)
     if chroma_collection is not None:
@@ -5809,8 +5976,12 @@ def search_knowledge_vault(q: str, db: Session = Depends(get_db), current_user: 
                     score = 1.0 - distance  # cosine distance → similarity
                     if score < 0.1:
                         continue
-                    meta = results["metadatas"][0][idx]
-                    sess_id = meta.get("session_id")
+                    meta = results["metadatas"][0][idx] if results["metadatas"] else {}
+                    raw_sess_id = meta.get("session_id")
+                    try:
+                        sess_id = int(raw_sess_id)
+                    except (ValueError, TypeError):
+                        continue
                     if sess_id in seen_sessions:
                         continue
                     seen_sessions.add(sess_id)
@@ -5820,7 +5991,7 @@ def search_knowledge_vault(q: str, db: Session = Depends(get_db), current_user: 
                     text = results["documents"][0][idx] if results["documents"] else ""
                     formatted.append({
                         "session_id": sess.id,
-                        "session_title": sess.filename,
+                        "session_title": sess.ai_title or sess.filename,
                         "excerpt": text[:300] + "..." if len(text) > 300 else text,
                         "score": round(score, 3),
                         "category": sess.category or "Study"
@@ -5834,31 +6005,17 @@ def search_knowledge_vault(q: str, db: Session = Depends(get_db), current_user: 
     # 4. Fallback: SQLite cosine similarity scan
     chunks = db.query(DocumentChunk).filter(DocumentChunk.session_id.in_(session_ids)).all()
     if not chunks:
-        # Final fallback to string search if no vector chunks exist
-        results = db.query(StudySession).filter(
-            StudySession.user_id == current_user.id,
-            or_(
-                StudySession.filename.ilike(f"%{q}%"),
-                StudySession.summary.ilike(f"%{q}%"),
-                StudySession.content.ilike(f"%{q}%")
-            )
-        ).limit(10).all()
-        return [
-            {
-                "session_id": s.id,
-                "session_title": s.filename,
-                "excerpt": s.summary[:200] if s.summary else "",
-                "score": 0.5,
-                "category": s.category or "Study"
-            }
-            for s in results
-        ]
+        return _lexical_search_fallback()
 
     chunk_scores = []
     for chunk in chunks:
-        sim = cosine_similarity(query_embedding, chunk.embedding)
-        if sim > 0.1:
-            chunk_scores.append((chunk, sim))
+        if chunk.embedding:
+            sim = cosine_similarity(query_embedding, chunk.embedding)
+            if sim > 0.1:
+                chunk_scores.append((chunk, sim))
+
+    if not chunk_scores:
+        return _lexical_search_fallback()
 
     chunk_scores.sort(key=lambda x: x[1], reverse=True)
     top_chunks = chunk_scores[:12]
@@ -5874,30 +6031,38 @@ def search_knowledge_vault(q: str, db: Session = Depends(get_db), current_user: 
         seen_sessions.add(chunk.session_id)
         results.append({
             "session_id": sess.id,
-            "session_title": sess.filename,
+            "session_title": sess.ai_title or sess.filename,
             "excerpt": chunk.text_content[:300] + "..." if len(chunk.text_content) > 300 else chunk.text_content,
             "score": round(score, 3),
             "category": sess.category or "Study"
         })
 
-    return results
+    return results if results else _lexical_search_fallback()
 
 
 @app.get("/search", tags=["Library"])
 def search_content(q: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not q or len(q.strip()) < 2:
+    clean_q = (q or "").replace("\x00", "").strip()
+    if not clean_q or len(clean_q) < 2 or len(clean_q) > 500:
         return []
     sessions = db.query(StudySession).filter(
         StudySession.user_id == current_user.id,
+        StudySession.processing_status != ProcessingStatus.FAILED,
         or_(
-            StudySession.filename.ilike(f"%{q}%"),
-            StudySession.summary.ilike(f"%{q}%"),
-            StudySession.content.ilike(f"%{q}%"),
+            StudySession.filename.ilike(f"%{clean_q}%"),
+            StudySession.ai_title.ilike(f"%{clean_q}%"),
+            StudySession.summary.ilike(f"%{clean_q}%"),
+            StudySession.content.ilike(f"%{clean_q}%"),
         )
     ).limit(20).all()
     return [
-        {"id": s.id, "filename": s.filename, "source_type": s.source_type or "pdf",
-         "summary": s.summary[:150] + "..." if s.summary else "", "added": s.upload_date.strftime("%Y-%m-%d")}
+        {
+            "id": s.id,
+            "filename": s.filename,
+            "source_type": s.source_type or "pdf",
+            "summary": s.summary[:150] + "..." if s.summary and len(s.summary) > 150 else (s.summary or ""),
+            "added": s.upload_date.strftime("%Y-%m-%d") if s.upload_date else datetime.utcnow().strftime("%Y-%m-%d"),
+        }
         for s in sessions
     ]
 

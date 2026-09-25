@@ -305,6 +305,7 @@ async def progress_streamer(progress_id: str):
         if all_done:
             # Let it linger briefly so frontend can see 100% completion before connection closes
             await asyncio.sleep(1.0)
+            pipeline_progress.pop(progress_id, None)
             break
 
         await asyncio.sleep(0.5)
@@ -566,6 +567,26 @@ class OAuthRequest(BaseModel):
     name: str
     avatar_url: str | None = None
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        clean = (v or "").replace("\x00", "").strip().lower()
+        if not clean or "@" not in clean or not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", clean):
+            raise ValueError("Please provide a valid, well-formed email address.")
+        if len(clean) > 255:
+            raise ValueError("Email cannot exceed 255 characters.")
+        return clean
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        clean = (v or "").replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Name cannot be empty or whitespace.")
+        if len(clean) > 100:
+            raise ValueError("Name cannot exceed 100 characters.")
+        return clean
+
 
 class CategoryRequest(BaseModel):
     category: str
@@ -609,6 +630,16 @@ class FeedbackCreate(BaseModel):
     feedback_type: str = "General Feedback"  # 'Bug Report' | 'Feature Request' | 'Auth and Billing' | 'General Feedback'
     description: str
 
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        clean = (v or "").replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Feedback description cannot be empty or whitespace.")
+        if len(clean) > 5000:
+            raise ValueError("Feedback description cannot exceed 5000 characters.")
+        return clean
+
 
 class FeedbackStatusUpdate(BaseModel):
     status: Optional[str] = "reviewed"  # 'new' | 'reviewed' | 'resolved'
@@ -621,6 +652,26 @@ class ProjectCreate(BaseModel):
     icon: Optional[str] = "Folder"
     description: Optional[str] = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        clean = (v or "").replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Project name cannot be empty or whitespace.")
+        if len(clean) > 100:
+            raise ValueError("Project name cannot exceed 100 characters.")
+        return clean
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        clean = v.replace("\x00", "").strip()
+        if len(clean) > 1000:
+            raise ValueError("Project description cannot exceed 1000 characters.")
+        return clean
+
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
@@ -628,6 +679,28 @@ class ProjectUpdate(BaseModel):
     icon: Optional[str] = None
     is_pinned: Optional[bool] = None
     description: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        clean = v.replace("\x00", "").strip()
+        if not clean:
+            raise ValueError("Project name cannot be empty or whitespace.")
+        if len(clean) > 100:
+            raise ValueError("Project name cannot exceed 100 characters.")
+        return clean
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        clean = v.replace("\x00", "").strip()
+        if len(clean) > 1000:
+            raise ValueError("Project description cannot exceed 1000 characters.")
+        return clean
 
 
 class MoveSessionProjectRequest(BaseModel):
@@ -1390,7 +1463,8 @@ def process_upload_in_background(
         category = generate_category(text)
         if smart_title:
             session.ai_title = smart_title
-            session.filename = smart_title
+            if not smart_title.lower().startswith("study session on") or not session.filename:
+                session.filename = smart_title
         if category:
             session.category = category
         db.commit()
@@ -2187,6 +2261,9 @@ def delete_account(db: Session = Depends(get_db), current_user: User = Depends(g
             except Exception as e:
                 logger.warning(f"⚠️ Failed to purge ChromaDB vectors during account deletion: {e}")
 
+        # Clean up any PaymentSubmission records before deleting user to preserve foreign key integrity
+        db.query(PaymentSubmission).filter(PaymentSubmission.user_id == current_user.id).delete()
+
         db.delete(current_user)
         db.commit()
         logger.info(f"✅ Account of {current_user.email} successfully deleted and cascaded.")
@@ -2530,6 +2607,9 @@ async def razorpay_webhook(
         except Exception as e:
             logger.warning(f"Razorpay webhook verification failed: {e}")
             raise HTTPException(status_code=400, detail="Invalid webhook signature.")
+    else:
+        if os.getenv("ENVIRONMENT") == "production":
+            raise HTTPException(status_code=503, detail="Razorpay payments are not enabled.")
 
     try:
         event = json.loads(payload)
@@ -3400,7 +3480,10 @@ async def upload_file(
 
     os.makedirs("uploads", exist_ok=True)
     unique_prefix = uuid.uuid4().hex[:8]
-    clean_name = f"{unique_prefix}_{re.sub(r'[^\w\.-]', '_', file.filename)}"
+    raw_basename = os.path.basename(file.filename.replace("\\", "/"))
+    clean_base = re.sub(r"[^\w\.-]", "_", raw_basename)
+    clean_base = re.sub(r"\.{2,}", "_", clean_base)
+    clean_name = f"{unique_prefix}_{clean_base}"
     file_path = f"uploads/{clean_name}"
     with open(file_path, "wb") as f:
         f.write(contents)

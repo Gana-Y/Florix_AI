@@ -147,6 +147,16 @@ class HybridRetriever:
         dense_candidates: List[RetrievalCandidate] = []
         lexical_candidates: List[RetrievalCandidate] = []
 
+        # 0. Strict Tenant Isolation Guard: Verify session ownership in SQLite if models provided
+        if session_model is not None and user_id is not None and db is not None:
+            valid_session = db.query(session_model.id).filter(
+                session_model.id == session_id,
+                session_model.user_id == user_id
+            ).first()
+            if not valid_session:
+                logger.warning(f"🔒 Security Alert: Blocked cross-tenant retrieval attempt (User: {user_id}, Session: {session_id})")
+                return []
+
         # 1. Dense Semantic Retrieval via ChromaDB
         if self.collection is not None and self.gemini_client is not None:
             try:

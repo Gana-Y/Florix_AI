@@ -81,5 +81,14 @@
     - Multi-source page number traceability: Strict enforcement of `page_number=None` across fallback generation and database persistence for all non-PDF media types (Audio, Video, Web, Paste), with authentic page numbers preserved for PDFs.
     - Download quota exemption: Flashcard exports verified as exempt from daily download quota bounds.
     - Verified with 40/40 Audit #9 tests passing, 533/533 platform regression tests passing across all 17 suites, clean frontend build (`npm run build`), and zero runtime DB artifacts.
-
-
+- **Audit #10 — Study Guide Subsystem Deep Audit & Hardening**:
+  - **Status**: LOCKED & Approved.
+  - **Commit Hash**: `d0fd0b0`
+  - **Coverage**:
+    - Large document capacity: Expanded `generate_with_fallback()` truncation ceiling from 15,000 to 150,000 characters with symmetric head-tail preservation, preventing silent concept drops in long documents.
+    - Summary failure protection: Eliminated database summary overwriting on model cascade exhaustion in `POST /library/{session_id}/regenerate`, returning explicit HTTP 503 while preserving existing valid study guides in SQLite.
+    - Subscription plan limits: Enforced `study_guides_per_day` plan quota checks (`free`: 5, `pro`: 50, `premium`: unlimited) via `Activity` logging to prevent free-tier abuse.
+    - Grounded prompt engineering: Implemented `build_grounded_study_guide_prompt()` with modality routing (PDF -> `[Page X]`, YouTube/Audio -> `[MM:SS]`, Web/Text -> Sections), untrusted study material sandboxing (`<untrusted_study_material>`), and strict enforcement of zero fake page numbers for non-PDF media.
+    - Input sanitization & state concurrency: Sanitized null bytes `\x00` and whitespace strings (returning HTTP 400), and blocked regeneration during active document ingestion (`PROCESSING`, `CHUNKING`, `EMBEDDING`, `INDEXING`) with HTTP 409 Conflict.
+    - Persistence, audit trail & dedicated endpoint: Appended `"Study Guide Regenerated"` events to session timeline, emitted `LearningEvent(event_type="STUDY_GUIDE_REGENERATED")`, and implemented dedicated `GET /library/{session_id}/study-guide` endpoint with cross-tenant isolation.
+    - Verified with 22/22 Audit #10 tests passing, 555/555 platform regression tests passing across all 18 suites, clean frontend build (`npm run build`), and zero runtime DB artifacts.

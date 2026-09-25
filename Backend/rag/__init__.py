@@ -35,6 +35,7 @@ from .context_builder import ContextBuilder
 from .prompts import (
     build_grounded_rag_prompt,
     build_query_rewrite_prompt,
+    build_grounded_study_guide_prompt,
     SYSTEM_GROUNDED_TUTOR_PROMPT,
 )
 from .generator import GroundedGenerator
@@ -61,6 +62,7 @@ __all__ = [
     "ContextBuilder",
     "build_grounded_rag_prompt",
     "build_query_rewrite_prompt",
+    "build_grounded_study_guide_prompt",
     "SYSTEM_GROUNDED_TUTOR_PROMPT",
     "GroundedGenerator",
 ]

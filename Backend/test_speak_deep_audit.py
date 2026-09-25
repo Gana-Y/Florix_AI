@@ -429,9 +429,15 @@ class TestRealPlayableAudioE2EProof:
         mock_gemini_response = MagicMock()
         mock_gemini_response.text = mock_gemini_transcript
 
+        mock_emb_val = MagicMock()
+        mock_emb_val.values = [0.01] * 768
+        mock_emb_resp = MagicMock()
+        mock_emb_resp.embeddings = [mock_emb_val] * 20
+
         # Execute background task with mock Gemini model response
         with patch("main.client.files.upload") as mock_file_up, \
-             patch("main.client.models.generate_content", return_value=mock_gemini_response):
+             patch("main.client.models.generate_content", return_value=mock_gemini_response), \
+             patch("main.client.models.embed_content", return_value=mock_emb_resp):
             mock_file_up.return_value = MagicMock(name="gemini_audio_file")
             process_upload_in_background(
                 session_id=session.id,

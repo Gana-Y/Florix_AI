@@ -309,17 +309,24 @@ def test_explain_and_quiz_section_endpoints(client, db_session, test_users):
         "what_video_says": "Particles stay connected across space.",
         "concept_tags": ["Entanglement"]
     }
-    quiz_res = client.post(
-        f"/sessions/{s.id}/learning-timeline/sections/sec_01/quiz",
-        headers={"Authorization": f"Bearer {test_users['token1']}"},
-        json=quiz_payload
-    )
-    assert quiz_res.status_code == 200
-    quiz_data = quiz_res.json()
-    assert quiz_data["section_id"] == "sec_01"
-    assert "quiz" in quiz_data
-    assert "question" in quiz_data["quiz"]
-    assert len(quiz_data["quiz"]["options"]) == 4
+    mock_quiz_json = json.dumps({
+        "question": "What is quantum entanglement?",
+        "options": ["A state of correlation", "A new element", "A software protocol", "A laser beam"],
+        "correct_index": 0,
+        "explanation": "Entanglement describes quantum correlation between particles."
+    })
+    with patch("main.generate_with_fallback", return_value=mock_quiz_json):
+        quiz_res = client.post(
+            f"/sessions/{s.id}/learning-timeline/sections/sec_01/quiz",
+            headers={"Authorization": f"Bearer {test_users['token1']}"},
+            json=quiz_payload
+        )
+        assert quiz_res.status_code == 200
+        quiz_data = quiz_res.json()
+        assert quiz_data["section_id"] == "sec_01"
+        assert "quiz" in quiz_data
+        assert "question" in quiz_data["quiz"]
+        assert len(quiz_data["quiz"]["options"]) == 4
 
     # 3. Section Progress
     prog_payload = {

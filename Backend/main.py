@@ -39,7 +39,7 @@ from database import (
     User, StudySession, Activity, QuizResult,
     ChatConversation, ChatMessage, Bookmark, PasswordResetToken,
     DocumentChunk, PaymentSubmission, FlashcardProgress,
-    Feedback, Project
+    Feedback, Project, LearningEvent
 )
 from auth import (
     get_db, get_current_user, create_access_token,
@@ -71,6 +71,7 @@ from rag import (
     RelevanceReranker,
     ContextBuilder,
     build_grounded_rag_prompt,
+    build_grounded_study_guide_prompt,
     GroundedGenerator,
 )
 
@@ -169,6 +170,7 @@ PLAN_LIMITS = {
         "max_paste_chars": 3000,       # ~500 words
         "max_speech_words": 150,       # ~1-2 min speaking
         "max_link_chars": 10000,
+        "study_guides_per_day": 5,
     },
     "pro": {
         "sessions": 50,
@@ -181,6 +183,7 @@ PLAN_LIMITS = {
         "max_paste_chars": 25000,      # ~4,000 words
         "max_speech_words": 1000,      # ~8-10 min speaking
         "max_link_chars": 50000,
+        "study_guides_per_day": 50,
     },
     "premium": {
         "sessions": -1,
@@ -193,6 +196,7 @@ PLAN_LIMITS = {
         "max_paste_chars": 100000,     # ~15,000 words
         "max_speech_words": -1,        # Unlimited dictation
         "max_link_chars": 150000,
+        "study_guides_per_day": -1,
     },
 }
 
@@ -622,8 +626,17 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
         if m and m not in models_to_try:
             models_to_try.append(m)
 
-    truncated = prompt[:15000]
-    contents = f"{instruction}:\n\n{truncated}"
+    MAX_PROMPT_CHARS = 150000
+    if len(prompt) > MAX_PROMPT_CHARS:
+        half = MAX_PROMPT_CHARS // 2
+        truncated = prompt[:half] + "\n\n[... content omitted for length ...]\n\n" + prompt[-half:]
+    else:
+        truncated = prompt
+
+    if "<untrusted_study_material>" in instruction:
+        contents = instruction
+    else:
+        contents = f"{instruction}:\n\n{truncated}"
     last_err = None
 
     for model in models_to_try:
@@ -1308,39 +1321,12 @@ def process_upload_in_background(
             update_pipeline_progress(progress_id, 2, "Content parsing", "Text content ready", "done")
             update_pipeline_progress(progress_id, 6, "AI summary generation", "Running study guide generator...", "active")
 
-            if source_type == "pdf":
-                instruction = (
-                    "You are an expert academic content summarizer. Analyze the following document and create a "
-                    "comprehensive, well-structured study guide in Markdown format. Include: "
-                    "# Main Title, ## Key Concepts, ## Summary, ## Important Points (bullet list), "
-                    "## Key Terms (definition list). Make it useful for students studying for exams."
-                )
-            elif source_type == "youtube":
-                instruction = (
-                    "You are an expert educational content creator. Based on this YouTube video transcript, "
-                    "create a comprehensive study guide in Markdown format with: "
-                    "# Video Title, ## Key Topics Covered, ## Summary, ## Important Points, ## Key Takeaways."
-                )
-            elif source_type == "url":
-                if "youtube.com" in text or "youtu.be" in text or session.filename.lower().startswith("youtube"):
-                    instruction = (
-                        "You are an expert educational content creator. Based on this YouTube video transcript, "
-                        "create a comprehensive study guide in Markdown format with: "
-                        "# Video Title, ## Key Topics Covered, ## Summary, ## Important Points, ## Key Takeaways."
-                    )
-                else:
-                    instruction = (
-                        "You are an expert at distilling web content into study material. "
-                        "Analyze this web page content and create a comprehensive study guide in Markdown format with: "
-                        "# Page Title, ## Key Points, ## Summary, ## Important Information."
-                    )
-            else:
-                instruction = (
-                    "You are an expert academic content summarizer. Analyze the following text and create a "
-                    "comprehensive, well-structured study guide in Markdown format with: "
-                    "# Title, ## Key Concepts, ## Summary, ## Important Points, ## Key Terms."
-                )
-            summary = generate_with_fallback(text, instruction)
+            guide_prompt = build_grounded_study_guide_prompt(
+                content=text,
+                source_type=source_type,
+                filename=session.filename or "Uploaded Document"
+            )
+            summary = generate_with_fallback(text, guide_prompt)
             session.summary = summary
             db.commit()
             update_pipeline_progress(progress_id, 6, "AI summary generation", "Study guide successfully generated", "done")
@@ -1798,6 +1784,18 @@ def check_plan_limit(user: User, resource: str, db: Session, value: Optional[flo
             raise HTTPException(
                 status_code=402,
                 detail=f"Daily download limit ({limit} downloads) reached for {plan.upper()} plan. Upgrade or try again tomorrow."
+            )
+    elif resource == "study_guides_per_day":
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        count = db.query(Activity).filter(
+            Activity.user_id == user.id,
+            Activity.action.in_(["Summary Regenerated", "Study Guide Regenerated"]),
+            Activity.timestamp >= today_start
+        ).count()
+        if count >= limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Daily study guide regeneration limit ({limit}) reached for {plan.upper()} plan. Upgrade or try again tomorrow."
             )
     elif resource == "max_upload_mb":
         file_mb = (value or 0) / (1024 * 1024)
@@ -4997,26 +4995,121 @@ def regenerate_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Regenerate AI summary for an existing study session."""
+    """Regenerate AI study guide for an existing study session with full grounding and validation."""
     session = db.query(StudySession).filter(
         StudySession.id == session_id,
         StudySession.user_id == current_user.id
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Study session not found")
-    if not session.content:
+
+    # In-flight concurrency check: reject if session is currently being processed
+    active_statuses = [
+        ProcessingStatus.PROCESSING,
+        ProcessingStatus.CHUNKING,
+        ProcessingStatus.EMBEDDING,
+        ProcessingStatus.INDEXING,
+        "processing",
+        "chunking",
+        "embedding",
+        "indexing",
+    ]
+    curr_status = getattr(session.processing_status, "value", session.processing_status)
+    if curr_status in active_statuses or session.processing_status in active_statuses:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot regenerate study guide while session is currently processing (status: {curr_status})."
+        )
+
+    raw_content = (session.content or "").replace("\x00", "").strip()
+    if not raw_content:
         raise HTTPException(status_code=400, detail="No content available to regenerate from")
 
-    instruction = (
-        "You are an expert study assistant. Create a comprehensive, well-structured study guide "
-        "in Markdown format with: an executive summary, key concepts with clear explanations, "
-        "important facts and definitions, and key takeaways. Make it engaging and easy to study from."
+    # Subscription plan limit enforcement
+    check_plan_limit(current_user, "study_guides_per_day", db)
+
+    # Build grounded, modality-aware study guide prompt
+    guide_prompt = build_grounded_study_guide_prompt(
+        content=raw_content,
+        source_type=session.source_type,
+        filename=session.filename or "Study Material"
     )
-    new_summary = generate_with_fallback(session.content, instruction)
+
+    new_summary = generate_with_fallback(raw_content, guide_prompt)
+
+    # Validate output - raise 503 without corrupting existing summary if generation failed
+    if (
+        not new_summary
+        or not new_summary.strip()
+        or "experiencing high demand or quota limits" in new_summary
+        or new_summary == "AI returned an empty response."
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to generate study guide due to high AI service demand. Please try again."
+        )
+
     session.summary = new_summary
+
+    # Update timeline
+    timeline = list(session.timeline or [])
+    timeline.append({
+        "event": "Study Guide Regenerated",
+        "timestamp": datetime.utcnow().isoformat(),
+        "source": session.source_type or "document",
+    })
+    session.timeline = timeline
+
+    # Log activity
     log_activity(db, current_user.id, "Summary Regenerated", f"Regenerated AI summary for {session.filename}")
+
+    # Emit LearningEvent audit trail
+    learning_event = LearningEvent(
+        user_id=current_user.id,
+        session_id=session.id,
+        event_type="STUDY_GUIDE_REGENERATED",
+        payload={
+            "source_type": session.source_type,
+            "filename": session.filename,
+            "char_count": len(new_summary),
+        }
+    )
+    db.add(learning_event)
     db.commit()
+    db.refresh(session)
+
     return {"summary": new_summary, "message": "Summary regenerated successfully"}
+
+
+@app.get("/library/{session_id}/study-guide", tags=["Library"])
+def get_study_guide(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve the authoritative study guide and metadata for a specific study session."""
+    session = db.query(StudySession).filter(
+        StudySession.id == session_id,
+        StudySession.user_id == current_user.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Study session not found")
+
+    status_val = getattr(session.processing_status, "value", str(session.processing_status or ""))
+    if status_val in (ProcessingStatus.READY, "READY", "ready", "completed"):
+        formatted_status = "completed"
+    else:
+        formatted_status = status_val.lower()
+
+    return {
+        "session_id": session.id,
+        "filename": session.filename,
+        "ai_title": session.ai_title or session.filename,
+        "source_type": session.source_type or "document",
+        "study_guide": session.summary or "",
+        "processing_status": formatted_status,
+        "char_count": session.char_count or (len(session.content) if session.content else 0),
+    }
 
 
 @app.delete("/library/{session_id}", tags=["Library"])

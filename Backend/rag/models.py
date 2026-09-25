@@ -15,6 +15,7 @@ class ProcessingStatus(str, Enum):
     """Document lifecycle states during ingestion and indexing."""
     UPLOADED = "UPLOADED"
     QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
     EXTRACTING = "EXTRACTING"
     CHUNKING = "CHUNKING"
     EMBEDDING = "EMBEDDING"

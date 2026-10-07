@@ -1,15 +1,20 @@
 import { useNavigate } from 'react-router-dom';
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Eye, EyeOff, ArrowLeft, AlertCircle, X, ShieldAlert } from 'lucide-react';
+import { Brain, Eye, EyeOff, ArrowLeft, AlertCircle, X, ShieldAlert, Loader2 } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { prewarmBackend } from '../utils/api';
 
 const Login = () => {
   const navigate = useNavigate();
   const { login, oauthLogin } = useContext(AuthContext);
   const { addToast } = useToast();
+
+  useEffect(() => {
+    prewarmBackend();
+  }, []);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailDirty, setEmailDirty] = useState(false);
@@ -216,11 +221,10 @@ const Login = () => {
               className="w-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:brightness-110 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-xl shadow-indigo-500/25 ring-1 ring-white/20 flex items-center justify-center gap-2.5 text-sm sm:text-base cursor-pointer"
             >
               {loading ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                  className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                />
+                <span className="flex items-center gap-2">
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Logging in…</span>
+                </span>
               ) : 'Log In'}
             </motion.button>
           </motion.div>

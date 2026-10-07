@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
-import api, { scheduleSessionWarning, clearSessionTimers, markIntentionalLogout } from '../utils/api';
+import api, { scheduleSessionWarning, clearSessionTimers, markIntentionalLogout, prewarmBackend } from '../utils/api';
 
 export const AuthContext = createContext();
 
@@ -8,6 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    prewarmBackend();
     const fetchUser = async () => {
       const token = localStorage.getItem('token');
       if (token) {
@@ -28,15 +29,19 @@ export const AuthProvider = ({ children }) => {
     };
     fetchUser();
   }, []);
+
   const detectAndSaveCountry = async () => {
     try {
-      const response = await fetch('https://ipapi.co/json/');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const response = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+      clearTimeout(timeoutId);
       const data = await response.json();
       const country = data.country_name || 'Unknown';
       localStorage.setItem('user_country', country);
       await api.post('/me/detect-country', { country });
     } catch (err) {
-      console.warn('Country detection failed', err);
+      // Instant offline timezone fallback (0ms)
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const isIndia = tz.includes('Kolkata') || tz.includes('Calcutta') || tz.includes('Asia/Kolkata');

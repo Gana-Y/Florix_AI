@@ -474,7 +474,7 @@ const Sidebar = ({
                 {pinnedChats.map((chat) => (
                   <div
                     key={`chat-${chat.id}`}
-                    onClick={() => { onOpenChat?.(chat.id); setActiveTab('AI Chat'); }}
+                    onClick={() => { onOpenChat?.(chat.id); setActiveTab('AI Chat'); if (window.innerWidth < 768) onMobileClose?.(); }}
                     className="group flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-100/60 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
                   >
                     <div className="flex items-center gap-2 truncate">
@@ -608,7 +608,7 @@ const Sidebar = ({
                       <div key={sp.id} className="group flex flex-col">
                         {/* Folder Row */}
                         <div
-                          onClick={() => onSelectSpace?.(sp.id)}
+                          onClick={() => { onSelectSpace?.(sp.id); if (window.innerWidth < 768) onMobileClose?.(); }}
                           className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl cursor-pointer transition-all ${
                             isSelected
                               ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold shadow-sm'
@@ -639,7 +639,7 @@ const Sidebar = ({
                               {(sp.chat_count || 0) + (sp.session_count || 0)}
                             </span>
                             <button
-                              onClick={(e) => handleStartSubchatInSpace(e, sp.id)}
+                              onClick={(e) => { handleStartSubchatInSpace(e, sp.id); if (window.innerWidth < 768) onMobileClose?.(); }}
                               className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 rounded transition-opacity"
                               title="Start Subchat in this Folder"
                             >
@@ -696,7 +696,7 @@ const Sidebar = ({
                             {subchats.map((chat) => (
                               <div
                                 key={`subchat-${chat.id}`}
-                                onClick={() => { onOpenChat?.(chat.id, sp.id); setActiveTab('AI Chat'); }}
+                                onClick={() => { onOpenChat?.(chat.id, sp.id); setActiveTab('AI Chat'); if (window.innerWidth < 768) onMobileClose?.(); }}
                                 className="group/sub flex items-center justify-between px-2 py-1 rounded-lg text-[11px] text-slate-500 dark:text-zinc-400 hover:text-indigo-600 hover:bg-slate-100/60 dark:hover:bg-zinc-800/40 cursor-pointer transition-colors"
                               >
                                 <div className="flex items-center gap-1.5 truncate">
@@ -720,7 +720,7 @@ const Sidebar = ({
                             )}
 
                             <button
-                              onClick={(e) => handleStartSubchatInSpace(e, sp.id)}
+                              onClick={(e) => { handleStartSubchatInSpace(e, sp.id); if (window.innerWidth < 768) onMobileClose?.(); }}
                               className="flex items-center gap-1.5 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold hover:underline pt-0.5"
                             >
                               <Plus size={10} />
@@ -769,7 +769,7 @@ const Sidebar = ({
                     displayedChats.map((chat) => (
                       <div
                         key={`chat-${chat.id}`}
-                        onClick={() => { onOpenChat?.(chat.id); setActiveTab('AI Chat'); }}
+                        onClick={() => { onOpenChat?.(chat.id); setActiveTab('AI Chat'); if (window.innerWidth < 768) onMobileClose?.(); }}
                         className="group flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-100/60 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
                       >
                         <span className="truncate flex-1 pr-2">{chat.title}</span>
@@ -827,7 +827,7 @@ const Sidebar = ({
             <motion.div
               whileHover={{ scale: 1.02 }}
               className="p-3 bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-transparent border border-indigo-500/25 rounded-2xl cursor-pointer transition-all hover:border-indigo-500/40"
-              onClick={() => { onSelectSpace?.(null); setActiveTab('Pricing'); }}
+              onClick={() => { onSelectSpace?.(null); setActiveTab('Pricing'); if (window.innerWidth < 768) onMobileClose?.(); }}
             >
               <div className="flex items-center gap-2 mb-1.5">
                 <Crown size={14} className="text-amber-400 shrink-0" />
@@ -839,7 +839,7 @@ const Sidebar = ({
               </p>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onSelectSpace?.(null); setActiveTab('Pricing'); }}
+                onClick={(e) => { e.stopPropagation(); onSelectSpace?.(null); setActiveTab('Pricing'); if (window.innerWidth < 768) onMobileClose?.(); }}
                 className="w-full py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[11px] font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Zap size={12} /> Upgrade Plan
@@ -960,6 +960,7 @@ const Sidebar = ({
                     onClick={() => {
                       setShowProfileMenu(false);
                       setActiveTab('Personalization');
+                      if (window.innerWidth < 768) onMobileClose?.();
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
                   >
@@ -973,6 +974,7 @@ const Sidebar = ({
                       setShowProfileMenu(false);
                       setProfileModalTab('developer');
                       setIsProfileModalOpen(true);
+                      if (window.innerWidth < 768) onMobileClose?.();
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
                   >
@@ -985,6 +987,7 @@ const Sidebar = ({
                     onClick={() => {
                       setShowProfileMenu(false);
                       setActiveTab('Pricing');
+                      if (window.innerWidth < 768) onMobileClose?.();
                     }}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-colors text-left cursor-pointer"
                   >

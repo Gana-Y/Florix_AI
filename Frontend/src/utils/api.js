@@ -6,6 +6,14 @@ const api = axios.create({
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Proactively ping backend to wake up cloud instances (Render free tier) */
+let _hasPrewarmed = false;
+export const prewarmBackend = () => {
+  if (_hasPrewarmed) return;
+  _hasPrewarmed = true;
+  api.get('/health', { timeout: 15000 }).catch(() => {});
+};
+
 /** Decode JWT payload safely with Base64URL and UTF-8 support */
 const decodeToken = (token) => {
   try {

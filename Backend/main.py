@@ -252,33 +252,33 @@ except Exception as e:
 # ── Subscription plan limits ───────────────────────────────────────────────────
 PLAN_LIMITS = {
     "free": {
-        "sessions": 5,
-        "quizzes_per_day": 3,
-        "chats_per_day": 10,
-        "downloads_per_day": 6,
-        "flashcards_per_session": 10,
-        "max_upload_mb": 10,
-        "max_video_mb": 25,
-        "max_paste_chars": 3000,       # ~500 words
-        "max_speech_words": 150,       # ~1-2 min speaking
-        "max_link_chars": 10000,
-        "study_guides_per_day": 5,
-        "active_study_plans": 1,
-        "study_plans_per_day": 2,
+        "sessions": 10,
+        "quizzes_per_day": 10,
+        "chats_per_day": 80,
+        "downloads_per_day": 10,
+        "flashcards_per_session": 15,
+        "max_upload_mb": 15,
+        "max_video_mb": 35,
+        "max_paste_chars": 5000,       # ~800 words
+        "max_speech_words": 300,       # ~2-3 min speaking
+        "max_link_chars": 15000,
+        "study_guides_per_day": 10,
+        "active_study_plans": 2,
+        "study_plans_per_day": 5,
         "allowed_plan_modes": ["daily", "weekly", "goal"],
-        "max_planning_days": 7,
-        "exams_per_day": 2,
-        "max_exam_questions": 10,
+        "max_planning_days": 14,
+        "exams_per_day": 5,
+        "max_exam_questions": 15,
         "allowed_exam_modes": ["practice", "topic"],
-        "mistake_analyses_per_day": 10,
-        "ai_practice_generations_per_day": 5,
-        "viva_sessions_per_day": 2,
-        "max_viva_questions": 5,
+        "mistake_analyses_per_day": 20,
+        "ai_practice_generations_per_day": 15,
+        "viva_sessions_per_day": 5,
+        "max_viva_questions": 10,
     },
     "pro": {
-        "sessions": 50,
-        "quizzes_per_day": 20,
-        "chats_per_day": 100,
+        "sessions": 100,
+        "quizzes_per_day": 50,
+        "chats_per_day": 300,
         "downloads_per_day": 15,
         "flashcards_per_session": 30,
         "max_upload_mb": 50,
@@ -6667,12 +6667,24 @@ def agent_get_session_details(session_id: int, user_id: int, db: Session) -> str
 def agent_get_user_learning_stats(user_id: int, db: Session) -> str:
     """Retrieve the user's learning metrics, document counts, and quiz progress."""
     logger.info(f"🤖 Tool Execution: get_user_learning_stats() for user {user_id}")
+    user_obj = db.query(User).filter(User.id == user_id).first()
+    user_name = user_obj.name if user_obj else "Student"
+    user_email = user_obj.email if user_obj else ""
+    user_plan = (user_obj.plan if user_obj else "free").upper()
     total_sessions = db.query(StudySession).filter(StudySession.user_id == user_id).count()
     quiz_results = db.query(QuizResult).filter(QuizResult.user_id == user_id).all()
     total_quizzes = len(quiz_results)
     avg_score = round(sum(r.percentage for r in quiz_results) / total_quizzes) if quiz_results else 0
     bookmarks_count = db.query(Bookmark).filter(Bookmark.user_id == user_id).count()
-    return f"Total study sessions uploaded: {total_sessions}\nQuizzes completed: {total_quizzes}\nAverage quiz score: {avg_score}%\nSaved bookmarks: {bookmarks_count}"
+    return (
+        f"Student Name: {user_name}\n"
+        f"Email: {user_email}\n"
+        f"Subscription Tier: {user_plan}\n"
+        f"Total study sessions uploaded: {total_sessions}\n"
+        f"Quizzes completed: {total_quizzes}\n"
+        f"Average quiz score: {avg_score}%\n"
+        f"Saved bookmarks: {bookmarks_count}"
+    )
 
 
 def agent_generate_image(prompt: str) -> str:
@@ -6763,39 +6775,55 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
                 f"- Do NOT bleed or incorporate background space details, keywords, file titles, or values into unrelated conversation topics or diagram styling.\n"
             )
 
-    # 🤖 ReAct Agent Loop
+    # 🤖 Student Profile Context & ReAct Agent Loop
+    user_display_name = (current_user.name or "").strip() or (current_user.email.split('@')[0] if current_user.email else "Student")
+    student_profile_context = (
+        f"\n\nCURRENT STUDENT PROFILE:\n"
+        f"- Student Name: {user_display_name}\n"
+        f"- Email: {current_user.email}\n"
+        f"- Subscription Tier: {current_user.plan.upper()} Plan\n"
+    )
+
     max_loops = 2
     tool_results = []
-    current_prompt = f"Response style: {style_instr}{space_knowledge}\n\nConversation history:\n{history_text}\n\nRespond to: {data.message}"
+    current_prompt = f"Response style: {style_instr}{student_profile_context}{space_knowledge}\n\nConversation history:\n{history_text}\n\nRespond to: {data.message}"
     reply = ""
 
     for loop in range(max_loops):
         agent_instruction = (
-            "You are Florix AI, an elite, multi-disciplinary Academic AI Tutor and Learning Companion. "
-            "You possess deep expertise across ALL academic disciplines: Science, Mathematics, "
-            "Engineering, Medicine, History, Philosophy, Literature, Economics, and the Arts.\n\n"
-            "CONVERSATIONAL PERSONA & PEDAGOGICAL GUIDELINES:\n"
-            "1. TONE & ADAPTABILITY:\n"
-            "   - Be intellectually sharp, articulate, warm, and encouraging. Communicate naturally like a brilliant professor and mentor.\n"
-            "   - If the student asks who they are ('who am I', 'tell me who I am', 'check my profile'), call `[CALL_TOOL: get_user_learning_stats()]`. Greet them warmly and present their study activity (study materials, quizzes completed, quiz scores, bookmarks) concisely and encouragingly.\n"
-            "   - REAL-TIME / LIVE DATA REQUESTS: You do not possess live external feeds (such as today's live weather, live sports scores, or current local weather radar). If asked for live data, decline politely, naturally, and concisely in 1-2 sentences (e.g., 'I don't have access to live meteorological feeds or current local weather radar. For live conditions in your area, I recommend checking a forecast service like AccuWeather or your local weather app!').\n"
-            "   - CRITICAL: Never force unrelated technical lectures (like Navier-Stokes, Kafka, or supercomputing) onto simple everyday questions unless the student explicitly asks about the computational or physical mechanisms! Respect the student's conversational direction.\n\n"
-            "2. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
+            "You are Florix AI, an intelligent, empathetic, multi-disciplinary Academic AI Tutor and Learning Companion. "
+            "You possess deep expertise across Science, Mathematics, Engineering, Medicine, History, Philosophy, Literature, Economics, and the Arts, "
+            "while being a friendly, engaging conversational partner for general curiosity, learning, and discussion.\n\n"
+            "CONVERSATIONAL PERSONA & INTERACTION GUIDELINES:\n"
+            "1. STUDENT IDENTITY & WARMTH:\n"
+            f"   - The student you are interacting with is {user_display_name} (Plan: {current_user.plan.upper()}).\n"
+            "   - When the student asks 'who am I', 'what is my name', or introduces themselves, greet them warmly and directly by their name ("
+            f"'{user_display_name}'). Never guess, act confused, or state that you don't know who they are.\n"
+            "   - If they ask for their detailed learning statistics, study metrics, or quiz scores, call `[CALL_TOOL: get_user_learning_stats()]`.\n\n"
+            "2. GENERAL INQUIRIES & EVERYDAY CONVERSATION:\n"
+            "   - Be conversational, natural, and helpful across all general topics (everyday questions, study advice, science curiosity, history, language, philosophy, trivia, weather phenomena, and casual greetings).\n"
+            "   - NEVER act rigid, robotic, or dismissive. Never refuse normal conversations.\n"
+            "   - NEVER forcefully pivot simple questions into unsolicited computer science or data pipeline lectures (e.g., do not randomly lecture on Navier-Stokes equations, supercomputers, or Kafka when someone asks a normal question) unless the student specifically asks for the computational or mathematical architecture!\n"
+            "   - LIVE / REAL-TIME SENSOR DATA (e.g., live current weather outside right now, live sports scores):\n"
+            "     - You do not possess live real-time GPS or live weather station feeds for hyper-local current atmospheric conditions.\n"
+            "     - If asked about current local weather (e.g. 'what's the weather today', 'monsoon updates'): Explain the general weather or seasonal climate patterns warmly and informatively (e.g., explaining monsoon timing, regional seasonal behavior, typical conditions), and kindly suggest checking a local weather service or app (like AccuWeather or weather.com) for live minute-by-minute radar.\n\n"
+            "3. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
             "   - When the student asks for a visual, picture, photo, illustration, or diagram, choose the appropriate visual medium:\n"
             "     a) REAL-WORLD VISUALS, ART, CULTURE, BIOLOGY & GEOGRAPHY:\n"
-            "        - When asked for images of real-world objects, artworks, historical figures/events, dance forms (e.g., Bharatanatyam dance), cultural traditions, anatomical structures, or animals, call the image tool:\n"
+            "        - When asked for images of real-world objects, artworks, historical figures/events, dance forms, cultural traditions, anatomical structures, or animals, call the image tool:\n"
             "          [CALL_TOOL: generate_image(\"detailed descriptive prompt\")]\n"
             "        - Example: [CALL_TOOL: generate_image(\"classical Indian Bharatanatyam dancer in ornate traditional costume performing expressive mudra and posture, professional cultural photography\")]\n"
             "     b) SYSTEM ARCHITECTURES, ALGORITHMS & LOGICAL WORKFLOWS:\n"
             "        - For software architectures, data pipelines, algorithms, state machines, and technical processes (e.g. RAG pipeline, OAuth flow, binary search tree, compiler stages), provide a clean, publication-grade Mermaid flowchart (```mermaid ... ```) accompanied by a structured technical walkthrough.\n"
             "   - PRONOUN & CONTEXT RESOLUTION: Always inspect the preceding conversation history to resolve pronouns ('it', 'that', 'this'). If the user previously asked about a topic and then asks 'show me an image of it', resolve the pronoun to that exact topic.\n\n"
-            "3. AVAILABLE TOOLS:\n"
+            "4. AVAILABLE TOOLS:\n"
             "   - [CALL_TOOL: search_user_library(\"search_query\")] -> Search the user's uploaded study materials\n"
             "   - [CALL_TOOL: get_session_details(session_id_integer)] -> Retrieve detailed content and quiz history of a specific session\n"
             "   - [CALL_TOOL: get_user_learning_stats()] -> Retrieve user's study metrics, quiz stats, and bookmarks\n"
             "   - [CALL_TOOL: generate_image(\"detailed visual prompt\")] -> Generate educational illustrations, photos, artwork, and cultural visuals\n\n"
-            "4. STRICT TOOL CALLING EXECUTION RULES:\n"
+            "5. STRICT TOOL CALLING EXECUTION RULES:\n"
             "   - If you need to use a tool, emit ONLY the tool command on its own line: [CALL_TOOL: tool_name(...)].\n"
+            "   - NEVER include conversational text alongside a tool call in the same turn.\n"
             "   - When you receive the tool results, write your final response naturally to the student.\n"
             "   - NEVER mention or repeat '[CALL_TOOL: ...]' or internal tool names in your final student-facing response! Tool syntax is strictly internal.\n\n"
             f"{f'Previous Tool Call Results:\n' + chr(10).join(tool_results) if tool_results else ''}"
@@ -6830,6 +6858,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
 
             logger.info(f"🤖 Tool Output: {res[:100]}...")
             tool_results.append(f"Tool {tool_name}({tool_args_raw}) returned:\n{res}")
+            current_prompt += f"\n\n[TOOL RESULT for {tool_name}]:\n{res}\n\nNow synthesize and provide your final response to the student using these results. Do NOT emit any tool call syntax."
             continue
         else:
             # Answer is direct, break out of tool loop
@@ -6857,7 +6886,9 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             reply = f"{img_markdown}\n\n" + reply.strip()
 
     # 🧼 Strict post-processing: Sanitize any leaked tool call syntax or internal call artifacts
-    reply = re.sub(r"\(?\[CALL_TOOL:\s*[\w\.]+\(.*?\)\s*\]\)?", "", reply)
+    reply = re.sub(r"\(?\[CALL_TOOL:[^\]]*\]\)?", "", reply)
+    reply = re.sub(r"\[CALL_TOOL:[^\]]*\]", "", reply)
+    reply = re.sub(r"CALL_TOOL:\s*\w+\([^)]*\)", "", reply)
     reply = re.sub(r"\(\s*\)", "", reply)
     reply = re.sub(r"\s+,", ",", reply)
     reply = re.sub(r"[ \t]+", " ", reply)

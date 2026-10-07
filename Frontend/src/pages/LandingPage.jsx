@@ -198,11 +198,11 @@ const plans = [
     border: 'border-white/10 hover:border-white/20',
     description: 'Perfect for exploring and getting started with AI learning.',
     features: [
-      '5 study documents',
+      '10 study documents',
       'Images & PDFs (max 10 MB)',
       'Short videos (max 25 MB)',
       'Paste up to 500 words',
-      '3 quizzes & 10 AI chats daily',
+      '10 quizzes & 80 AI chats daily',
       '10 flashcards per session',
     ],
     ctaText: 'Get Started Free',
@@ -225,7 +225,7 @@ const plans = [
       'Lecture videos (max 100 MB)',
       'Paste up to 4,000 words',
       'In-depth Web & YouTube scraping',
-      '20 quizzes & 100 AI chats daily',
+      '20 quizzes & 300 AI chats daily',
       '30 flashcards per session',
       'Priority AI response speeds',
     ],
@@ -353,7 +353,7 @@ const LandingPage = () => {
       </div>
 
       {/* ── Navbar ── */}
-      <nav className="relative z-30 flex items-center justify-between px-6 md:px-16 py-5 sticky top-0 backdrop-blur-md bg-transparent">
+      <nav className="relative z-30 flex items-center justify-between px-3.5 sm:px-6 md:px-16 py-3.5 sm:py-5 sticky top-0 backdrop-blur-md bg-transparent">
         {/* Header Subtle Shining Diamond Stars */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden select-none -z-10" aria-hidden="true">
           <span className="absolute rounded-full bg-white animate-diamond" style={{ left: '10%', top: '35%', width: '2.4px', height: '2.4px', '--twinkle-dur': '4.8s', '--twinkle-delay': '0.3s' }} />
@@ -361,20 +361,20 @@ const LandingPage = () => {
           <span className="absolute rounded-full bg-white animate-diamond" style={{ left: '92%', top: '40%', width: '2.5px', height: '2.5px', '--twinkle-dur': '4.6s', '--twinkle-delay': '2.8s' }} />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <motion.div whileHover={{ rotate: 15, scale: 1.1 }} transition={{ type: 'spring', stiffness: 400 }}
-            className="p-2 bg-indigo-500/20 rounded-xl border border-indigo-500/25 cursor-pointer"
+            className="p-1.5 sm:p-2 bg-indigo-500/20 rounded-xl border border-indigo-500/25 cursor-pointer"
           >
-            <Brain size={22} className="text-indigo-400" strokeWidth={2.5} />
+            <Brain size={20} className="text-indigo-400 sm:w-[22px] sm:h-[22px]" strokeWidth={2.5} />
           </motion.div>
-          <span className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 cursor-default">
+          <span className="text-lg sm:text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 cursor-default">
             Florix AI
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           <a
             href="#pricing"
-            className="text-sm font-semibold text-zinc-400 hover:text-white transition-colors cursor-pointer px-3 py-1.5 rounded-lg hover:bg-white/5"
+            className="hidden sm:inline-block text-sm font-semibold text-zinc-400 hover:text-white transition-colors cursor-pointer px-3 py-1.5 rounded-lg hover:bg-white/5"
           >
             Pricing
           </a>
@@ -383,7 +383,7 @@ const LandingPage = () => {
             whileTap={{ scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             onClick={() => navigate('/login')}
-            className="px-5 py-2.5 text-sm font-semibold text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
             Sign In
           </motion.button>
@@ -392,9 +392,10 @@ const LandingPage = () => {
             whileTap={{ scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             onClick={() => navigate('/signup')}
-            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all cursor-pointer"
+            className="px-3 sm:px-5 py-1.5 sm:py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all cursor-pointer whitespace-nowrap"
           >
-            Get Started Free
+            <span className="sm:hidden">Get Started</span>
+            <span className="hidden sm:inline">Get Started Free</span>
           </motion.button>
         </div>
       </nav>

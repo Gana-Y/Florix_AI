@@ -111,7 +111,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [convsLoading, setConvsLoading] = useState(true);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
   const [convSearch, setConvSearch] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -241,6 +241,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
       setConversations((p) => [res.data, ...p]);
       setActiveConvId(res.data.id);
       setMessages([]);
+      if (window.innerWidth < 768) setShowSidebar(false);
       setTimeout(() => inputRef.current?.focus(), 100);
       window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: res.data.id, title: res.data.title } }));
     } catch (e) { console.error(e); }
@@ -305,8 +306,9 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
         ));
         window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: convId, title: res.data.title } }));
       }
-    } catch {
-      setMessages((p) => [...p, { id: `e-${Date.now()}`, role: 'assistant', content: "I'm sorry, I encountered an error. Please try again." }]);
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || "I'm sorry, I encountered an error. Please try again.";
+      setMessages((p) => [...p, { id: `e-${Date.now()}`, role: 'assistant', content: errorMsg }]);
     } finally {
       setIsLoading(false);
     }
@@ -441,14 +443,24 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
       {/* ── Conversation Sidebar ── */}
       <AnimatePresence initial={false}>
         {showSidebar && (
-          <motion.aside
-            key="conv-sidebar"
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 280, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="flex flex-col border-r border-slate-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl shrink-0 overflow-hidden"
-          >
+          <>
+            {/* Mobile Backdrop */}
+            <motion.div
+              key="conv-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSidebar(false)}
+              className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm"
+            />
+            <motion.aside
+              key="conv-sidebar"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 280, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="fixed md:relative inset-y-0 left-0 z-30 md:z-10 flex flex-col border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 md:bg-white/80 md:dark:bg-zinc-900/80 backdrop-blur-xl shrink-0 overflow-hidden shadow-2xl md:shadow-none"
+            >
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-zinc-800 shrink-0">
               <motion.button
@@ -501,7 +513,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -10 }}
-                          onClick={() => setActiveConvId(conv.id)}
+                          onClick={() => { setActiveConvId(conv.id); if (window.innerWidth < 768) setShowSidebar(false); }}
                           className={`mx-2 mb-1 px-3 py-2.5 rounded-xl cursor-pointer group flex items-center gap-2 transition-all ${
                             activeConvId === conv.id
                               ? 'bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20'
@@ -551,8 +563,9 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
               )}
             </div>
           </motion.aside>
-        )}
-      </AnimatePresence>
+        </>
+      )}
+    </AnimatePresence>
 
       {/* ── Chat Panel ── */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -564,7 +577,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
             className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-xl transition-colors"
             title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
           >
-            {showSidebar ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+            {showSidebar ? <ChevronLeft size={18} /> : <MessageSquare size={18} />}
           </button>
 
           <div className="flex items-center gap-2">

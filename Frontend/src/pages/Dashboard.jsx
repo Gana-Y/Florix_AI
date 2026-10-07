@@ -85,27 +85,27 @@ const HomeTab = ({ user, stats, statsLoading, setActiveTab }) => {
           </h2>
           <p className="text-slate-500 dark:text-zinc-400 mt-1 text-base">Ready to accelerate your learning today?</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <motion.button
             whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
             onClick={() => setActiveTab('Study Planner')}
-            className="px-4 py-2.5 bg-white/90 dark:bg-zinc-900/90 text-slate-700 dark:text-zinc-200 rounded-2xl font-bold shadow-md hover:shadow-lg border border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-2 text-sm transition-all"
+            className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white/90 dark:bg-zinc-900/90 text-slate-700 dark:text-zinc-200 rounded-2xl font-bold shadow-md hover:shadow-lg border border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm transition-all"
           >
-            <CalendarCheck size={16} className="text-purple-500" /> Study Plan
+            <CalendarCheck size={15} className="text-purple-500" /> Study Plan
           </motion.button>
           <motion.button
             whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
             onClick={() => setActiveTab('Progress')}
-            className="px-4 py-2.5 bg-white/90 dark:bg-zinc-900/90 text-slate-700 dark:text-zinc-200 rounded-2xl font-bold shadow-md hover:shadow-lg border border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-2 text-sm transition-all"
+            className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white/90 dark:bg-zinc-900/90 text-slate-700 dark:text-zinc-200 rounded-2xl font-bold shadow-md hover:shadow-lg border border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm transition-all"
           >
-            <TrendingUp size={16} className="text-indigo-500" /> Progress
+            <TrendingUp size={15} className="text-indigo-500" /> Progress
           </motion.button>
           <motion.button
             whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
             onClick={() => setActiveTab('New Study Session')}
-            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-md hover:shadow-lg shadow-indigo-500/20 flex items-center gap-2 text-sm transition-all"
+            className="px-3.5 sm:px-5 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-md hover:shadow-lg shadow-indigo-500/20 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm transition-all"
           >
-            New Session <ArrowRight size={16} />
+            New Session <ArrowRight size={15} />
           </motion.button>
         </div>
       </motion.div>

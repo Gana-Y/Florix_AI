@@ -112,8 +112,18 @@ from auth import (
 )
 from google import genai
 from google.genai import types
-from google.genai import errors as genai_errors
-from google.api_core import exceptions as google_exceptions
+try:
+    from google.api_core import exceptions as google_exceptions
+except ImportError:
+    try:
+        from google.genai import errors as google_exceptions
+    except ImportError:
+        class DummyGoogleExceptions:
+            ResourceExhausted = Exception
+            ServiceUnavailable = Exception
+            InternalServerError = Exception
+            NotFound = Exception
+        google_exceptions = DummyGoogleExceptions
 from dotenv import load_dotenv
 from pypdf import PdfReader
 

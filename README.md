@@ -1,98 +1,206 @@
 # Florix AI 🧠 — Production-Grade AI Study Orchestration Platform
 
-Florix AI is an enterprise-grade, full-stack AI learning platform designed to transform unstructured educational assets (scientific PDFs, web URLs, YouTube videos, pastes, and voice recordings) into interactive, grounded study workspaces. 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
+[![React 19](https://img.shields.io/badge/Frontend-React%2019-61DAFB.svg?logo=react)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Styles-Tailwind%20CSS-38B2AC.svg?logo=tailwind-css)](https://tailwindcss.com/)
+[![Google Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-8E75C2.svg?logo=google)](https://ai.google.dev/)
+[![Docker](https://img.shields.io/badge/Deploy-Docker%20Compose-2496ED.svg?logo=docker)](https://www.docker.com/)
 
-Unlike basic LLM wrappers, Florix AI implements a **True In-Database RAG Pipeline** with semantic chunking, custom cosine similarity vector search, a **Reasoning & Action (ReAct) AI Agent** equipped with SQL database tools, and an automated **LLM-as-a-Judge quality evaluation suite**.
-
----
-
-## 🚀 Key Technical Highlights (AI Engineering Core)
-
-### 1. Vector Ingestion & SQLite Vector Table
-* **Sentence-Boundary Aware Semantic Chunker:** Processes text via paragraph-regex separators to prevent cutting sentences mid-word. Aggregates data into `~800` character chunks with `~150` characters of sliding overlap.
-* **Batch Vectorization:** Generates **3072-dimensional vector coordinate lists** via `models/gemini-embedding-2` in highly optimized asynchronous batches.
-* **In-Database Storage:** Persists vectors as JSON arrays in SQLite, linked via cascade-delete relationships to automatically clean up indices when documents are deleted.
-
-### 2. Math Cosine Similarity Retrieval Engine (RAG)
-* **Custom Vector Math:** Evaluates semantic similarity at runtime using a pure Python vector algebra dot-product comparison.
-* **Top-K Retrieval:** Extracts the top 4 chunks matching the user's query and injects only this context into generative streaming routes, reducing API token billing and eliminating hallucinations.
-
-### 3. ReAct Agent Tool Calling Loop
-* **Database Tools:** Equips the chatbot with three live system tools (`search_user_library`, `get_session_details`, `get_user_learning_stats`) allowing the model to query file summaries and active scores.
-* **Multi-Turn Loop:** Intercepts structured `[CALL_TOOL: ...]` directives in the backend Python runtime, executes SQLAlchemy database queries, injects results back into the model context, and yields the final response seamlessly.
-
-### 4. LLM-as-a-Judge Telemetry (`evals.py`)
-* Includes an automated quality assurance suite auditing and scoring outputs across three core scientific dimensions:
-  1. **Faithfulness** (groundedness check, catching hallucinations).
-  2. **Answer Relevance** (checking if queries are addressed completely).
-  3. **Context Recall** (verifying retrieval engine accuracy against a golden dataset).
+**Florix AI** is an enterprise-grade, full-stack AI learning and study orchestration platform. It converts unstructured educational resources—scientific papers, textbooks, YouTube lectures, web articles, voice recordings, and text notes—into structured, multimodal interactive study workspaces with grounded AI tutoring, spaced repetition planning, oral viva examinations, and cognitive mistake analytics.
 
 ---
 
-## 🎨 Full-Stack System Features
-* **Premium UX/UI:** Harmonious dark-mode ready glassmorphic panels (`backdrop-filter: blur(12px)`) with smooth Framer Motion transitions and interactive **CSS 3D-card flipping** flashcards.
-* **Axios JWT Session Security:** Cryptographic password hashing via **bcrypt** and signed **JWT (HS256)** session state tokens.
-* **Dynamic Analytics Dashboards:** Tracks user quiz score trends over time and radial averages via composable **Recharts** SVGs.
-* **Subscription Gating (SaaS Model):** Features a 3-tier subscription access level system (Free, Pro, Premium) limiting documents, chats, and quiz quotas per user.
-* **Forgot Password flow:** Fully wired token-based forgot/reset password request pipelines.
+## 📸 Product Walkthrough & Interface
+
+### 1. Landing Experience
+Modern glassmorphic interface designed with celestial depth and responsive motion.
+![Florix AI Landing Page](docs/screenshots/01_landing_page.png)
+
+### 2. Student Dashboard
+Unified command center tracking active spaces, document mastery, analytics, and study streaks.
+![Student Dashboard](docs/screenshots/02_dashboard_workspace.png)
+
+### 3. Multimodal Ingestion Workspace
+Direct upload for PDFs, video lectures, YouTube URLs, web articles, and live voice dictation.
+![Multimodal Study Workspace](docs/screenshots/03_study_input_workspace.png)
+
+### 4. Interactive Viva & Oral Examination
+Simulated AI-driven oral examinations with voice conversations, real-time rubric evaluation, and instant grading.
+![Viva Oral Exam Workspace](docs/screenshots/04_viva_oral_exam.png)
+
+### 5. Adaptive Study Planner
+SuperMemo-2 (SM-2) algorithm calculating dynamic retention schedules, urgency weights, and revision queues.
+![Adaptive Study Planner](docs/screenshots/05_adaptive_study_planner.png)
 
 ---
 
-## ⚡ Performance Optimizations
-* **73% JS Load Reduction:** Used strategic Rollup manual chunks in `vite.config.js` to extract heavy libraries (react runtime, framer-motion, recharts, pdf engines) into code-split chunks.
-* **Asynchronous Bundle Loading:** Configured lazy loading (`lazy` and `Suspense`) to load charting and export assets *only* when users navigate to those specific views.
-* **Bundle size comparison:** Slashed primary Javascript initial load from a heavy **1.4 MB to just ~374 KB (gzipped)**.
+## 🚀 Key Technical Architectures
+
+### 1. True In-Database RAG Engine
+* **Sentence-Boundary Aware Semantic Chunker:** Segments documents using paragraph-regex separators (`~800` characters, `~150` sliding overlap) to preserve contextual boundaries.
+* **Batch Vectorization:** Generates high-density 3072-dimensional vector coordinates via Google `gemini-embedding-2`.
+* **Cosine Retrieval Engine:** Custom dot-product similarity ranking selecting top-K relevant chunks with context reranking to eliminate hallucinations.
+* **Grounded Synthesis:** Injects retrieved context directly into the Gemini generation pipeline with strict academic grounding directives.
+
+### 2. Adaptive Study Planner (SM-2 Spaced Repetition)
+* Calculates cognitive intervals:
+  $$\text{EF}' = \max\left(1.3, \text{EF} + (0.1 - (5 - q) \times (0.08 + (5 - q) \times 0.02))\right)$$
+* Generates personalized daily study queues, urgency-weighted catch-up tracks, and cognitive fatigue pacing.
+
+### 3. Interactive Viva & Oral Exam Engine
+* Multi-stage voice examination system simulating live academic viva defenses.
+* Follows structured Bloom's Taxonomy progression (Foundational $\rightarrow$ Analytical $\rightarrow$ Counter-Hypothetical).
+* Provides granular criterion-based scoring across Conceptual Precision, Coherence, and Critical Thinking.
+
+### 4. Metacognitive Mistake Intelligence
+* Analyzes student test errors into structured taxonomies:
+  * Conceptual Gaps
+  * Calculation / Syntax Errors
+  * Retrieval Failure
+  * Misreading / Rushing
+* Generates targeted remediation drills to correct systematic cognitive flaws before exams.
+
+### 5. Visual Learning & Dynamic Diagramming
+* Automated generation of interactive Mermaid flowcharts, concept maps, and architectural diagrams.
+* Custom pan-and-zoom visual workspace with responsive layout algorithms.
 
 ---
 
 ## 🛠️ Tech Stack
-* **Frontend:** React 19, Vite, Vanilla CSS 3, Recharts, Framer Motion, Axios.
-* **Backend:** FastAPI, Uvicorn, Python 3, SQLAlchemy, slowapi (Rate Limiter), BeautifulSoup4, YouTube Transcript API.
-* **AI Orchestration:** Google GenAI SDK (`models/gemini-2.5-flash` & `models/gemini-embedding-2`).
-* **DevOps & CI/CD:** Docker, Docker Compose, GitHub Actions (Linting, Testing, Build validation).
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | React 19, Vite, Tailwind CSS, Framer Motion, Lucide Icons, ReactMarkdown, remark-gfm, Recharts |
+| **Backend** | FastAPI, Uvicorn, Python 3.11+, SQLAlchemy, Pydantic v2, SlowAPI |
+| **AI / Embeddings** | Google Gemini 2.5 Flash, Gemini Embedding 2, YouTube Transcript API, PyPDF |
+| **Database** | SQLite (with WAL mode) / PostgreSQL compatible |
+| **Security** | JWT (HS256) session tokens, Bcrypt password hashing, Rate limiting |
+| **DevOps** | Docker, Docker Compose, Nginx, GitHub Actions |
 
 ---
 
-## ⚙️ Getting Started & Local Installation
+## 🌐 How to Deploy (Make It Public for Others)
 
-### 1. Configure Secrets
-Create a `.env` file inside the `Backend` directory:
-```env
-GEMINI_API_KEY=your_google_gemini_api_key
-JWT_SECRET=supersecret_dev_key_12345
-DATABASE_URL=sqlite:///./florix.db
-```
+You can deploy Florix AI so anyone on the web can use it via two production-ready options:
 
-### 2. Standard Local Run
+### Option A: Free Cloud Deployment (Vercel + Render) — *Recommended*
 
-#### Setup & Run Backend:
+#### 1. Deploy the Backend on [Render](https://render.com) (Free / Starter)
+1. Sign in to **Render** and click **New +** $\rightarrow$ **Web Service**.
+2. Connect your GitHub repository: `Florix_AI`.
+3. Configure the service:
+   * **Root Directory**: `Backend`
+   * **Runtime**: `Python 3`
+   * **Build Command**: `pip install -r requirements.txt`
+   * **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. In the **Environment Variables** section, add:
+   * `GEMINI_API_KEY` = *your Google Gemini API key*
+   * `JWT_SECRET` = *a random secure string (e.g. `openssl rand -hex 32`)*
+   * `ALLOWED_ORIGINS` = `*` *(or your Vercel frontend URL)*
+5. Click **Deploy Web Service**.
+6. Copy your backend URL: e.g. `https://florix-backend.onrender.com`.
+
+#### 2. Deploy the Frontend on [Vercel](https://vercel.com) (Free)
+1. Sign in to **Vercel** and click **Add New** $\rightarrow$ **Project**.
+2. Import your GitHub repository: `Florix_AI`.
+3. Configure the project:
+   * **Root Directory**: Click *Edit* and select `Frontend`.
+   * **Framework Preset**: `Vite`.
+   * **Build Command**: `npm run build`
+   * **Output Directory**: `dist`
+4. In **Environment Variables**, add:
+   * `VITE_API_URL` = `https://florix-backend.onrender.com` *(your Render backend URL)*
+5. Click **Deploy**.
+6. **Done!** Vercel gives you a public URL (e.g. `https://florix-ai.vercel.app`) that anyone can open in their browser.
+
+---
+
+### Option B: VPS Deployment via Docker Compose (Single Server)
+
+Deploy to any Linux VPS (DigitalOcean Droplet, AWS EC2, Hetzner, Linode):
+
+1. **SSH into your server**:
+   ```bash
+   ssh root@your-server-ip
+   ```
+2. **Clone the repository**:
+   ```bash
+   git clone https://github.com/<your-username>/Florix_AI.git
+   cd Florix_AI
+   ```
+3. **Configure environment variables**:
+   Create `Backend/.env`:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key
+   JWT_SECRET=your_jwt_secret_key
+   ALLOWED_ORIGINS=http://your-server-ip,https://your-domain.com
+   ```
+4. **Launch the services**:
+   ```bash
+   docker-compose up -d --build
+   ```
+   * Frontend: accessible on port `80` / `3000`
+   * Backend: accessible on port `8000`
+
+---
+
+## 💻 Local Development Setup
+
+### 1. Prerequisites
+* **Node.js** v18+ and **npm**
+* **Python** 3.11+
+* Google Gemini API key from [Google AI Studio](https://aistudio.google.com/)
+
+### 2. Clone & Setup Backend
 ```bash
-cd Backend
+git clone https://github.com/<your-username>/Florix_AI.git
+cd Florix_AI/Backend
+
+# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# On Windows:
+venv\Scripts\activate
+# On Linux/macOS:
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Configure environment
+cp .env.example .env
+# Edit .env and insert your GEMINI_API_KEY and JWT_SECRET
+
+# Start FastAPI server
+python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-#### Setup & Run Frontend:
+### 3. Setup Frontend
 ```bash
 cd ../Frontend
+
+# Install dependencies
 npm install
+
+# Start Vite dev server
 npm run dev
 ```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+Open **[http://localhost:5173](http://localhost:5173)** in your browser.
 
-### 3. Run with Docker Compose (Containerized)
-Spins up both containerized frontend and backend services in a unified virtual network bridge:
+### 4. Running Subsystem Test Suites
 ```bash
-docker-compose up --build
+cd ../Backend
+pytest test_adaptive_study_planner.py test_exam_engine.py test_mistake_intelligence.py test_viva.py -v
 ```
-* Backend runs on [http://localhost:8000](http://localhost:8000)
-* Frontend runs on [http://localhost:5173](http://localhost:5173)
 
-### 4. Run LLM Quality Evaluations
-```bash
-cd Backend
-python evals.py
-```
-Outputs the active RAG pipeline performance metric averages directly to your terminal console!
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 👥 Authors & Maintainers
+
+* **Ganesh Yandigeri** — Lead Systems Architect & Developer ([LinkedIn](https://www.linkedin.com/in/ganesh-yandigeri-988821287))

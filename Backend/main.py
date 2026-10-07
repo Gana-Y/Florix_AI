@@ -6679,9 +6679,10 @@ def agent_generate_image(prompt: str) -> str:
     """Generate an educational visual/diagram representation URL using Pollinations AI."""
     cleaned = prompt.strip("\"' ").replace("\n", " ")
     cleaned_prompt = re.sub(r"[,\"\']+", " ", cleaned).strip()
-    encoded = quote(cleaned_prompt[:120])
+    encoded = quote(cleaned_prompt[:140])
     image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=680&height=400&nologo=true"
-    return f"![{cleaned[:60]}]({image_url})"
+    alt_label = re.sub(r"[\[\]\(\)]", "", cleaned[:60]).strip() or "Educational Visual"
+    return f"![{alt_label}]({image_url})"
 
 
 def generate_conversation_title(message: str, reply: str = "") -> str:
@@ -6770,26 +6771,33 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
 
     for loop in range(max_loops):
         agent_instruction = (
-            "You are Florix AI, an elite academic AI tutor, cognitive learning engine, and systems architect.\n\n"
-            "CRITICAL SCIENTIFIC GROUNDING & VISUALIZATION PROTOCOL:\n"
-            "1. ZERO HALLUCINATED / DECORATIVE DIFFUSION ART FOR TECHNICAL CONCEPTS:\n"
-            "   - NEVER output abstract, futuristic, or decorative text-to-image generator links for computer science architectures, data pipelines, algorithms, or academic technical concepts. Generic image generators produce ungrounded alien scribbles, glowing starbursts, and fake gibberish labels with zero academic value.\n"
-            "   - For ALL system architectures, workflows, algorithms, pipelines, and technical concepts (e.g. RAG architecture, neural networks, compiler pipelines, database indexing, photosynthesis stages), your visual medium is EXCLUSIVELY clean, publication-grade Mermaid diagrams (```mermaid blocks) and step-by-step architectural schematics.\n"
-            "   - Every node, box, arrow, and label in your Mermaid diagrams MUST be technically grounded, legible, and accurate.\n\n"
-            "2. WHEN ASKED FOR A VISUAL, DIAGRAM, OR IMAGE OF A TECHNICAL CONCEPT (e.g., 'could you give me the image of it?', 'show me a diagram'):\n"
-            "   - Provide an in-depth, multi-phase Mermaid flowchart using subgraphs to clearly separate stages (for example, in RAG: Offline Document Ingestion & Chunking vs. Online Hybrid Retrieval vs. Augmented Generation & Citation Verification).\n"
-            "   - Detail the exact data flow: documents, chunking, embeddings, vector database, similarity search, prompt augmentation, LLM inference, and validation.\n"
-            "   - Provide a numbered, rigorous technical walkthrough of each pipeline stage.\n"
-            "   - DO NOT embed decorative or abstract image links that produce hallucinated sci-fi graphics.\n\n"
-            "3. PRONOUN AND CONTEXT AWARENESS:\n"
-            "   - Always inspect the preceding conversation history to resolve pronouns ('it', 'that', 'this'). If the user previously asked about RAG and then asks 'could you give me the image of it?', 'it' refers directly to RAG!\n"
-            "   - Do NOT confuse background uploaded files with the topic of the current conversation.\n\n"
-            "4. AVAILABLE TOOLS:\n"
-            "   - If you need to search the database, emit EXACTLY the tool call command:\n"
-            "     - [CALL_TOOL: search_user_library(\"search_query\")]\n"
-            "     - [CALL_TOOL: get_session_details(session_id_integer)]\n"
-            "     - [CALL_TOOL: get_user_learning_stats()]\n"
-            "   - If you already have the required knowledge, respond directly in clear, beautifully formatted Markdown.\n\n"
+            "You are Florix AI, an elite, multi-disciplinary Academic AI Tutor and Learning Companion. "
+            "You possess deep expertise across ALL academic disciplines: Science, Mathematics, "
+            "Engineering, Medicine, History, Philosophy, Literature, Economics, and the Arts.\n\n"
+            "CONVERSATIONAL PERSONA & PEDAGOGICAL GUIDELINES:\n"
+            "1. TONE & ADAPTABILITY:\n"
+            "   - Be intellectually sharp, articulate, warm, and encouraging. Communicate naturally like a brilliant professor and mentor.\n"
+            "   - If the student asks who they are ('who am I', 'tell me who I am', 'check my profile'), call `[CALL_TOOL: get_user_learning_stats()]`. Greet them warmly and present their study activity (study materials, quizzes completed, quiz scores, bookmarks) concisely and encouragingly.\n"
+            "   - REAL-TIME / LIVE DATA REQUESTS: You do not possess live external feeds (such as today's live weather, live sports scores, or current local weather radar). If asked for live data, decline politely, naturally, and concisely in 1-2 sentences (e.g., 'I don't have access to live meteorological feeds or current local weather radar. For live conditions in your area, I recommend checking a forecast service like AccuWeather or your local weather app!').\n"
+            "   - CRITICAL: Never force unrelated technical lectures (like Navier-Stokes, Kafka, or supercomputing) onto simple everyday questions unless the student explicitly asks about the computational or physical mechanisms! Respect the student's conversational direction.\n\n"
+            "2. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
+            "   - When the student asks for a visual, picture, photo, illustration, or diagram, choose the appropriate visual medium:\n"
+            "     a) REAL-WORLD VISUALS, ART, CULTURE, BIOLOGY & GEOGRAPHY:\n"
+            "        - When asked for images of real-world objects, artworks, historical figures/events, dance forms (e.g., Bharatanatyam dance), cultural traditions, anatomical structures, or animals, call the image tool:\n"
+            "          [CALL_TOOL: generate_image(\"detailed descriptive prompt\")]\n"
+            "        - Example: [CALL_TOOL: generate_image(\"classical Indian Bharatanatyam dancer in ornate traditional costume performing expressive mudra and posture, professional cultural photography\")]\n"
+            "     b) SYSTEM ARCHITECTURES, ALGORITHMS & LOGICAL WORKFLOWS:\n"
+            "        - For software architectures, data pipelines, algorithms, state machines, and technical processes (e.g. RAG pipeline, OAuth flow, binary search tree, compiler stages), provide a clean, publication-grade Mermaid flowchart (```mermaid ... ```) accompanied by a structured technical walkthrough.\n"
+            "   - PRONOUN & CONTEXT RESOLUTION: Always inspect the preceding conversation history to resolve pronouns ('it', 'that', 'this'). If the user previously asked about a topic and then asks 'show me an image of it', resolve the pronoun to that exact topic.\n\n"
+            "3. AVAILABLE TOOLS:\n"
+            "   - [CALL_TOOL: search_user_library(\"search_query\")] -> Search the user's uploaded study materials\n"
+            "   - [CALL_TOOL: get_session_details(session_id_integer)] -> Retrieve detailed content and quiz history of a specific session\n"
+            "   - [CALL_TOOL: get_user_learning_stats()] -> Retrieve user's study metrics, quiz stats, and bookmarks\n"
+            "   - [CALL_TOOL: generate_image(\"detailed visual prompt\")] -> Generate educational illustrations, photos, artwork, and cultural visuals\n\n"
+            "4. STRICT TOOL CALLING EXECUTION RULES:\n"
+            "   - If you need to use a tool, emit ONLY the tool command on its own line: [CALL_TOOL: tool_name(...)].\n"
+            "   - When you receive the tool results, write your final response naturally to the student.\n"
+            "   - NEVER mention or repeat '[CALL_TOOL: ...]' or internal tool names in your final student-facing response! Tool syntax is strictly internal.\n\n"
             f"{f'Previous Tool Call Results:\n' + chr(10).join(tool_results) if tool_results else ''}"
         )
 
@@ -6834,7 +6842,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
         r"as an ai (?:text )?model, I cannot (?:provide|render|generate) image(?:s)?"
     ]
     if any(re.search(p, reply, re.IGNORECASE) for p in canned_refusal_patterns):
-        logger.warning("Detected canned image refusal in reply; repairing with grounded Mermaid architecture diagram.")
+        logger.warning("Detected canned image refusal in reply; repairing dynamically.")
         prev_user_msgs = [m.content for m in recent if m.role == "user"]
         topic_str = ""
         for m_text in reversed(prev_user_msgs):
@@ -6842,32 +6850,18 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             if cleaned and len(cleaned) > 2:
                 topic_str = cleaned
                 break
-        if not topic_str:
-            topic_str = "System Architecture"
+        if topic_str:
+            img_markdown = agent_generate_image(f"{topic_str}, high quality educational visual")
+            for p in canned_refusal_patterns:
+                reply = re.sub(p, "", reply, flags=re.IGNORECASE)
+            reply = f"{img_markdown}\n\n" + reply.strip()
 
-        repair_msg = (
-            f"Here is the grounded technical architecture diagram for **{topic_str}**:\n\n"
-            f"```mermaid\nflowchart TD\n"
-            f"    subgraph Ingestion[\"1. Ingestion & Indexing Pipeline\"]\n"
-            f"        A[\"Documents & Knowledge Sources\"] --> B[\"Semantic Chunking Engine\"]\n"
-            f"        B --> C[\"Vector Embedding Model\"]\n"
-            f"        C --> D[(\"Vector Database & Index Store\")]\n"
-            f"    end\n"
-            f"    subgraph Retrieval[\"2. Hybrid Retrieval Pipeline\"]\n"
-            f"        Q[\"User Query\"] --> QE[\"Query Embedding\"]\n"
-            f"        QE --> D\n"
-            f"        D -->|Top-K Grounded Chunks| AG[\"Context Augmentation Engine\"]\n"
-            f"    end\n"
-            f"    subgraph Generation[\"3. Augmented Generation\"]\n"
-            f"        Q --> AG\n"
-            f"        AG --> LLM[\"LLM Generation Layer\"]\n"
-            f"        LLM --> R[\"Verified Grounded Response\"]\n"
-            f"    end\n"
-            f"```\n\n"
-        )
-        for p in canned_refusal_patterns:
-            reply = re.sub(p, "", reply, flags=re.IGNORECASE)
-        reply = repair_msg + "\n" + reply.strip()
+    # 🧼 Strict post-processing: Sanitize any leaked tool call syntax or internal call artifacts
+    reply = re.sub(r"\(?\[CALL_TOOL:\s*[\w\.]+\(.*?\)\s*\]\)?", "", reply)
+    reply = re.sub(r"\(\s*\)", "", reply)
+    reply = re.sub(r"\s+,", ",", reply)
+    reply = re.sub(r"[ \t]+", " ", reply)
+    reply = re.sub(r"\n{3,}", "\n\n", reply).strip()
 
     ai_msg = ChatMessage(role="assistant", content=reply, conversation_id=conv_id)
     db.add(ai_msg)

@@ -1,11 +1,15 @@
 # Florix AI 🧠 — Production-Grade AI Study Orchestration Platform
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-florix--ai.vercel.app-00DC82?style=for-the-badge&logo=vercel&logoColor=white)](https://florix-4rkmoj877-ganesh-y-s-projects.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
 [![React 19](https://img.shields.io/badge/Frontend-React%2019-61DAFB.svg?logo=react)](https://react.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Styles-Tailwind%20CSS-38B2AC.svg?logo=tailwind-css)](https://tailwindcss.com/)
 [![Google Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-8E75C2.svg?logo=google)](https://ai.google.dev/)
 [![Docker](https://img.shields.io/badge/Deploy-Docker%20Compose-2496ED.svg?logo=docker)](https://www.docker.com/)
+
+> 🌐 **Live Web Application**: [https://florix-4rkmoj877-ganesh-y-s-projects.vercel.app](https://florix-4rkmoj877-ganesh-y-s-projects.vercel.app)  
+> *Experience the full multimodal workspace, AI oral viva defenses, and adaptive study planner live in production.*
 
 **Florix AI** is an enterprise-grade, full-stack AI learning and study orchestration platform. It converts unstructured educational resources—scientific papers, textbooks, YouTube lectures, web articles, voice recordings, and text notes—into structured, multimodal interactive study workspaces with grounded AI tutoring, spaced repetition planning, oral viva examinations, and cognitive mistake analytics.
 

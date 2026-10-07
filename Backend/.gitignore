@@ -20,10 +20,15 @@ ENV/
 .env.local
 .env.*.local
 
-# ── Database files ────────────────────────────────────────────────────────────
+# ── Database & Vector Store files ─────────────────────────────────────────────
 *.db
 *.sqlite
 *.sqlite3
+chroma_db/
+*chroma_db*
+*chroma*
+chroma_db_test/
+chroma_db_corrupted/
 
 # ── Uploaded files (user data) ────────────────────────────────────────────────
 uploads/

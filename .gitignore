@@ -10,7 +10,8 @@
 *.sqlite3
 florix.db
 chroma_db/
-*chroma_db*/
+*chroma_db*
+*chroma*
 uploads/
 **/uploads/
 

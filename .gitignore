@@ -4,12 +4,15 @@
 .env.*
 !.env.example
 
-# Databases
+# Databases & Vector Stores
 *.db
 *.sqlite
 *.sqlite3
 florix.db
 chroma_db/
+*chroma_db*/
+uploads/
+**/uploads/
 
 # Virtual environments
 .venv/

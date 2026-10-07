@@ -9,6 +9,7 @@ import WelcomeIntro from './components/WelcomeIntro';
 import OnboardingFlow from './components/OnboardingFlow';
 import ForgotPasswordPage from './components/ForgotPasswordPage';
 import InteractiveBackground from './components/InteractiveBackground';
+import SharedStudySessionPage from './pages/SharedStudySessionPage';
 import { AuthContext } from './context/AuthContext';
 import { PreferencesProvider } from './context/PreferencesContext';
 import { useToast } from './context/ToastContext';
@@ -76,12 +77,22 @@ function AppInner() {
 
   useEffect(() => {
     if (loading) return; // Prevent redirect while auth state is loading
+    if (location.pathname.startsWith('/shared/')) return; // Shared links must be viewable directly
+
     if (!user) {
       if (['dashboard', 'welcome'].includes(currentView)) {
         navigate('/');
       }
       return;
     }
+    const hasToken = !!localStorage.getItem('token');
+    if (!hasToken) {
+      if (['dashboard', 'welcome'].includes(currentView)) {
+        navigate('/login');
+      }
+      return;
+    }
+
     const welcomed = localStorage.getItem(`florix_welcomed_${user.id}`);
     if (!welcomed) {
       // New or un-welcomed user: must complete /onboarding questions first, then /welcome
@@ -94,7 +105,7 @@ function AppInner() {
         navigate('/dashboard');
       }
     }
-  }, [user, loading, currentView, navigate]);
+  }, [user, loading, currentView, navigate, location.pathname]);
 
   // ── Session timeout events ────────────────────────────────────────────────
   useEffect(() => {
@@ -250,12 +261,12 @@ function AppInner() {
             <>
               <Route path="/onboarding" element={<OnboardingFlow key="onboarding" onComplete={() => navigate('/login')} />} />
               <Route path="/landing" element={
-                <motion.div key="landing-direct" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full min-h-screen flex flex-col justify-start relative z-10">
+                <motion.div key="landing-direct" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full min-h-screen flex flex-col justify-start relative z-10 no-scrollbar">
                   <LandingPage />
                 </motion.div>
               } />
               <Route path="/" element={
-                <motion.div key="landing" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full min-h-screen flex flex-col justify-start relative z-10">
+                <motion.div key="landing" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full min-h-screen flex flex-col justify-start relative z-10 no-scrollbar">
                   <LandingPage />
                 </motion.div>
               } />
@@ -263,7 +274,7 @@ function AppInner() {
                 <div
                   key="login-container"
                   data-lenis-prevent="true"
-                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain"
+                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain no-scrollbar"
                   style={{ WebkitOverflowScrolling: 'touch' }}
                 >
                   <div className="min-h-full w-full flex items-center justify-center p-4 sm:p-6 md:p-8 py-10">
@@ -277,7 +288,7 @@ function AppInner() {
                 <div
                   key="signup-container"
                   data-lenis-prevent="true"
-                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain"
+                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain no-scrollbar"
                   style={{ WebkitOverflowScrolling: 'touch' }}
                 >
                   <div className="min-h-full w-full flex items-center justify-center p-4 sm:p-6 md:p-8 py-10">
@@ -291,7 +302,7 @@ function AppInner() {
                 <div
                   key="forgot-container"
                   data-lenis-prevent="true"
-                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain"
+                  className="fixed inset-0 w-full h-full z-50 overflow-y-auto overflow-x-hidden bg-transparent overscroll-contain no-scrollbar"
                   style={{ WebkitOverflowScrolling: 'touch' }}
                 >
                   <div className="min-h-full w-full flex items-center justify-center p-4 sm:p-6 md:p-8 py-10">
@@ -301,10 +312,12 @@ function AppInner() {
                   </div>
                 </div>
               } />
+              <Route path="/shared/:shareToken" element={<SharedStudySessionPage />} />
               <Route path="*" element={<Navigate to="/" />} />
             </>
           ) : (
             <>
+              <Route path="/shared/:shareToken" element={<SharedStudySessionPage />} />
               <Route path="/" element={
                 <motion.div key="landing-root-auth" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="w-full min-h-screen flex flex-col justify-start relative z-10">
                   <LandingPage />

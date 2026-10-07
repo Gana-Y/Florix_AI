@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, BookOpen, Target, Highlighter } from 'lucide-react';
+import { Sparkles, BookOpen, Target, Highlighter, Network } from 'lucide-react';
 
 /**
  * FloatingSelectionToolbar
  * 
  * Sleek, floating contextual action menu matching:
- * [ ✨ Explain | B / U S | 📖 Flashcard | 🎯 Quiz ]
+ * [ ✨ Explain | B / U S | 📖 Flashcard | 🎯 Quiz | 📊 Visualize ]
  * 
  * Floats directly above/below user-highlighted text inside any referenced container.
  */
@@ -18,6 +18,7 @@ const FloatingSelectionToolbar = ({
   onFlashcard,
   onQuiz,
   onFormat,
+  onVisualize,
 }) => {
   const [position, setPosition] = useState(null);
   const [selectedText, setSelectedText] = useState('');
@@ -158,6 +159,15 @@ const FloatingSelectionToolbar = ({
     }
   };
 
+  const handleVisualizeClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (selectedText) {
+      onVisualize?.(selectedText);
+      setIsVisible(false);
+    }
+  };
+
   const handleFormatClick = (e, formatType) => {
     e.preventDefault();
     e.stopPropagation();
@@ -267,6 +277,17 @@ const FloatingSelectionToolbar = ({
             >
               <Target size={13} className="text-amber-400 group-hover:rotate-45 transition-transform" />
               <span>Quiz</span>
+            </button>
+
+            {/* 📊 Visualize Button */}
+            <button
+              type="button"
+              onClick={handleVisualizeClick}
+              title="Generate a grounded concept map or visual diagram from this selection"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-300 hover:text-emerald-300 hover:bg-zinc-800/60 transition-colors cursor-pointer group"
+            >
+              <Network size={13} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span>Visualize</span>
             </button>
           </div>
         </motion.div>

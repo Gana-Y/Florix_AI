@@ -43,6 +43,7 @@ const AdminPanel = () => {
       const res = await api.get('/admin/payments');
       setPayments(res.data);
     } catch (err) {
+      if (err.response?.status === 401) return;
       addToast(err.response?.data?.detail || 'Failed to load payments', 'error');
     } finally {
       setLoading(false);
@@ -55,6 +56,7 @@ const AdminPanel = () => {
       const res = await api.get('/admin/users');
       setUsers(res.data);
     } catch (err) {
+      if (err.response?.status === 401) return;
       addToast(err.response?.data?.detail || 'Failed to load user list', 'error');
     } finally {
       setUsersLoading(false);

@@ -23,9 +23,19 @@ const YouTubeLearningTimeline = ({
   onOpenChat,
 }) => {
   const { addToast } = useToast();
-  const [timeline, setTimeline] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // 1. Instant hydration if timeline is already present in sessionDetail
+  const initialTimeline = sessionDetail?.doc_metadata?.learning_timeline || null;
+  const [timeline, setTimeline] = useState(initialTimeline);
+  const [loading, setLoading] = useState(!initialTimeline);
   const [error, setError] = useState(null);
+
+  // Sync if sessionDetail loads/updates after mount
+  useEffect(() => {
+    if (sessionDetail?.doc_metadata?.learning_timeline && !timeline) {
+      setTimeline(sessionDetail.doc_metadata.learning_timeline);
+      setLoading(false);
+    }
+  }, [sessionDetail, timeline]);
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,9 +57,12 @@ const YouTubeLearningTimeline = ({
   const [progress, setProgress] = useState({});
 
   // ── 1. Fetch Timeline Data ──
-  const fetchTimeline = useCallback(async () => {
+  const fetchTimeline = useCallback(async (isManualRefresh = false) => {
     if (!sessionId) return;
-    setLoading(true);
+    // Only show full loading spinner if we don't already have timeline data
+    if (!timeline && !sessionDetail?.doc_metadata?.learning_timeline) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await api.get(`/sessions/${sessionId}/learning-timeline`);
@@ -59,23 +72,50 @@ const YouTubeLearningTimeline = ({
       }
     } catch (err) {
       console.error('Failed to load learning timeline:', err);
-      setError(err.response?.data?.detail || 'Could not generate learning timeline. Please try again.');
+      if (!timeline && !sessionDetail?.doc_metadata?.learning_timeline) {
+        setError(err.response?.data?.detail || 'Could not generate learning timeline. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, timeline, sessionDetail]);
 
   useEffect(() => {
     fetchTimeline();
-  }, [fetchTimeline]);
+  }, [sessionId]);
 
-  // Derive Video ID
+  // Derive Video ID with multi-level resilience
   const videoId = useMemo(() => {
-    if (timeline?.video_id) return timeline.video_id;
-    if (sessionDetail?.doc_metadata?.video_id) return sessionDetail.doc_metadata.video_id;
-    // Fallback extraction
-    const raw = sessionDetail?.content || sessionDetail?.filename || '';
-    const m = raw.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([^?&\s]+)/);
+    if (timeline?.video_id && timeline.video_id.trim()) return timeline.video_id.trim();
+    if (sessionDetail?.doc_metadata?.video_id && sessionDetail.doc_metadata.video_id.trim()) {
+      return sessionDetail.doc_metadata.video_id.trim();
+    }
+    if (sessionDetail?.doc_metadata?.learning_timeline?.video_id) {
+      return sessionDetail.doc_metadata.learning_timeline.video_id.trim();
+    }
+
+    // Check thumbnail URL
+    const thumbUrl = timeline?.thumbnail_url || sessionDetail?.doc_metadata?.thumbnail_url || sessionDetail?.doc_metadata?.learning_timeline?.thumbnail_url || '';
+    const thumbMatch = thumbUrl.match(/\/vi\/([a-zA-Z0-9_-]{11})\//);
+    if (thumbMatch) return thumbMatch[1];
+
+    // Check source URL in doc_metadata
+    const sourceUrl = sessionDetail?.doc_metadata?.source_url || '';
+    const sourceMatch = sourceUrl.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/|vi\/)([a-zA-Z0-9_-]{11})/);
+    if (sourceMatch) return sourceMatch[1];
+
+    // Scan session timeline events
+    if (Array.isArray(sessionDetail?.timeline)) {
+      for (const item of sessionDetail.timeline) {
+        const text = typeof item === 'string' ? item : (item?.detail || item?.event || '');
+        const m = text.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/|vi\/)([a-zA-Z0-9_-]{11})/);
+        if (m) return m[1];
+      }
+    }
+
+    // Fallback extraction from content and filename
+    const raw = `${sessionDetail?.filename || ''} ${sessionDetail?.content || ''}`;
+    const m = raw.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/|vi\/)([a-zA-Z0-9_-]{11})/);
     return m ? m[1] : '';
   }, [timeline, sessionDetail]);
 
@@ -279,12 +319,28 @@ const YouTubeLearningTimeline = ({
         <div className="relative z-10 flex flex-col md:flex-row gap-5 items-start md:items-center">
           {/* Video Thumbnail Preview */}
           {videoId ? (
-            <div className="relative w-full md:w-56 aspect-video rounded-2xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-black group">
+            <div className="relative w-full md:w-56 aspect-video rounded-2xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-zinc-950 group">
               <img
-                src={`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
-                alt="Video Thumbnail"
+                src={timeline?.thumbnail_url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
+                alt={timeline?.video_title || "Video Thumbnail"}
+                referrerPolicy="no-referrer"
+                loading="lazy"
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                onError={(e) => { e.target.style.display = 'none'; }}
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.fallbackStep) {
+                    target.dataset.fallbackStep = 'mq';
+                    target.src = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+                  } else if (target.dataset.fallbackStep === 'mq') {
+                    target.dataset.fallbackStep = 'zero';
+                    target.src = `https://img.youtube.com/vi/${videoId}/0.jpg`;
+                  } else if (target.dataset.fallbackStep === 'zero') {
+                    target.dataset.fallbackStep = 'default';
+                    target.src = `https://img.youtube.com/vi/${videoId}/default.jpg`;
+                  } else {
+                    target.style.display = 'none';
+                  }
+                }}
               />
               <a
                 href={timeline?.sections?.[0]?.watch_url || `https://www.youtube.com/watch?v=${videoId}`}
@@ -622,9 +678,9 @@ const YouTubeLearningTimeline = ({
                     <div className="pt-2 border-t border-slate-100 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {/* [▶ Watch] */}
-                        {sec.watch_url && (
+                        {(sec.watch_url || videoId) && (
                           <a
-                            href={sec.watch_url}
+                            href={sec.watch_url || `https://www.youtube.com/watch?v=${videoId}&t=${Math.floor(sec.timestamp_start || 0)}s`}
                             target="_blank"
                             rel="noreferrer"
                             onClick={(e) => e.stopPropagation()}

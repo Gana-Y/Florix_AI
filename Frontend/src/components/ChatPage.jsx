@@ -8,7 +8,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
+import { extractBestTranscript, combineSpokenWithBase, configureSpeechRecognition, AUDIO_CAPTURE_CONSTRAINTS } from '../utils/speechCorrection';
 import { PreferencesContext } from '../context/PreferencesContext';
+import { useToast } from '../context/ToastContext';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const formatDateGroup = (isoString) => {
@@ -40,6 +42,9 @@ const SUGGESTED_PROMPTS = [
   { icon: Zap,      text: 'What are the key concepts of RAG?', color: 'text-amber-500' },
 ];
 
+import MermaidDiagram from './MermaidDiagram';
+import ChatImage from './ChatImage';
+
 // ── Memoized Message Bubble (Eliminates Markdown AST Re-parsing Jank) ───────────
 const ChatMessageBubble = React.memo(({ msg }) => {
   return (
@@ -55,7 +60,7 @@ const ChatMessageBubble = React.memo(({ msg }) => {
         </div>
       )}
 
-      <div className={`max-w-[80%] md:max-w-[70%] rounded-3xl shadow-sm px-5 py-4 ${
+      <div className={`max-w-[85%] md:max-w-[78%] rounded-3xl shadow-sm px-5 py-4 ${
         msg.role === 'user'
           ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-br-md shadow-indigo-500/20'
           : 'bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 rounded-bl-md'
@@ -63,7 +68,25 @@ const ChatMessageBubble = React.memo(({ msg }) => {
         <div className={`prose prose-sm dark:prose-invert max-w-none ${
           msg.role === 'user' ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white' : ''
         }`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              code({ node, inline, className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className || '');
+                if (!inline && match && match[1] === 'mermaid') {
+                  return <MermaidDiagram code={String(children).replace(/\n$/, '')} />;
+                }
+                return (
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                );
+              },
+              img({ node, ...props }) {
+                return <ChatImage {...props} />;
+              }
+            }}
+          >
             {String(msg.content || '')}
           </ReactMarkdown>
         </div>
@@ -80,6 +103,7 @@ const ChatMessageBubble = React.memo(({ msg }) => {
 const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
   const { prefs } = useContext(PreferencesContext);
   const [spaces, setSpaces] = useState([]);
+  const { addToast } = useToast();
   const [moveMenuConvId, setMoveMenuConvId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [activeConvId, setActiveConvId] = useState(null);
@@ -96,25 +120,53 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
+  const baseInputRef = useRef('');
 
-  // Speech recognition — once on mount
+  // Clean up recognition on unmount
   useEffect(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.lang = 'en-US';
-    rec.onresult = (e) => { setInput((p) => p + ' ' + e.results[0][0].transcript); setIsListening(false); };
-    rec.onerror = () => setIsListening(false);
-    rec.onend = () => setIsListening(false);
-    recognitionRef.current = rec;
-    return () => recognitionRef.current?.stop();
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) {}
+      }
+    };
   }, []);
+
+  const activeConvIdRef = useRef(activeConvId);
+  useEffect(() => {
+    activeConvIdRef.current = activeConvId;
+  }, [activeConvId]);
 
   useEffect(() => {
     fetchConversations();
     fetchSpaces();
+
+    const handleRemoteDelete = (e) => {
+      const deletedId = e.detail?.chatId;
+      if (!deletedId) return;
+      setConversations((prev) => {
+        const remaining = prev.filter((c) => c.id !== deletedId);
+        if (activeConvIdRef.current === deletedId) {
+          if (remaining.length > 0) {
+            setActiveConvId(remaining[0].id);
+          } else {
+            setActiveConvId(null);
+            setMessages([]);
+          }
+        }
+        return remaining;
+      });
+    };
+
+    const handleRemoteUpdate = () => {
+      fetchConversations();
+    };
+
+    window.addEventListener('florix:conversation-deleted', handleRemoteDelete);
+    window.addEventListener('florix:conversation-updated', handleRemoteUpdate);
+    return () => {
+      window.removeEventListener('florix:conversation-deleted', handleRemoteDelete);
+      window.removeEventListener('florix:conversation-updated', handleRemoteUpdate);
+    };
   }, []);
 
   useEffect(() => {
@@ -150,11 +202,19 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
   const fetchConversations = async () => {
     try {
       const res = await api.get('/conversations');
-      setConversations(res.data);
-      if (initialConvId) {
+      const data = res.data || [];
+      setConversations(data);
+      const currentActive = activeConvIdRef.current;
+      if (initialConvId && data.some(c => c.id === initialConvId)) {
         setActiveConvId(initialConvId);
-      } else if (res.data.length > 0 && !activeConvId) {
-        setActiveConvId(res.data[0].id);
+      } else if (currentActive && data.some(c => c.id === currentActive)) {
+        // Current active chat still exists, retain it
+      } else if (data.length > 0) {
+        setActiveConvId(data[0].id);
+      } else {
+        // All chats deleted or empty: reset active chat and clear message view
+        setActiveConvId(null);
+        setMessages([]);
       }
     } catch (e) {
       console.error('Failed to load conversations', e);
@@ -182,7 +242,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
       setActiveConvId(res.data.id);
       setMessages([]);
       setTimeout(() => inputRef.current?.focus(), 100);
-      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: res.data.id, title: res.data.title } }));
     } catch (e) { console.error(e); }
   };
 
@@ -191,7 +251,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
     try {
       await api.patch(`/conversations/${convId}/pin`, { is_pinned: !currentPinned });
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, is_pinned: !currentPinned } : c));
-      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: convId, is_pinned: !currentPinned } }));
     } catch (err) {
       console.error(err);
     }
@@ -202,7 +262,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
       await api.patch(`/conversations/${convId}/project`, { project_id: spaceId });
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, project_id: spaceId } : c));
       setMoveMenuConvId(null);
-      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: convId, project_id: spaceId } }));
     } catch (err) {
       console.error(err);
     }
@@ -212,13 +272,19 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
     const userMsg = (typeof textToSend === 'string' ? textToSend : input).trim();
     if (!userMsg || isLoading) return;
 
+    if (isListening && recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) {}
+      setIsListening(false);
+    }
+
     let convId = activeConvId;
     if (!convId) {
       try {
-        const res = await api.post('/conversations', { title: userMsg.slice(0, 50), project_id: activeSpaceId || null });
+        const res = await api.post('/conversations', { title: 'New Chat', project_id: activeSpaceId || null });
         convId = res.data.id;
         setConversations((p) => [res.data, ...p]);
         setActiveConvId(convId);
+        window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: convId, title: 'New Chat' } }));
       } catch { return; }
     }
 
@@ -232,10 +298,13 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
         response_style: prefs?.responseStyle || 'balanced',
       });
       setMessages((p) => [...p, { id: `a-${Date.now()}`, role: 'assistant', content: res.data.reply }]);
-      // Update title in sidebar if it was auto-set
-      setConversations((p) => p.map((c) =>
-        c.id === convId ? { ...c, title: res.data.title || c.title, updated_at: new Date().toISOString() } : c
-      ));
+      // Update title in sidebar and header with AI-generated conceptual topic title
+      if (res.data.title) {
+        setConversations((p) => p.map((c) =>
+          c.id === convId ? { ...c, title: res.data.title, updated_at: new Date().toISOString() } : c
+        ));
+        window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: convId, title: res.data.title } }));
+      }
     } catch {
       setMessages((p) => [...p, { id: `e-${Date.now()}`, role: 'assistant', content: "I'm sorry, I encountered an error. Please try again." }]);
     } finally {
@@ -244,28 +313,118 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
   };
 
   const deleteConversation = async (convId, e) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
+    if (!window.confirm('Delete this conversation? All messages will be permanently removed.')) return;
     try {
       await api.delete(`/conversations/${convId}`);
-      const remaining = conversations.filter((c) => c.id !== convId);
-      setConversations(remaining);
-      if (activeConvId === convId) setActiveConvId(remaining.length > 0 ? remaining[0].id : null);
-    } catch (e) { console.error(e); }
+      setConversations((prev) => {
+        const remaining = prev.filter((c) => c.id !== convId);
+        if (activeConvIdRef.current === convId) {
+          if (remaining.length > 0) {
+            setActiveConvId(remaining[0].id);
+          } else {
+            setActiveConvId(null);
+            setMessages([]);
+          }
+        }
+        return remaining;
+      });
+      window.dispatchEvent(new CustomEvent('florix:conversation-deleted', { detail: { chatId: convId } }));
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
+    } catch (e) {
+      console.error('Failed to delete conversation:', e);
+    }
   };
 
   const saveTitle = async (convId) => {
     if (!editTitle.trim()) { setEditingId(null); return; }
     try {
-      await api.patch(`/conversations/${convId}`, { title: editTitle });
-      setConversations((p) => p.map((c) => c.id === convId ? { ...c, title: editTitle } : c));
-    } catch (e) { console.error(e); }
+      await api.patch(`/conversations/${convId}`, { title: editTitle.trim() });
+      setConversations((p) => p.map((c) => c.id === convId ? { ...c, title: editTitle.trim() } : c));
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: convId, title: editTitle.trim() } }));
+    } catch (e) {
+      console.error(e);
+    }
     setEditingId(null);
   };
 
-  const toggleListen = () => {
-    if (isListening) { recognitionRef.current?.stop(); setIsListening(false); }
-    else if (recognitionRef.current) { recognitionRef.current.start(); setIsListening(true); }
-    else alert('Your browser does not support Voice Input. Try Chrome or Edge.');
+  const toggleListen = async () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) { console.warn(e); }
+      }
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      addToast('Voice input is not supported in this browser. Try Chrome or Edge.', 'warning');
+      return;
+    }
+
+    // Capture base text currently in the input bar before speaking starts
+    baseInputRef.current = input ? input.trim() : '';
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CAPTURE_CONSTRAINTS);
+        stream.getTracks().forEach(track => track.stop());
+      }
+    } catch (permErr) {
+      console.warn('Microphone permission check:', permErr);
+      if (permErr.name === 'NotAllowedError' || permErr.name === 'PermissionDeniedError') {
+        addToast('Microphone access denied. Please allow microphone permissions in your browser URL bar.', 'error');
+        return;
+      }
+    }
+
+    try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) {}
+      }
+
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = true;
+      configureSpeechRecognition(rec);
+
+      rec.onstart = () => {
+        setIsListening(true);
+        addToast('Microphone active. Speak now...', 'info', 2000);
+      };
+
+      rec.onresult = (e) => {
+        const cleanSpoken = extractBestTranscript(e.results);
+        if (cleanSpoken) {
+          const combined = combineSpokenWithBase(baseInputRef.current, cleanSpoken);
+          setInput(combined);
+        }
+      };
+
+      rec.onerror = (e) => {
+        console.error('Speech recognition error:', e.error);
+        setIsListening(false);
+        if (e.error === 'not-allowed') {
+          addToast('Microphone permission denied. Please allow microphone in browser settings.', 'error');
+        } else if (e.error === 'network') {
+          addToast('Speech recognition network error. Check your connection.', 'error');
+        } else if (e.error !== 'no-speech') {
+          addToast(`Voice error: ${e.error}`, 'warning');
+        }
+      };
+
+      rec.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = rec;
+      rec.start();
+    } catch (err) {
+      console.error('Speech recognition failed to start:', err);
+      setIsListening(false);
+      addToast('Could not start microphone. Please check browser permissions.', 'error');
+    }
   };
 
   // ── Filtered + grouped conversations ───────────────────────────────────────
@@ -438,9 +597,21 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
             </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-xs text-slate-400 dark:text-zinc-500 font-medium">Online</span>
+          <div className="ml-auto flex items-center gap-2">
+            {activeConvId && (
+              <button
+                onClick={(e) => deleteConversation(activeConvId, e)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-all text-xs font-semibold"
+                title="Delete this conversation"
+              >
+                <Trash2 size={13} />
+                <span className="hidden sm:inline">Delete Chat</span>
+              </button>
+            )}
+            <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-zinc-800">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-xs text-slate-400 dark:text-zinc-500 font-medium">Online</span>
+            </div>
           </div>
         </div>
 

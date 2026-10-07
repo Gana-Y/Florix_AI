@@ -4,7 +4,8 @@ import {
   Brain, ChevronLeft, ChevronRight, ChevronDown, Sparkles,
   MessageSquare, X, UserCircle, Bookmark, TrendingUp, CreditCard, Shield, Activity,
   Pin, Trash2, Edit3, Flame, Folder, FolderPlus, Tag, Check, MoreVertical,
-  MessageSquarePlus, ArrowUpDown, CornerDownRight, Plus, Zap, Crown, Award, LogOut
+  MessageSquarePlus, ArrowUpDown, CornerDownRight, Plus, Zap, Crown, Award, LogOut,
+  CalendarCheck, Mic
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
@@ -144,18 +145,58 @@ const Sidebar = ({
     fetchSpaces();
     fetchConversations();
 
-    const onRefresh = () => {
+    const onRefresh = (e) => {
+      if (e?.detail?.chatId && e?.detail?.title) {
+        const { chatId, title } = e.detail;
+        setStandaloneChats((prev) => {
+          const exists = prev.some((c) => c.id === chatId);
+          if (exists) {
+            return prev.map((c) => (c.id === chatId ? { ...c, title, updated_at: new Date().toISOString() } : c));
+          }
+          return [{ id: chatId, title, is_pinned: false, updated_at: new Date().toISOString() }, ...prev];
+        });
+        setPinnedChats((prev) =>
+          prev.map((c) => (c.id === chatId ? { ...c, title, updated_at: new Date().toISOString() } : c))
+        );
+        setSpaces((prev) =>
+          prev.map((sp) => ({
+            ...sp,
+            subchats: (sp.subchats || []).map((sc) =>
+              sc.id === chatId ? { ...sc, title, updated_at: new Date().toISOString() } : sc
+            ),
+          }))
+        );
+      }
       fetchSessions();
       fetchSpaces();
       fetchConversations();
     };
+
+    const onDeleted = (e) => {
+      const deletedId = e?.detail?.chatId;
+      if (deletedId) {
+        setStandaloneChats((prev) => prev.filter((c) => c.id !== deletedId));
+        setPinnedChats((prev) => prev.filter((c) => c.id !== deletedId));
+        setSpaces((prev) =>
+          prev.map((sp) => ({
+            ...sp,
+            subchats: (sp.subchats || []).filter((sc) => sc.id !== deletedId),
+          }))
+        );
+      }
+      fetchConversations();
+      fetchSpaces();
+    };
+
     window.addEventListener('florix:session-created', onRefresh);
     window.addEventListener('florix:session-updated', onRefresh);
     window.addEventListener('florix:conversation-updated', onRefresh);
+    window.addEventListener('florix:conversation-deleted', onDeleted);
     return () => {
       window.removeEventListener('florix:session-created', onRefresh);
       window.removeEventListener('florix:session-updated', onRefresh);
       window.removeEventListener('florix:conversation-updated', onRefresh);
+      window.removeEventListener('florix:conversation-deleted', onDeleted);
     };
   }, [user]);
 
@@ -218,6 +259,7 @@ const Sidebar = ({
       const res = await api.post('/conversations', { title: 'New Subchat', project_id: spaceId });
       fetchSpaces();
       fetchConversations();
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
       onOpenChat?.(res.data.id, spaceId);
       setActiveTab?.('AI Chat');
     } catch {
@@ -231,6 +273,7 @@ const Sidebar = ({
     try {
       await api.patch(`/conversations/${chatId}/pin`, { is_pinned: !currentPinned });
       fetchConversations();
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
       addToast(!currentPinned ? 'Chat pinned to top' : 'Chat unpinned', 'success');
     } catch {
       addToast('Failed to pin chat', 'error');
@@ -239,11 +282,13 @@ const Sidebar = ({
 
   const handleDeleteChat = async (e, chatId) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this conversation?')) return;
+    if (!window.confirm('Delete this conversation? All messages will be permanently removed.')) return;
     try {
       await api.delete(`/conversations/${chatId}`);
       fetchConversations();
       fetchSpaces();
+      window.dispatchEvent(new CustomEvent('florix:conversation-deleted', { detail: { chatId } }));
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
       addToast('Chat deleted', 'success');
     } catch {
       addToast('Failed to delete chat', 'error');
@@ -306,6 +351,10 @@ const Sidebar = ({
     { id: 'AI Chat',           icon: MessageSquare, label: 'AI Chat' },
     { id: 'Search content',    icon: Search,        label: 'Search' },
     { id: 'New Study Session', icon: PlusCircle,    label: 'New Session' },
+    { id: 'Study Planner',     icon: CalendarCheck, label: 'Study Planner' },
+    { id: 'Exams',             icon: Award,         label: 'Exams & Mocks' },
+    { id: 'Mistakes',          icon: Brain,         label: 'Mistake Bank' },
+    { id: 'Viva',              icon: Mic,           label: 'Viva & Oral Exam' },
     { id: 'My Library',        icon: BookOpen,      label: 'My Library' },
     { id: 'Bookmarks',         icon: Bookmark,      label: 'Bookmarks' },
     { id: 'Progress',          icon: TrendingUp,    label: 'Progress' },

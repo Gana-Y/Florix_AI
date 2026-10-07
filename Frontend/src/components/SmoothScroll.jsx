@@ -22,30 +22,25 @@ export default function SmoothScroll({ children }) {
   const lenisRef = useRef(null);
 
   useEffect(() => {
-    // 1. Initialize Lenis instance with optimal 60fps/120fps inertia interpolation
+    // 1. Initialize Lenis instance with luxurious, buttery-smooth cinematic inertia
     const lenis = new Lenis({
-      lerp: 0.16, // Snappy, immediate feedback with zero perceived inertia drag
-      wheelMultiplier: 1.05, // Generous, natural 1:1 scroll displacement
+      duration: 1.2, // Generous 1.2s smooth momentum glide
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // Exponential deceleration curve
+      orientation: 'vertical',
+      gestureOrientation: 'vertical',
       smoothWheel: true,
-      syncTouch: false, // Don't hijack native mobile/touchpad momentum
+      wheelMultiplier: 1.0, // Natural 1:1 scroll displacement without jumpiness
+      touchMultiplier: 1.5,
       autoResize: true,
       allowNestedScroll: true, // Never block nested scroll containers
+      autoRaf: true, // Self-driving high-precision 60fps/120fps requestAnimationFrame loop
     });
 
     lenisRef.current = lenis;
     window.__lenis = lenis;
 
-    // 2. Master RequestAnimationFrame loop
-    let rafId;
-    function raf(time) {
-      lenis.raf(time);
-      rafId = requestAnimationFrame(raf);
-    }
-    rafId = requestAnimationFrame(raf);
-
-    // 3. Cleanup on unmount
+    // 2. Cleanup on unmount
     return () => {
-      cancelAnimationFrame(rafId);
       lenis.destroy();
       lenisRef.current = null;
       window.__lenis = null;

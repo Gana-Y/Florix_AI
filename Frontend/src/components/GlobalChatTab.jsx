@@ -7,9 +7,13 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import api from '../utils/api';
+import { extractBestTranscript, combineSpokenWithBase, configureSpeechRecognition, AUDIO_CAPTURE_CONSTRAINTS } from '../utils/speechCorrection';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { PreferencesContext } from '../context/PreferencesContext';
+import { useToast } from '../context/ToastContext';
+import MermaidDiagram from './MermaidDiagram';
+import ChatImage from './ChatImage';
 
 class ChatErrorBoundary extends Component {
   constructor(props) {
@@ -77,6 +81,10 @@ const tutorMarkdownComponents = {
     <blockquote className="border-l-2 border-indigo-500 pl-3 py-1.5 my-2.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-r-lg text-xs italic text-slate-600 dark:text-zinc-400" {...props} />
   ),
   code: ({ node, inline, className, children, ...props }) => {
+    const match = /language-(\w+)/.exec(className || '');
+    if (!inline && match && match[1] === 'mermaid') {
+      return <MermaidDiagram code={String(children).replace(/\n$/, '')} />;
+    }
     if (inline) {
       return (
         <code className="px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-mono border border-indigo-200/50 dark:border-indigo-800/50" {...props}>
@@ -90,6 +98,9 @@ const tutorMarkdownComponents = {
       </pre>
     );
   },
+  img: ({ node, ...props }) => (
+    <ChatImage {...props} />
+  ),
   table: ({ node, ...props }) => (
     <div className="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-zinc-800">
       <table className="w-full text-xs text-left" {...props} />
@@ -271,6 +282,7 @@ const GlobalChatMessageBubble = React.memo(({ msg }) => {
 ));
 
 const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandled }) => {
+  const { addToast } = useToast();
   const { prefs } = useContext(PreferencesContext);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -309,55 +321,104 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
   }, [messages, isLoading]);
 
   const recognitionRef = useRef(null);
+  const baseInputRef = useRef('');
 
-  // Create SpeechRecognition instance once on mount
+  // Clean up recognition on unmount
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setInput(prev => prev + ' ' + transcript);
-      setIsListening(false);
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) {}
+      }
     };
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error', event.error);
-      setIsListening(false);
-    };
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    return () => { recognitionRef.current?.stop(); };
   }, []);
 
-  const toggleListen = () => {
+  const toggleListen = async () => {
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
       if (recognitionRef.current) {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } else {
-        // Graceful fallback — no browser alert
-        setMessages(prev => [...prev, {
-          id: Date.now() + Math.random(),
-          role: 'bot',
-          text: '⚠️ Voice input is not supported in your browser. Please type your message instead. (Try Chrome or Edge for voice support.)'
-        }]);
+        try { recognitionRef.current.stop(); } catch (e) { console.warn(e); }
       }
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      addToast('Voice input is not supported in this browser. Please use Chrome or Edge.', 'warning');
+      return;
+    }
+
+    // Capture base text currently in the input bar before speaking starts
+    baseInputRef.current = input ? input.trim() : '';
+
+    // Explicitly prompt or verify microphone access permission
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CAPTURE_CONSTRAINTS);
+        stream.getTracks().forEach(track => track.stop());
+      }
+    } catch (permErr) {
+      console.warn('Microphone permission check:', permErr);
+      if (permErr.name === 'NotAllowedError' || permErr.name === 'PermissionDeniedError') {
+        addToast('Microphone access denied. Please click the lock icon in your browser URL bar and allow microphone.', 'error');
+        return;
+      }
+    }
+
+    try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) {}
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      configureSpeechRecognition(recognition);
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        addToast('Microphone active. Speak now...', 'info', 2000);
+      };
+
+      recognition.onresult = (event) => {
+        const cleanSpoken = extractBestTranscript(event.results);
+        if (cleanSpoken) {
+          const combined = combineSpokenWithBase(baseInputRef.current, cleanSpoken);
+          setInput(combined);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed') {
+          addToast('Microphone permission was denied. Please allow microphone in browser site settings.', 'error');
+        } else if (event.error === 'network') {
+          addToast('Speech recognition network error. Please check your internet connection.', 'error');
+        } else if (event.error !== 'no-speech') {
+          addToast(`Speech error: ${event.error}`, 'warning');
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start speech recognition:', err);
+      setIsListening(false);
+      addToast('Could not start microphone. Please check browser permissions.', 'error');
     }
   };
 
   const handleSend = async (textToSend = input) => {
     if (!textToSend.trim() || isLoading) return;
+
+    if (isListening && recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) {}
+      setIsListening(false);
+    }
 
     const userMessage = textToSend.trim();
     setInput('');
@@ -368,6 +429,10 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
       const payload = {
         message: userMessage,
         response_style: prefs?.responseStyle || 'balanced',
+        history: messages.slice(-10).map((m) => ({
+          role: m.role === 'bot' ? 'assistant' : m.role,
+          content: m.text || ''
+        })),
       };
       if (sessionId) payload.session_id = sessionId;
       const response = await api.post('/chat', payload);

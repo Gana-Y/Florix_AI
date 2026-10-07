@@ -31,8 +31,15 @@ html {
   scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
   overflow-x: clip;
-  overflow-y: scroll; /* Single master scrollbar on html */
-  scrollbar-gutter: stable;
+  overflow-y: auto;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* ── Lenis Smooth Scrolling Integration ── */
@@ -52,12 +59,7 @@ html.lenis, html.lenis body {
   overflow: hidden;
 }
 
-/* While Lenis is actively scrolling, disable pointer-events globally to prevent hover calculation jank and mousemove layout thrashing */
-html.lenis.lenis-scrolling,
-html.lenis.lenis-scrolling * {
-  pointer-events: none !important;
-}
-
+/* Prevent iframes from capturing mouse events during active scrolling */
 .lenis.lenis-scrolling iframe {
   pointer-events: none;
 }
@@ -75,6 +77,14 @@ body {
   transition: background-color 0.25s ease, color 0.2s ease;
   overflow-x: clip;
   overflow-y: visible;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .dark body {
@@ -91,27 +101,25 @@ body {
   isolation: isolate;
   overflow-x: clip;
   overflow-y: visible;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
-/* ── Unified Sleek Modern Scrollbar (Eliminates chunky Windows dual scrollbars) ── */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+#root::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
-::-webkit-scrollbar-track {
-  background: #060713;
+
+/* ── Invisible / Zero-Track Smooth Scrollbar Utility ── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 9999px;
-  border: 2px solid #060713;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.6);
-}
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) #060713;
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
 /* ==============================

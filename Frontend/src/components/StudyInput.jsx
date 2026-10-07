@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search, Upload, FileText, Link as LinkIcon,
   Mic, Loader2, X, CheckCircle2, ArrowLeft, Video,
@@ -6,6 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
+import { correctSpeechPhonetics, combineSpokenWithBase, configureSpeechRecognition } from '../utils/speechCorrection';
 import RichPreviewPanel from './RichPreviewPanel';
 import { useToast } from '../context/ToastContext';
 import PipelineVisualizer from './PipelineVisualizer';
@@ -89,7 +91,7 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.lang = 'en-US';
+      configureSpeechRecognition(rec);
 
       rec.onresult = (event) => {
         let final = '';
@@ -102,9 +104,10 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
           }
         }
         if (final) {
-          setSpeakTranscript((prev) => prev + final);
+          const cleanFinal = correctSpeechPhonetics(final);
+          setSpeakTranscript((prev) => combineSpokenWithBase(prev, cleanFinal) + ' ');
         }
-        setInterimTranscript(interim);
+        setInterimTranscript(correctSpeechPhonetics(interim));
       };
 
       rec.onerror = (event) => {
@@ -228,7 +231,12 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
       });
       setPendingSessionData(response.data);
     } catch (error) {
-      addToast('Upload failed: ' + (error.response?.data?.detail || 'Unknown error'), 'error');
+      if (error.response?.status === 401) {
+        addToast('Your session has expired or you are not logged in. Please log in to upload.', 'error');
+        window.dispatchEvent(new CustomEvent('florix:session-expired'));
+      } else {
+        addToast('Upload failed: ' + (error.response?.data?.detail || 'Unknown error'), 'error');
+      }
       setActiveProgressId(null);
       setPipelineFinished(false);
       setPendingSessionData(null);
@@ -268,7 +276,12 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
       });
       setPendingSessionData(response.data);
     } catch (error) {
-      addToast('Video upload failed: ' + (error.response?.data?.detail || 'Unknown error'), 'error');
+      if (error.response?.status === 401) {
+        addToast('Your session has expired or you are not logged in. Please log in to upload.', 'error');
+        window.dispatchEvent(new CustomEvent('florix:session-expired'));
+      } else {
+        addToast('Video upload failed: ' + (error.response?.data?.detail || 'Unknown error'), 'error');
+      }
       setActiveProgressId(null);
       setPipelineFinished(false);
       setPendingSessionData(null);
@@ -279,8 +292,12 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
 
   const handleLinkOpen = async (e) => {
     e.preventDefault();
-    if (!linkUrl.trim()) return;
-    const url = linkUrl.trim();
+    let raw = linkUrl.trim();
+    if (!raw) return;
+    if (!/^https?:\/\//i.test(raw)) {
+      raw = 'https://' + raw;
+    }
+    const url = raw;
     setActiveModal(null);
     setLinkUrl('');
 
@@ -331,8 +348,17 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
   };
 
   const handleGoClick = () => {
-    if (!topic.trim()) return;
-    setRichPreview({ type: 'query', content: topic.trim() });
+    const raw = topic.trim();
+    if (!raw) return;
+    const isYt = /youtube\.com\/watch|youtu\.be\/|youtube\.com\/shorts/.test(raw);
+    if (isYt) {
+      setRichPreview({ type: 'youtube', content: raw });
+    } else if (/^https?:\/\//i.test(raw) || /^www\./i.test(raw) || (raw.includes('.') && !raw.includes(' ') && raw.length > 5)) {
+      const url = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
+      setRichPreview({ type: 'link', content: url });
+    } else {
+      setRichPreview({ type: 'query', content: raw });
+    }
   };
 
 
@@ -517,8 +543,8 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
       <AnimatePresence>
-        {activeModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm">
+        {activeModal && createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/75 dark:bg-black/85 backdrop-blur-md">
             <motion.div
               variants={modalVariants}
               initial="hidden"
@@ -546,15 +572,18 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
                     <p className="text-slate-500 dark:text-zinc-400 text-sm mt-1">YouTube, Wikipedia, or any public article.</p>
                   </div>
                   <input
-                    type="url" required value={linkUrl}
+                    type="text"
+                    inputMode="url"
+                    required
+                    value={linkUrl}
                     onChange={(e) => setLinkUrl(e.target.value)}
-                    placeholder="https://youtube.com/watch?v=..."
+                    placeholder="https://youtube.com/watch?v=... or https://en.wikipedia.org/..."
                     className="w-full p-4 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-zinc-200 text-sm"
                   />
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={!linkUrl}
-                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-sm"
+                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={!linkUrl.trim() || isUploading}
+                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
                   >
-                    Open Preview
+                    {isUploading ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : 'Process Link'}
                   </motion.button>
                 </form>
               )}
@@ -712,7 +741,8 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
                 </div>
               )}
             </motion.div>
-          </div>
+          </div>,
+          document.body
         )}
       </AnimatePresence>
 
@@ -738,6 +768,8 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
             type={richPreview.type}
             content={richPreview.content}
             onClose={() => setRichPreview(null)}
+            onStartStudy={onStartStudy}
+            activeSpaceId={activeSpaceId}
           />
         )}
       </AnimatePresence>

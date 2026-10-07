@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2, Play, Circle, AlertTriangle } from 'lucide-react';
 import api from '../utils/api';
@@ -59,8 +60,8 @@ const PipelineVisualizer = ({ progressId, onComplete, onClose }) => {
   const completedStepsCount = steps.filter(s => s.status === 'done').length;
   const percentage = Math.round((completedStepsCount / steps.length) * 100);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-md">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-md">
       <motion.div
         initial={{ opacity: 0, scale: 0.9, y: 30 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -164,7 +165,8 @@ const PipelineVisualizer = ({ progressId, onComplete, onClose }) => {
           </div>
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

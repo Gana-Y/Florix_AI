@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from '../components/Sidebar';
 import {
   Book, Clock, Star, Sun, Moon, ArrowRight, Menu,
-  TrendingUp, Bookmark, ChevronLeft, ChevronRight,
+  TrendingUp, Bookmark, ChevronLeft, ChevronRight, CalendarCheck,
 } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -19,11 +19,16 @@ import ChatPage         from '../components/ChatPage';
 import ProfileTab       from '../components/ProfileTab';
 import BookmarksTab     from '../components/BookmarksTab';
 import ProgressStats    from '../components/ProgressStats';
+import AdaptiveStudyPlanner from '../components/AdaptiveStudyPlanner';
+import ExamWorkspace       from '../components/ExamWorkspace';
+import MetacognitiveDebugger from '../components/MetacognitiveDebugger';
+import VivaWorkspace        from '../components/VivaWorkspace';
 import PricingTab       from '../components/PricingTab';
 import AdminPanel       from '../components/AdminPanel';
 import SystemMonitor    from '../components/SystemMonitor';
 import ProvideFeedbackModal from '../components/ProvideFeedbackModal';
 import SpaceWorkspaceHub from '../components/SpaceWorkspaceHub';
+import NotificationCenter from '../components/NotificationCenter';
 import api from '../utils/api';
 
 // ── Color Map ─────────────────────────────────────────────────────────────────
@@ -43,7 +48,7 @@ const tabVariants = {
 
 // ── Standard scrollable tab wrapper ─────────────────────────────────────────
 const ScrollPane = ({ children }) => (
-  <div data-lenis-prevent className="flex-1 w-full overflow-y-auto overflow-x-hidden custom-scrollbar">
+  <div data-lenis-prevent className="flex-1 w-full overflow-y-auto overflow-x-hidden no-scrollbar">
     <div className="w-full max-w-6xl mx-auto px-5 md:px-8 py-6">
       {children}
     </div>
@@ -52,7 +57,7 @@ const ScrollPane = ({ children }) => (
 
 // ── Centered pane (vertically + horizontally) for workspace-style tabs ────────
 const CenteredPane = ({ children, maxWidth = 'max-w-3xl' }) => (
-  <div data-lenis-prevent className="flex-1 w-full overflow-y-auto overflow-x-hidden custom-scrollbar">
+  <div data-lenis-prevent className="flex-1 w-full overflow-y-auto overflow-x-hidden no-scrollbar">
     <div className={`w-full ${maxWidth} mx-auto px-5 md:px-8 py-8 min-h-full flex flex-col`}>
       {children}
     </div>
@@ -81,6 +86,13 @@ const HomeTab = ({ user, stats, statsLoading, setActiveTab }) => {
           <p className="text-slate-500 dark:text-zinc-400 mt-1 text-base">Ready to accelerate your learning today?</p>
         </div>
         <div className="flex gap-3">
+          <motion.button
+            whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
+            onClick={() => setActiveTab('Study Planner')}
+            className="px-4 py-2.5 bg-white/90 dark:bg-zinc-900/90 text-slate-700 dark:text-zinc-200 rounded-2xl font-bold shadow-md hover:shadow-lg border border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-2 text-sm transition-all"
+          >
+            <CalendarCheck size={16} className="text-purple-500" /> Study Plan
+          </motion.button>
           <motion.button
             whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
             onClick={() => setActiveTab('Progress')}
@@ -202,13 +214,17 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
   const [activeSpaceId, setActiveSpaceId]   = useState(null);
   const [selectedChatId, setSelectedChatId] = useState(null);
 
-  // Fetch stats once
+  // Fetch stats once; if unauthenticated, ensure clean logout & redirect
   useEffect(() => {
+    if (!localStorage.getItem('token')) {
+      handleLogout();
+      return;
+    }
     api.get('/stats')
       .then(r => setStats(r.data))
       .catch(err => console.error('Stats fetch failed', err))
       .finally(() => setStatsLoading(false));
-  }, []);
+  }, [handleLogout]);
 
 
 
@@ -224,6 +240,18 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
     window.addEventListener('florix:upgrade-required', handleUpgradeRequired);
     return () => window.removeEventListener('florix:upgrade-required', handleUpgradeRequired);
   }, [addToast]);
+
+  // Clear selectedChatId if the conversation was deleted
+  useEffect(() => {
+    const handleChatDeleted = (e) => {
+      const deletedId = e.detail?.chatId;
+      if (deletedId && selectedChatId === deletedId) {
+        setSelectedChatId(null);
+      }
+    };
+    window.addEventListener('florix:conversation-deleted', handleChatDeleted);
+    return () => window.removeEventListener('florix:conversation-deleted', handleChatDeleted);
+  }, [selectedChatId]);
 
   // Redirect legacy Profile tab to Home (Profile is now accessed via bottom-left popover & modal)
   useEffect(() => {
@@ -363,7 +391,7 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
 
         {/* Top bar — theme toggle + mobile menu (hidden when in New Study Session so StudyInput/StudySession own their clean layouts completely) */}
         {activeTab !== 'New Study Session' && (
-          <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-100/60 dark:border-zinc-800/40 bg-white/40 dark:bg-zinc-950/40 backdrop-blur-sm">
+          <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-100/60 dark:border-zinc-800/40 bg-white/40 dark:bg-zinc-950/40 backdrop-blur-sm relative z-40">
             <button
               onClick={() => setIsMobileSidebarOpen(true)}
               className="md:hidden p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
@@ -376,7 +404,21 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
               {activeTab}
             </span>
 
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-3">
+              <NotificationCenter
+                onOpenSession={(session) => {
+                  window.scrollTo(0, 0);
+                  setStudyData({
+                    title: session.filename || session.title,
+                    summary: session.summary || '',
+                    id: session.id,
+                    initialView: session.initialView || 'summary'
+                  });
+                  setStudyState('result');
+                  handleTabChange('New Study Session');
+                }}
+                currentSessionId={studyData?.id || null}
+              />
               <motion.button
                 whileHover={{ scale: 1.08, rotate: 15 }} whileTap={{ scale: 0.9 }}
                 onClick={toggleTheme}
@@ -390,7 +432,7 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
         )}
 
         {/* ── Tab Views (each gets its own isolated layout) ── */}
-        <div className="flex-1 h-full min-h-0 relative overflow-hidden flex flex-col">
+        <div className="flex-1 h-full min-h-0 relative z-0 overflow-hidden flex flex-col">
           <motion.div
             key={`${activeTab}-${studyState}-${studyData?.id || 'none'}`}
             initial={{ opacity: 0 }}
@@ -511,6 +553,85 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
               {/* ── PROGRESS ── */}
               {activeTab === 'Progress' && (
                 <ScrollPane><ProgressStats /></ScrollPane>
+              )}
+
+              {/* ── ADAPTIVE STUDY PLANNER ── */}
+              {activeTab === 'Study Planner' && (
+                <ScrollPane>
+                  <AdaptiveStudyPlanner
+                    user={user}
+                    onOpenSession={async (sessionId) => {
+                      try {
+                        const res = await api.get(`/library/${sessionId}`);
+                        window.scrollTo(0, 0);
+                        setStudyData({
+                          title: res.data.filename,
+                          summary: res.data.summary,
+                          id: res.data.id
+                        });
+                        setStudyState('result');
+                        handleTabChange('New Study Session');
+                      } catch (_) {
+                        addToast('Failed to load session.', 'error');
+                      }
+                    }}
+                  />
+                </ScrollPane>
+              )}
+
+              {/* ── EXAMS & MOCK ASSESSMENTS ── */}
+              {activeTab === 'Exams' && (
+                <ScrollPane>
+                  <ExamWorkspace
+                    user={user}
+                    onOpenSession={async (sessionId) => {
+                      try {
+                        const res = await api.get(`/library/${sessionId}`);
+                        window.scrollTo(0, 0);
+                        setStudyData({
+                          title: res.data.filename,
+                          summary: res.data.summary,
+                          id: res.data.id
+                        });
+                        setStudyState('result');
+                        handleTabChange('New Study Session');
+                      } catch (_) {
+                        addToast('Failed to load session.', 'error');
+                      }
+                    }}
+                  />
+                </ScrollPane>
+              )}
+
+              {/* ── MISTAKE INTELLIGENCE & METACOGNITIVE DEBUGGER ── */}
+              {activeTab === 'Mistakes' && (
+                <ScrollPane>
+                  <MetacognitiveDebugger user={user} />
+                </ScrollPane>
+              )}
+
+              {/* ── VIVA / ORAL EXAMINATION MODE ── */}
+              {activeTab === 'Viva' && (
+                <ScrollPane>
+                  <VivaWorkspace
+                    user={user}
+                    onOpenSession={async (sessionId) => {
+                      try {
+                        const res = await api.get(`/library/${sessionId}`);
+                        window.scrollTo(0, 0);
+                        setStudyData({
+                          title: res.data.filename,
+                          summary: res.data.summary,
+                          id: res.data.id
+                        });
+                        setStudyState('result');
+                        handleTabChange('New Study Session');
+                      } catch (_) {
+                        addToast('Failed to load session.', 'error');
+                      }
+                    }}
+                  />
+                </ScrollPane>
               )}
 
               {/* ── PRICING ── */}

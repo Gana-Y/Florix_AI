@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 import requests
 from bs4 import BeautifulSoup, Comment
 from youtube_transcript_api import YouTubeTranscriptApi
-from urllib.parse import urlparse, parse_qs, urljoin
+from urllib.parse import urlparse, parse_qs, urljoin, quote
 import chromadb
 import razorpay
 
@@ -39,7 +39,72 @@ from database import (
     User, StudySession, Activity, QuizResult,
     ChatConversation, ChatMessage, Bookmark, PasswordResetToken,
     DocumentChunk, PaymentSubmission, FlashcardProgress,
-    Feedback, Project, LearningEvent
+    Feedback, Project, LearningEvent, VisualArtifact,
+    Reminder, NotificationPreference,
+    StudyPlan, StudyPlanTask,
+    Exam, ExamQuestion, ExamAttempt, ExamAnswer,
+    MistakeRecord,
+    VivaSession, VivaQuestion, VivaTurn
+)
+from notifications import (
+    ReminderCreateRequest,
+    ReminderUpdateRequest,
+    SnoozeRequest,
+    NotificationPreferenceUpdate,
+    ReminderResponse,
+    NotificationCenterResponse,
+    NotificationService,
+)
+from planner import (
+    PlanCreateRequest,
+    PlanUpdateRequest,
+    TaskCreateRequest,
+    TaskUpdateRequest,
+    StudyPlanResponse,
+    StudyPlanTaskResponse,
+    PlanAdaptResponse,
+    StudyPlannerService,
+)
+from exam import (
+    ExamCreateRequest,
+    ExamResponse,
+    ExamQuestionSanitizedResponse,
+    AnswerItem,
+    ExamAnswerSaveRequest,
+    ExamSubmitRequest,
+    ExamAttemptResponse,
+    ExamQuestionReviewResponse,
+    ExamAttemptReviewResponse,
+    ExamService,
+)
+from mistake import (
+    MistakeCategory,
+    PatternState,
+    CitationItem,
+    MistakeAnalyzeRequest,
+    MistakeAnalysisResponse,
+    TargetedPracticeRequest,
+    PracticeQuestionItem,
+    TargetedPracticeResponse,
+    PracticeAnswerItem,
+    PracticeSubmitRequest,
+    PracticeGradedItem,
+    PracticeResultResponse,
+    MistakeService,
+)
+from viva import (
+    VivaMode,
+    VivaStatus,
+    FollowUpType,
+    VivaCreateRequest,
+    VivaAnswerRequest,
+    VivaQuestionResponse,
+    VivaTurnResponse,
+    VivaSessionResponse,
+    VivaResultsResponse,
+    VivaPlanTaskRequest,
+    VivaRemindRequest,
+    VivaService,
 )
 from auth import (
     get_db, get_current_user, create_access_token,
@@ -93,6 +158,23 @@ from intelligence import (
     IntelligenceOrchestrator,
 )
 
+# ── Phase 5 Grounded Visual Learning Engine ──────────────────────────────────
+from visualization import (
+    VisualType,
+    RelationType,
+    VisualReadinessStatus,
+    ReadinessAnalysis,
+    VisualNode,
+    VisualEdge,
+    VisualDocument,
+    VisualizeRequest,
+    VisualArtifactCreate,
+    VisualArtifactUpdate,
+    VisualReadinessAnalyzer,
+    VisualValidator,
+    VisualLearningService,
+)
+
 # ── Slowapi rate limiting ──────────────────────────────────────────────────────
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -120,8 +202,8 @@ api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is not set")
 client = genai.Client(api_key=api_key)
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-MODEL_CASCADE = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"]
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+MODEL_CASCADE = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash"]
 
 # ── Razorpay payment gateway ──────────────────────────────────────────────────
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
@@ -144,9 +226,9 @@ if RAZORPAY_ENABLED:
 if not RAZORPAY_ENABLED:
     logger.warning("⚠️ Razorpay keys not configured — payment endpoints will run in Sandbox Mode.")
 
-# ── ChromaDB client ────────────────────────────────────────────────────────────
 try:
-    chroma_client = chromadb.PersistentClient(path="chroma_db")
+    _chroma_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chroma_db")
+    chroma_client = chromadb.PersistentClient(path=_chroma_path)
     chroma_collection = chroma_client.get_or_create_collection(
         name="document_chunks",
         metadata={"hnsw:space": "cosine"}
@@ -171,6 +253,17 @@ PLAN_LIMITS = {
         "max_speech_words": 150,       # ~1-2 min speaking
         "max_link_chars": 10000,
         "study_guides_per_day": 5,
+        "active_study_plans": 1,
+        "study_plans_per_day": 2,
+        "allowed_plan_modes": ["daily", "weekly", "goal"],
+        "max_planning_days": 7,
+        "exams_per_day": 2,
+        "max_exam_questions": 10,
+        "allowed_exam_modes": ["practice", "topic"],
+        "mistake_analyses_per_day": 10,
+        "ai_practice_generations_per_day": 5,
+        "viva_sessions_per_day": 2,
+        "max_viva_questions": 5,
     },
     "pro": {
         "sessions": 50,
@@ -184,6 +277,17 @@ PLAN_LIMITS = {
         "max_speech_words": 1000,      # ~8-10 min speaking
         "max_link_chars": 50000,
         "study_guides_per_day": 50,
+        "active_study_plans": 3,
+        "study_plans_per_day": 10,
+        "allowed_plan_modes": ["daily", "weekly", "exam", "goal"],
+        "max_planning_days": 60,
+        "exams_per_day": 15,
+        "max_exam_questions": 30,
+        "allowed_exam_modes": ["practice", "mock", "topic", "full_syllabus"],
+        "mistake_analyses_per_day": 100,
+        "ai_practice_generations_per_day": 50,
+        "viva_sessions_per_day": 15,
+        "max_viva_questions": 15,
     },
     "premium": {
         "sessions": -1,
@@ -197,6 +301,17 @@ PLAN_LIMITS = {
         "max_speech_words": -1,        # Unlimited dictation
         "max_link_chars": 150000,
         "study_guides_per_day": -1,
+        "active_study_plans": -1,
+        "study_plans_per_day": -1,
+        "allowed_plan_modes": ["daily", "weekly", "exam", "goal"],
+        "max_planning_days": -1,
+        "exams_per_day": -1,
+        "max_exam_questions": 50,
+        "allowed_exam_modes": ["practice", "mock", "topic", "full_syllabus"],
+        "mistake_analyses_per_day": -1,
+        "ai_practice_generations_per_day": -1,
+        "viva_sessions_per_day": -1,
+        "max_viva_questions": -1,
     },
 }
 
@@ -455,6 +570,10 @@ class LinkRequest(BaseModel):
 
 class TextRequest(BaseModel):
     text: str
+    project_id: Optional[int] = None
+
+class TopicRequest(BaseModel):
+    topic: str
     project_id: Optional[int] = None
 
 class ConversationCreate(BaseModel):
@@ -752,14 +871,19 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
     else:
         truncated = prompt
 
-    if "<untrusted_study_material>" in instruction:
+    if "<untrusted_study_material>" in instruction and not truncated:
+        contents = instruction
+    elif instruction and truncated:
+        contents = f"{instruction}:\n\n{truncated}"
+    elif instruction:
         contents = instruction
     else:
-        contents = f"{instruction}:\n\n{truncated}"
+        contents = truncated
     last_err = None
 
     for model in models_to_try:
         try:
+            logger.info(f"🤖 Invoking Gemini model '{model}' for generation...")
             response = client.models.generate_content(
                 model=model,
                 contents=contents,
@@ -773,14 +897,12 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
             last_err = e
             if _is_quota_or_transient_error(e):
                 logger.warning(f"⚠️ Gemini model '{model}' hit rate limit/quota or transient error ({e}). Cascading to next available model...")
-                continue
             elif (isinstance(e, google_exceptions.NotFound) or
                   (isinstance(e, genai_errors.APIError) and getattr(e, "code", None) == 404)):
                 logger.warning(f"⚠️ Gemini model '{model}' not found (404). Cascading to next available model...")
-                continue
             else:
-                logger.error(f"❌ Gemini non-retryable exception on model '{model}': {e}")
-                break
+                logger.warning(f"⚠️ Gemini error on model '{model}': {e}. Cascading to next available model...")
+            continue
 
     logger.error(f"❌ All generation models in cascade failed. Last error: {last_err}")
     return "The AI engine is currently experiencing high demand or quota limits. Please try again in a few moments."
@@ -845,26 +967,47 @@ def is_youtube_url(url: str) -> bool:
 
 def extract_youtube_video_id(url: str) -> Optional[str]:
     """
-    Extract the 11-character YouTube video ID across all valid formats:
+    Extract the 11-character YouTube video ID across all valid formats,
+    raw IDs, and embedded strings (e.g. 'Source URL: https://youtu.be/...'):
     - https://www.youtube.com/watch?v=ID
     - https://www.youtube.com/watch?feature=shared&v=ID
     - https://youtu.be/ID
     - https://www.youtube.com/shorts/ID
     - https://www.youtube.com/embed/ID
     - https://www.youtube.com/live/ID
+    - Source URL: https://youtu.be/T-D1OfcDW1M?si=...
     """
-    if not url or not is_youtube_url(url):
+    if not url:
         return None
+    raw = str(url).strip()
+
+    # 1. Direct Regex scan across text/url (robust against prefixes and query parameters)
+    match = re.search(r"(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([a-zA-Z0-9_-]{11})", raw)
+    if match:
+        return match.group(1)
+
+    # 2. General v= or /shorts/ or /embed/ pattern
+    match = re.search(r"(?:v=|\/shorts\/|\/embed\/|\/live\/|youtu\.be\/)([a-zA-Z0-9_-]{11})", raw)
+    if match:
+        return match.group(1)
+
+    # 3. Direct 11-character ID
+    if len(raw) == 11 and re.match(r"^[a-zA-Z0-9_-]{11}$", raw):
+        return raw
+
+    # 4. Standard URL parser fallback
     try:
-        parsed = urlparse(url.strip())
+        url_match = re.search(r"https?://[^\s]+", raw)
+        candidate_url = url_match.group(0) if url_match else raw
+        parsed = urlparse(candidate_url)
         netloc = parsed.netloc.lower()
 
-        if netloc == "youtu.be":
+        if "youtu.be" in netloc:
             path_parts = [p for p in parsed.path.split("/") if p]
             if path_parts and len(path_parts[0]) == 11 and re.match(r"^[a-zA-Z0-9_-]{11}$", path_parts[0]):
                 return path_parts[0]
 
-        if netloc == "youtube.com" or netloc.endswith(".youtube.com"):
+        if "youtube.com" in netloc:
             qs = parse_qs(parsed.query)
             if "v" in qs and qs["v"]:
                 candidate = qs["v"][0]
@@ -876,11 +1019,6 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
                 candidate = path_parts[1]
                 if len(candidate) == 11 and re.match(r"^[a-zA-Z0-9_-]{11}$", candidate):
                     return candidate
-
-        # Robust regex fallback
-        match = re.search(r"(?:v=|\/shorts\/|\/embed\/|\/live\/|youtu\.be\/)([a-zA-Z0-9_-]{11})", url)
-        if match:
-            return match.group(1)
     except Exception as e:
         logger.warning(f"Error parsing YouTube video ID from {url}: {e}")
     return None
@@ -1951,6 +2089,86 @@ def check_plan_limit(user: User, resource: str, db: Session, value: Optional[flo
                 status_code=413,
                 detail=f"Spoken word count ({words} words) exceeds your {plan.upper()} plan limit of {limit} words. Upgrade to Pro for 1,000 words or Premium for unlimited dictation."
             )
+    elif resource == "active_study_plans":
+        count = db.query(StudyPlan).filter(
+            StudyPlan.user_id == user.id,
+            StudyPlan.status == "active"
+        ).count()
+        if count >= limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Active study plan limit ({limit}) reached for {plan.upper()} plan. Upgrade to manage multiple study plans simultaneously."
+            )
+    elif resource == "study_plans_per_day":
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        count = db.query(StudyPlan).filter(
+            StudyPlan.user_id == user.id,
+            StudyPlan.created_at >= today_start
+        ).count()
+        if count >= limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Daily study plan generation limit ({limit}) reached for {plan.upper()} plan. Upgrade to generate more plans today."
+            )
+    elif resource == "exams_per_day":
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        count = db.query(ExamAttempt).filter(
+            ExamAttempt.user_id == user.id,
+            ExamAttempt.started_at >= today_start
+        ).count()
+        if count >= limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Daily exam limit ({limit}) reached for {plan.upper()} plan. Upgrade or try again tomorrow."
+            )
+    elif resource == "max_exam_questions":
+        requested_count = int(value or 10)
+        if requested_count > limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Requested question count ({requested_count}) exceeds the {plan.upper()} plan maximum of {limit} questions. Upgrade to increase question limits."
+            )
+    elif resource == "mistake_analyses_per_day":
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        count = db.query(MistakeRecord).filter(
+            MistakeRecord.user_id == user.id,
+            MistakeRecord.created_at >= today_start
+        ).count()
+        if count >= limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Daily mistake analysis limit ({limit}) reached for {plan.upper()} plan. Upgrade or try again tomorrow."
+            )
+    elif resource == "ai_practice_generations_per_day":
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        count = db.query(Activity).filter(
+            Activity.user_id == user.id,
+            Activity.action == "Mistake Targeted Practice",
+            Activity.timestamp >= today_start
+        ).count()
+        if count >= limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Daily targeted practice generation limit ({limit}) reached for {plan.upper()} plan. Upgrade or try again tomorrow."
+            )
+    elif resource == "viva_sessions_per_day":
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        count = db.query(VivaSession).filter(
+            VivaSession.user_id == user.id,
+            VivaSession.created_at >= today_start
+        ).count()
+        if count >= limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Daily viva practice limit ({limit}) reached for {plan.upper()} plan. Upgrade or try again tomorrow."
+            )
+    elif resource == "max_viva_questions":
+        requested_count = int(value or 5)
+        if requested_count > limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Requested question count ({requested_count}) exceeds the {plan.upper()} plan maximum of {limit} viva questions. Upgrade to increase question limits."
+            )
 
 
 def log_activity(db: Session, user_id: int, action: str, details: str):
@@ -2723,7 +2941,7 @@ async def get_admin_metrics(
 
 
 @app.get("/admin/system-health", tags=["Admin"])
-async def get_system_health(
+def get_system_health(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -3886,12 +4104,14 @@ def validate_safe_url(url: str) -> Tuple[str, str, int]:
         raise HTTPException(status_code=400, detail="URL cannot be empty.")
 
     clean_url = url.strip()
+    if clean_url and "://" not in clean_url:
+        clean_url = "https://" + clean_url
     if len(clean_url) > MAX_URL_LENGTH:
         raise HTTPException(status_code=400, detail=f"URL too long. Maximum allowed length is {MAX_URL_LENGTH} characters.")
 
     parsed = urlparse(clean_url)
     if not parsed.scheme or parsed.scheme.lower() not in ALLOWED_SCHEMES:
-        raise HTTPException(status_code=400, detail="Invalid URL. Must start with http:// or https://")
+        raise HTTPException(status_code=400, detail="Invalid URL scheme. Must start with http:// or https://")
 
     if not parsed.netloc or not parsed.hostname:
         raise HTTPException(status_code=400, detail="Invalid URL format. Please enter a valid website address (e.g. https://example.com).")
@@ -3951,7 +4171,9 @@ def safe_fetch_url(url: str, timeout: int = 20) -> requests.Response:
     """
     current_url = url
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
 
     visited_urls = set()
@@ -4020,6 +4242,9 @@ def safe_fetch_url(url: str, timeout: int = 20) -> requests.Response:
                     resp._content = b"".join(content_chunks)
             except TypeError:
                 pass
+
+        if getattr(resp, "encoding", None) is None or str(resp.encoding).lower() in ("iso-8859-1", "none"):
+            resp.encoding = getattr(resp, "apparent_encoding", None) or "utf-8"
 
         return resp
 
@@ -4396,6 +4621,74 @@ async def process_text(
     return {"summary": "Processing...", "filename": display_title, "id": new_session.id, "project_id": assigned_space_id}
 
 
+@app.post("/process-topic", tags=["Content"])
+async def process_topic(
+    request: TopicRequest,
+    background_tasks: BackgroundTasks,
+    progress_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    check_plan_limit(current_user, "sessions", db)
+    topic = request.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Topic cannot be empty.")
+
+    update_pipeline_progress(progress_id, 1, "Topic received", f"Initiating study material on: {topic}", "done")
+    update_pipeline_progress(progress_id, 2, "Knowledge synthesis", f"Synthesizing curriculum and foundational concepts for '{topic}'...", "active")
+
+    primer_prompt = (
+        f"You are a master educator and academic researcher. Write a comprehensive, rigorous, and engaging "
+        f"academic study guide on the topic: '{topic}'.\n\n"
+        f"Cover:\n"
+        f"1. Core Definitions & Fundamental Concepts\n"
+        f"2. Historical Context & Background\n"
+        f"3. Key Mechanisms, Principles, and Components\n"
+        f"4. Real-World Applications & Practical Significance\n"
+        f"5. Key Terminology & Definitions\n"
+        f"6. Summary & High-Yield Exam Takeaways\n\n"
+        f"Write at least 600-800 words of substantive, high-quality educational text with clear headings, lists, and explanations."
+    )
+    primer_text = generate_with_fallback(topic, primer_prompt)
+    if not primer_text or len(primer_text.strip()) < 50:
+        primer_text = f"# Study Guide: {topic}\n\nComprehensive exploration and fundamental analysis of {topic}."
+
+    update_pipeline_progress(progress_id, 2, "Knowledge synthesis", "Curriculum synthesized successfully", "done")
+
+    display_title = topic[:80].title()
+    content_hash_val = hashlib.sha256(primer_text.encode("utf-8", errors="replace")).hexdigest()
+
+    assigned_space_id = ensure_session_space(db, current_user.id, request.project_id, display_title, "topic")
+
+    new_session = StudySession(
+        filename=display_title,
+        ai_title=display_title,
+        summary="Processing...",
+        content=primer_text,
+        user_id=current_user.id,
+        source_type="topic",
+        content_hash=content_hash_val,
+        category="Academic Study",
+        timeline=[{"event": "Topic Created", "timestamp": datetime.utcnow().isoformat(), "detail": f"Generated curriculum on: {topic}"}],
+        project_id=assigned_space_id,
+        doc_metadata={"topic": topic, "source": "direct_query"}
+    )
+    db.add(new_session)
+    log_activity(db, current_user.id, "Topic Session Created", f"Initiated study on: {display_title}")
+    db.commit()
+    db.refresh(new_session)
+
+    background_tasks.add_task(
+        process_upload_in_background,
+        session_id=new_session.id,
+        source_type="text",
+        text_content=primer_text,
+        progress_id=progress_id
+    )
+
+    return {"summary": "Processing...", "filename": display_title, "id": new_session.id, "project_id": assigned_space_id}
+
+
 # =============================================================================
 # QUIZ & FLASHCARD GENERATION (Phase 5 — AI)
 # =============================================================================
@@ -4760,7 +5053,7 @@ async def chat_with_document(
         generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
         grounded_res = generator.generate(
             query=request.message,
-            context="",
+            context=request.context_text or "",
             citations=[],
             response_style=request.response_style or "balanced",
             history=request.history or []
@@ -5601,8 +5894,15 @@ def share_study_session(
     if not session:
         raise HTTPException(status_code=404, detail="Study session not found or you do not have permission to access it.")
 
-    if not session.summary:
-        raise HTTPException(status_code=400, detail="Cannot share this session because it has no summary content yet.")
+    has_shareable_content = bool(
+        (session.summary and session.summary.strip() and session.summary.strip().lower() != "processing...")
+        or (session.content and session.content.strip())
+        or (session.doc_metadata and isinstance(session.doc_metadata, dict))
+        or session.flashcards
+        or session.quiz_data
+    )
+    if not has_shareable_content:
+        raise HTTPException(status_code=400, detail="Cannot share this session because it has no study content yet.")
 
     if not session.share_token:
         session.share_token = secrets.token_urlsafe(16)
@@ -5666,24 +5966,45 @@ def get_learning_timeline(
         raise HTTPException(status_code=404, detail="Study session not found or unauthorized")
 
     doc_meta = dict(session.doc_metadata or {})
-    if "learning_timeline" in doc_meta and isinstance(doc_meta["learning_timeline"], dict):
+
+    # Auto-extract and repair video_id if missing or empty
+    yt_id = doc_meta.get("video_id") or ""
+    if not yt_id:
+        candidates = [
+            doc_meta.get("source_url", ""),
+            doc_meta.get("canonical_url", ""),
+            session.filename or "",
+            session.content or "",
+        ]
+        if session.timeline:
+            for ev in session.timeline:
+                candidates.append(ev.get("detail", ""))
+        for cand in candidates:
+            found_id = extract_youtube_video_id(cand)
+            if found_id:
+                yt_id = found_id
+                break
+
+    if yt_id:
+        doc_meta["video_id"] = yt_id
+
+    # If timeline is already cached, return immediately with verified thumbnail & video_id
+    if "learning_timeline" in doc_meta and isinstance(doc_meta["learning_timeline"], dict) and len(doc_meta["learning_timeline"].get("sections", [])) > 0:
         tl = dict(doc_meta["learning_timeline"])
+        from content.timeline import get_youtube_thumbnail_url
+        if yt_id:
+            tl["video_id"] = yt_id
+            if not tl.get("thumbnail_url") or "vi//hqdefault" in tl.get("thumbnail_url", ""):
+                tl["thumbnail_url"] = get_youtube_thumbnail_url(yt_id)
+        doc_meta["learning_timeline"] = tl
+        session.doc_metadata = doc_meta
+        db.commit()
+
         tl["progress"] = doc_meta.get("learning_timeline_progress", {})
         return tl
 
     # Generate on demand
     from content.timeline import detect_learning_sections
-    yt_id = doc_meta.get("video_id", "")
-    if not yt_id:
-        yt_id = extract_youtube_video_id(session.filename) or ""
-        if not yt_id and session.timeline:
-            for ev in session.timeline:
-                det = ev.get("detail", "")
-                if "youtube.com" in det or "youtu.be" in det:
-                    yt_id = extract_youtube_video_id(det) or ""
-                    if yt_id:
-                        break
-
     timeline_data = detect_learning_sections(
         raw_transcript=session.content or session.summary or "",
         video_title=session.ai_title or session.filename,
@@ -5981,6 +6302,7 @@ def get_shared_session(share_token: str, request: Request, db: Session = Depends
         "notes": session.notes or "",
         "quiz_data": session.quiz_data or [],
         "flashcards": session.flashcards or [],
+        "doc_metadata": session.doc_metadata or {},
         "share_type": share_type
     }
 
@@ -6335,6 +6657,61 @@ def agent_get_user_learning_stats(user_id: int, db: Session) -> str:
     return f"Total study sessions uploaded: {total_sessions}\nQuizzes completed: {total_quizzes}\nAverage quiz score: {avg_score}%\nSaved bookmarks: {bookmarks_count}"
 
 
+def agent_generate_image(prompt: str) -> str:
+    """Generate an educational visual/diagram representation URL using Pollinations AI."""
+    cleaned = prompt.strip("\"' ").replace("\n", " ")
+    cleaned_prompt = re.sub(r"[,\"\']+", " ", cleaned).strip()
+    encoded = quote(cleaned_prompt[:120])
+    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=680&height=400&nologo=true"
+    return f"![{cleaned[:60]}]({image_url})"
+
+
+def generate_conversation_title(message: str, reply: str = "") -> str:
+    """Generate a clean, professional 2-5 word conceptual topic title like ChatGPT / Claude."""
+    clean_msg = message.strip()
+    if not clean_msg:
+        return "New Chat"
+
+    # Fast check: If the message is purely a greeting or trivial pleasantry, keep as "New Chat"
+    if re.match(r"(?i)^(hi|hello|hey|hey\s+there|hiya|greetings?|good\s+(morning|afternoon|evening|day)|yo|sup|test|can\s+you\s+hear\s+me|help|start)[!.? ]*$", clean_msg):
+        return "New Chat"
+
+    # Fast heuristic extraction for fallback
+    cleaned = re.sub(
+        r"(?i)^(can you (?:please )?explain |could you (?:please )?explain |tell me about |please explain |i want to know about |what do you know about |explain |help me with |could you give me |how to |what about |give me the |show me the |describe )+",
+        "",
+        clean_msg
+    ).strip()
+    cleaned = re.sub(r"(?i)^(what is |what are |how does |how do )+", "", cleaned).strip()
+    cleaned = re.sub(r"[?!.,;:\"]+", "", cleaned).strip()
+    words = cleaned.split()
+    fallback_title = (" ".join(words[:4])).title() if words else "Study Discussion"
+
+    try:
+        clean_reply = re.sub(r"```[\s\S]*?```", "", reply).strip()
+        prompt = (
+            f"Generate a concise, professional 2 to 4 word topic title in Title Case for this academic chat conversation.\n"
+            f"User query: \"{clean_msg[:300]}\"\n"
+            f"Assistant response preview: \"{clean_reply[:300]}\"\n\n"
+            f"Rules:\n"
+            f"- Return ONLY the 2 to 4 word topic title in Title Case (e.g., 'Matrix Transformations', 'Quantum Computing Principles', 'RAG Architecture Overview', 'Binary Search Implementation').\n"
+            f"- Do not include quotation marks, markdown, or punctuation.\n"
+            f"- Never output generic filler words like 'Introduction', 'Question', 'Discussion', 'Chat', 'Help', 'Overview', 'Academic Tutor Introduction'.\n"
+            f"- Never repeat filler phrases like 'What Is', 'How To', 'Can You'.\n"
+            f"- Focus strictly on the core conceptual subject or question asked by the student."
+        )
+        system_instr = "You are an intelligent chat titling engine. Output ONLY the 2-4 word topic title in Title Case with no surrounding punctuation or quotes."
+        generated = generate_with_fallback(prompt, system_instr)
+        cleaned_title = generated.strip("\"'#* \n\r\t.")
+        if cleaned_title and len(cleaned_title) <= 60 and len(cleaned_title.split()) <= 6:
+            if not re.match(r"(?i)^(academic\s+tutor\s+introduction|tutor\s+introduction|introduction|general\s+discussion|study\s+discussion|new\s+chat)$", cleaned_title):
+                return cleaned_title
+    except Exception as ex:
+        logger.warning(f"Failed to generate AI title: {ex}")
+
+    return fallback_title[:50]
+
+
 @app.post("/conversations/{conv_id}/message", tags=["Chat"])
 def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_plan_limit(current_user, "chats_per_day", db)
@@ -6356,7 +6733,16 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
         space = db.query(Project).filter(Project.id == conv.project_id, Project.user_id == current_user.id).first()
         if space and space.sessions:
             doc_summaries = "\n".join([f"- [{s.source_type.upper()}] '{s.filename}': {s.summary[:350]}..." for s in space.sessions[:5]])
-            space_knowledge = f"\n\nCURRENT SPACE CONTEXT ({space.icon or '📁'} {space.name}):\nThis chat is inside the '{space.name}' Space. The student has uploaded these study materials in this Space:\n{doc_summaries}\nReference and ground your answers in these study materials when relevant.\n"
+            space_knowledge = (
+                f"\n\nCURRENT SPACE CONTEXT ({space.icon or '📁'} {space.name}):\n"
+                f"This chat is inside the '{space.name}' Space. The student has uploaded these study materials in this Space:\n"
+                f"{doc_summaries}\n"
+                f"IMPORTANT SPACE CONTEXT RULES:\n"
+                f"- Ground your answers in these study materials ONLY when the user's question directly relates to or asks about the uploaded materials or their specific subject matter.\n"
+                f"- If the user is asking a general conceptual question or follow-up from the active conversation (e.g. asking for explanations, diagrams, flows, or images of topics discussed previously in the conversation), prioritize the ongoing Conversation History over background space documents.\n"
+                f"- When pronouns ('it', 'this', 'that', 'its') or follow-ups are used, ALWAYS resolve them using the recent Conversation History first before checking space materials.\n"
+                f"- Do NOT bleed or incorporate background space details, keywords, file titles, or values into unrelated conversation topics or diagram styling.\n"
+            )
 
     # 🤖 ReAct Agent Loop
     max_loops = 2
@@ -6366,13 +6752,26 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
 
     for loop in range(max_loops):
         agent_instruction = (
-            f"You are Florix AI, an advanced Agentic Chat Assistant with direct database tool access. "
-            f"If you need to query database stats or search documents to answer the user, write EXACTLY the tool call command and nothing else. "
-            f"If you already have the tool output data or do not need database tools, respond normally as a helpful AI tutor. "
-            f"Available tools:\n"
-            f"- [CALL_TOOL: search_user_library(\"search_query\")]\n"
-            f"- [CALL_TOOL: get_session_details(session_id_integer)]\n"
-            f"- [CALL_TOOL: get_user_learning_stats()]\n\n"
+            "You are Florix AI, an elite academic AI tutor, cognitive learning engine, and systems architect.\n\n"
+            "CRITICAL SCIENTIFIC GROUNDING & VISUALIZATION PROTOCOL:\n"
+            "1. ZERO HALLUCINATED / DECORATIVE DIFFUSION ART FOR TECHNICAL CONCEPTS:\n"
+            "   - NEVER output abstract, futuristic, or decorative text-to-image generator links for computer science architectures, data pipelines, algorithms, or academic technical concepts. Generic image generators produce ungrounded alien scribbles, glowing starbursts, and fake gibberish labels with zero academic value.\n"
+            "   - For ALL system architectures, workflows, algorithms, pipelines, and technical concepts (e.g. RAG architecture, neural networks, compiler pipelines, database indexing, photosynthesis stages), your visual medium is EXCLUSIVELY clean, publication-grade Mermaid diagrams (```mermaid blocks) and step-by-step architectural schematics.\n"
+            "   - Every node, box, arrow, and label in your Mermaid diagrams MUST be technically grounded, legible, and accurate.\n\n"
+            "2. WHEN ASKED FOR A VISUAL, DIAGRAM, OR IMAGE OF A TECHNICAL CONCEPT (e.g., 'could you give me the image of it?', 'show me a diagram'):\n"
+            "   - Provide an in-depth, multi-phase Mermaid flowchart using subgraphs to clearly separate stages (for example, in RAG: Offline Document Ingestion & Chunking vs. Online Hybrid Retrieval vs. Augmented Generation & Citation Verification).\n"
+            "   - Detail the exact data flow: documents, chunking, embeddings, vector database, similarity search, prompt augmentation, LLM inference, and validation.\n"
+            "   - Provide a numbered, rigorous technical walkthrough of each pipeline stage.\n"
+            "   - DO NOT embed decorative or abstract image links that produce hallucinated sci-fi graphics.\n\n"
+            "3. PRONOUN AND CONTEXT AWARENESS:\n"
+            "   - Always inspect the preceding conversation history to resolve pronouns ('it', 'that', 'this'). If the user previously asked about RAG and then asks 'could you give me the image of it?', 'it' refers directly to RAG!\n"
+            "   - Do NOT confuse background uploaded files with the topic of the current conversation.\n\n"
+            "4. AVAILABLE TOOLS:\n"
+            "   - If you need to search the database, emit EXACTLY the tool call command:\n"
+            "     - [CALL_TOOL: search_user_library(\"search_query\")]\n"
+            "     - [CALL_TOOL: get_session_details(session_id_integer)]\n"
+            "     - [CALL_TOOL: get_user_learning_stats()]\n"
+            "   - If you already have the required knowledge, respond directly in clear, beautifully formatted Markdown.\n\n"
             f"{f'Previous Tool Call Results:\n' + chr(10).join(tool_results) if tool_results else ''}"
         )
 
@@ -6395,6 +6794,9 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
                     res = agent_get_session_details(sid, current_user.id, db)
                 elif tool_name == "get_user_learning_stats":
                     res = agent_get_user_learning_stats(current_user.id, db)
+                elif tool_name == "generate_image":
+                    prompt_arg = tool_args_raw.strip("\"'")
+                    res = agent_generate_image(prompt_arg)
                 else:
                     res = f"Error: Tool '{tool_name}' is not recognized."
             except Exception as ex:
@@ -6407,15 +6809,98 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             # Answer is direct, break out of tool loop
             break
 
+    # Defensive post-filter against stubborn LLM canned image refusals
+    canned_refusal_patterns = [
+        r"i (?:don't|do not) have the ability to (?:directly )?(?:render|output|generate) image(?:s)?",
+        r"i am unable to (?:render|display|output|generate) image(?:s)?",
+        r"as an ai (?:text )?model, I cannot (?:provide|render|generate) image(?:s)?"
+    ]
+    if any(re.search(p, reply, re.IGNORECASE) for p in canned_refusal_patterns):
+        logger.warning("Detected canned image refusal in reply; repairing with grounded Mermaid architecture diagram.")
+        prev_user_msgs = [m.content for m in recent if m.role == "user"]
+        topic_str = ""
+        for m_text in reversed(prev_user_msgs):
+            cleaned = re.sub(r"(?i)(could you|can you|please|give me|show me|the|image|of|it|this|that|what is|tell me about|\?|\.)", "", m_text).strip()
+            if cleaned and len(cleaned) > 2:
+                topic_str = cleaned
+                break
+        if not topic_str:
+            topic_str = "System Architecture"
+
+        repair_msg = (
+            f"Here is the grounded technical architecture diagram for **{topic_str}**:\n\n"
+            f"```mermaid\nflowchart TD\n"
+            f"    subgraph Ingestion[\"1. Ingestion & Indexing Pipeline\"]\n"
+            f"        A[\"Documents & Knowledge Sources\"] --> B[\"Semantic Chunking Engine\"]\n"
+            f"        B --> C[\"Vector Embedding Model\"]\n"
+            f"        C --> D[(\"Vector Database & Index Store\")]\n"
+            f"    end\n"
+            f"    subgraph Retrieval[\"2. Hybrid Retrieval Pipeline\"]\n"
+            f"        Q[\"User Query\"] --> QE[\"Query Embedding\"]\n"
+            f"        QE --> D\n"
+            f"        D -->|Top-K Grounded Chunks| AG[\"Context Augmentation Engine\"]\n"
+            f"    end\n"
+            f"    subgraph Generation[\"3. Augmented Generation\"]\n"
+            f"        Q --> AG\n"
+            f"        AG --> LLM[\"LLM Generation Layer\"]\n"
+            f"        LLM --> R[\"Verified Grounded Response\"]\n"
+            f"    end\n"
+            f"```\n\n"
+        )
+        for p in canned_refusal_patterns:
+            reply = re.sub(p, "", reply, flags=re.IGNORECASE)
+        reply = repair_msg + "\n" + reply.strip()
+
     ai_msg = ChatMessage(role="assistant", content=reply, conversation_id=conv_id)
     db.add(ai_msg)
 
-    if conv.title in ("New Chat", "New Conversation"):
-        conv.title = data.message[:50] + ("..." if len(data.message) > 50 else "")
+    # 🏷️ Smart ChatGPT / Claude Topic Titling Lifecycle
+    user_msgs = [m for m in conv.messages if m.role == "user"]
+    title_str = (conv.title or "").strip()
+    is_generic_title = (
+        not title_str
+        or title_str in ("New Chat", "New Conversation", "New Discussion", "Florix AI Chat", "New Subchat", "Discussion & Q&A", "Untitled", "Chat", "Study Discussion")
+        or bool(re.match(r"(?i)^(hi|hello|hey|hiya|greetings?|welcome|intro|introduction|academic\s+tutor\s+introduction|tutor\s+introduction|study\s+discussion|general\s+discussion|new\s+chat)[!.? ]*$", title_str))
+        or (len(title_str.split()) <= 1 and len(title_str) <= 6)
+    )
+    clean_incoming_msg = data.message.strip()
+    is_greeting_message = bool(re.match(r"(?i)^(hi|hello|hey|hey\s+there|hiya|greetings?|good\s+(morning|afternoon|evening|day)|yo|sup|test|can\s+you\s+hear\s+me|help|start)[!.? ]*$", clean_incoming_msg))
+
+    should_update_title = is_generic_title or (len(user_msgs) <= 3 and not is_greeting_message)
+    if should_update_title:
+        try:
+            if is_greeting_message and len(user_msgs) <= 1:
+                smart_title = "New Chat"
+            else:
+                smart_title = generate_conversation_title(data.message, reply)
+            if smart_title and smart_title != conv.title:
+                conv.title = smart_title
+        except Exception as te:
+            logger.warning(f"Error auto-titling conversation: {te}")
+
     conv.updated_at = datetime.utcnow()
     db.commit()
 
     return {"reply": reply, "conv_id": conv_id, "title": conv.title}
+
+
+@app.post("/conversations/{conv_id}/auto-title", tags=["Chat"])
+def auto_title_conversation(conv_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Automatically generate a conceptual topic title for an existing conversation."""
+    conv = db.query(ChatConversation).filter(ChatConversation.id == conv_id, ChatConversation.user_id == current_user.id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    substantive_user_msg = next(
+        (m.content for m in conv.messages if m.role == "user" and not re.match(r"(?i)^(hi|hello|hey|good\s+morning|can\s+you\s+hear\s+me)[!.? ]*$", m.content.strip())),
+        None
+    )
+    target_user_msg = substantive_user_msg or next((m.content for m in conv.messages if m.role == "user"), "")
+    first_ai_msg = next((m.content for m in conv.messages if m.role == "assistant"), "")
+    if target_user_msg:
+        conv.title = generate_conversation_title(target_user_msg, first_ai_msg)
+        conv.updated_at = datetime.utcnow()
+        db.commit()
+    return {"id": conv.id, "title": conv.title}
 
 
 @app.delete("/conversations/{conv_id}", tags=["Chat"])
@@ -6454,6 +6939,1261 @@ def get_user_chat_count(db: Session = Depends(get_db), current_user: User = Depe
         "limit": limit,
         "remaining": remaining
     }
+
+
+
+# =============================================================================
+# PHASE 5 — GROUNDED VISUAL LEARNING, CONCEPT MAPPING & KNOWLEDGE MAP
+# =============================================================================
+
+@app.post("/study/visualize/readiness", tags=["Visual Learning"])
+def check_visual_readiness(payload: dict):
+    """
+    Evaluates whether provided text has sufficient semantic structure/density
+    to generate an academic visual.
+    """
+    raw_text = payload.get("text", "")
+    raw_type = payload.get("visual_type", "concept_map")
+    try:
+        vtype = VisualType(raw_type)
+    except ValueError:
+        vtype = VisualType.CONCEPT_MAP
+    analysis = VisualLearningService.analyze_readiness(raw_text, vtype)
+    return analysis.model_dump()
+
+
+@app.post("/study/{session_id}/visualize", response_model=VisualDocument, tags=["Visual Learning"])
+def generate_visual_artifact(
+    session_id: int,
+    request: VisualizeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generates a grounded academic visual (concept map, flowchart, mind map, hierarchy,
+    comparison, process, or timeline) with learner topic mastery overlay and citations.
+    """
+    return VisualLearningService.generate_grounded_visual(
+        session_id=session_id,
+        user_id=current_user.id,
+        request=request,
+        db=db,
+        llm_generate_fn=generate_with_fallback,
+        retriever_fn=retrieve_relevant_chunks
+    )
+
+
+@app.get("/study/{session_id}/concept-map", response_model=VisualDocument, tags=["Visual Learning"])
+def get_session_concept_map(
+    session_id: int,
+    include_mastery: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generates or retrieves a full conceptual ontology map for the entire study session.
+    """
+    req = VisualizeRequest(
+        topic=None,
+        snippet=None,
+        visual_type=VisualType.CONCEPT_MAP,
+        include_mastery=include_mastery
+    )
+    return VisualLearningService.generate_grounded_visual(
+        session_id=session_id,
+        user_id=current_user.id,
+        request=req,
+        db=db,
+        llm_generate_fn=generate_with_fallback,
+        retriever_fn=retrieve_relevant_chunks
+    )
+
+
+@app.post("/study/{session_id}/visuals", tags=["Visual Learning"])
+def save_visual_artifact(
+    session_id: int,
+    payload: VisualArtifactCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Persists an AI-generated or manually constructed visual learning artifact.
+    """
+    artifact = VisualLearningService.save_artifact(
+        session_id=session_id,
+        user_id=current_user.id,
+        create_data=payload,
+        db=db
+    )
+    return {
+        "id": artifact.id,
+        "title": artifact.title,
+        "visual_type": artifact.visual_type,
+        "visual_data": artifact.visual_data,
+        "is_manual": artifact.is_manual,
+        "is_modified": artifact.is_modified,
+        "version": artifact.version,
+        "created_at": artifact.created_at.isoformat() if artifact.created_at else None,
+        "updated_at": artifact.updated_at.isoformat() if artifact.updated_at else None
+    }
+
+
+@app.get("/study/{session_id}/visuals", tags=["Visual Learning"])
+def list_session_visual_artifacts(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lists all saved visual artifacts for the current study session.
+    """
+    artifacts = VisualLearningService.list_artifacts(
+        session_id=session_id,
+        user_id=current_user.id,
+        db=db
+    )
+    return [
+        {
+            "id": a.id,
+            "title": a.title,
+            "visual_type": a.visual_type,
+            "visual_data": a.visual_data,
+            "is_manual": a.is_manual,
+            "is_modified": a.is_modified,
+            "version": a.version,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "updated_at": a.updated_at.isoformat() if a.updated_at else None
+        }
+        for a in artifacts
+    ]
+
+
+@app.get("/study/{session_id}/visuals/{visual_id}", tags=["Visual Learning"])
+def get_session_visual_artifact(
+    session_id: int,
+    visual_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves a single visual artifact with strict multi-tenant authorization.
+    """
+    a = VisualLearningService.get_artifact(
+        session_id=session_id,
+        visual_id=visual_id,
+        user_id=current_user.id,
+        db=db
+    )
+    return {
+        "id": a.id,
+        "title": a.title,
+        "visual_type": a.visual_type,
+        "visual_data": a.visual_data,
+        "is_manual": a.is_manual,
+        "is_modified": a.is_modified,
+        "version": a.version,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "updated_at": a.updated_at.isoformat() if a.updated_at else None
+    }
+
+
+@app.patch("/study/{session_id}/visuals/{visual_id}", tags=["Visual Learning"])
+def update_session_visual_artifact(
+    session_id: int,
+    visual_id: str,
+    payload: VisualArtifactUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates a visual artifact (manual edits, repositioning nodes, title update).
+    """
+    a = VisualLearningService.update_artifact(
+        session_id=session_id,
+        visual_id=visual_id,
+        user_id=current_user.id,
+        update_data=payload,
+        db=db
+    )
+    return {
+        "id": a.id,
+        "title": a.title,
+        "visual_type": a.visual_type,
+        "visual_data": a.visual_data,
+        "is_manual": a.is_manual,
+        "is_modified": a.is_modified,
+        "version": a.version,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "updated_at": a.updated_at.isoformat() if a.updated_at else None
+    }
+
+
+@app.delete("/study/{session_id}/visuals/{visual_id}", tags=["Visual Learning"])
+def delete_session_visual_artifact(
+    session_id: int,
+    visual_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permanently deletes a visual artifact with multi-tenant verification.
+    """
+    VisualLearningService.delete_artifact(
+        session_id=session_id,
+        visual_id=visual_id,
+        user_id=current_user.id,
+        db=db
+    )
+    return {"message": "Visual artifact deleted successfully", "id": visual_id}
+
+
+# =============================================================================
+# REVISION NOTIFICATION & REMINDER INFRASTRUCTURE ENDPOINTS
+# =============================================================================
+
+@app.get("/notifications", response_model=NotificationCenterResponse, tags=["Notifications & Reminders"])
+def get_notifications_center(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves the complete notification feed for the current learner:
+    - Due reminders (SM-2 spaced revisions + due manual reminders)
+    - Upcoming scheduled reminders
+    - Recent completed/dismissed history
+    - Unread and due item counts
+    - Quiet hours status and active preferences
+    """
+    return NotificationService.get_notification_center(db, current_user.id)
+
+
+@app.post("/notifications/sync-revisions", tags=["Notifications & Reminders"])
+def sync_sm2_revisions_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Synchronizes SM-2 spaced repetition review dates into revision reminders.
+    Zero modification to SM-2 math, intervals, or FlashcardProgress history.
+    """
+    synced = NotificationService.sync_sm2_revisions(db, current_user.id)
+    return {
+        "synced_count": len(synced),
+        "reminders": [NotificationService.to_response(r) for r in synced]
+    }
+
+
+@app.post("/notifications/read-all", tags=["Notifications & Reminders"])
+def mark_all_notifications_read(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Marks all notifications for current user as read.
+    """
+    count = NotificationService.mark_as_read(db, current_user.id, reminder_id=None)
+    return {"marked_read": count}
+
+
+@app.post("/notifications/dismiss-all", tags=["Notifications & Reminders"])
+def dismiss_all_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Dismisses all currently due notifications for current user and moves them to history.
+    """
+    count = NotificationService.dismiss_all_due(db, current_user.id)
+    return {"dismissed_count": count}
+
+
+@app.patch("/notifications/{reminder_id}/read", tags=["Notifications & Reminders"])
+def mark_notification_read(
+    reminder_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Marks a single notification as read with multi-tenant verification.
+    """
+    NotificationService.mark_as_read(db, current_user.id, reminder_id=reminder_id)
+    return {"status": "success", "id": reminder_id, "is_read": True}
+
+
+@app.post("/reminders", response_model=ReminderResponse, status_code=201, tags=["Notifications & Reminders"])
+def create_reminder_endpoint(
+    req: ReminderCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Creates a manual study or revision reminder with multi-tenant authorization.
+    """
+    reminder = NotificationService.create_manual_reminder(db, current_user.id, req)
+    return NotificationService.to_response(reminder)
+
+
+@app.get("/reminders", response_model=List[ReminderResponse], tags=["Notifications & Reminders"])
+def list_reminders_endpoint(
+    status: Optional[str] = None,
+    target_type: Optional[str] = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lists reminders belonging to the current user with optional status and target filtering.
+    """
+    q = db.query(Reminder).filter(Reminder.user_id == current_user.id)
+    if status:
+        q = q.filter(Reminder.status == status)
+    if target_type:
+        q = q.filter(Reminder.target_type == target_type)
+    reminders = q.order_by(Reminder.scheduled_at.desc()).limit(min(limit, 100)).all()
+    return [NotificationService.to_response(r) for r in reminders]
+
+
+@app.get("/reminders/{reminder_id}", response_model=ReminderResponse, tags=["Notifications & Reminders"])
+def get_reminder_endpoint(
+    reminder_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves a single reminder with multi-tenant authorization.
+    """
+    reminder = db.query(Reminder).filter(
+        Reminder.id == reminder_id,
+        Reminder.user_id == current_user.id
+    ).first()
+    if not reminder:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    return NotificationService.to_response(reminder)
+
+
+@app.patch("/reminders/{reminder_id}", response_model=ReminderResponse, tags=["Notifications & Reminders"])
+def update_reminder_endpoint(
+    reminder_id: int,
+    req: ReminderUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates details of a reminder.
+    """
+    reminder = NotificationService.update_reminder(db, current_user.id, reminder_id, req)
+    return NotificationService.to_response(reminder)
+
+
+@app.patch("/reminders/{reminder_id}/snooze", response_model=ReminderResponse, tags=["Notifications & Reminders"])
+def snooze_reminder_endpoint(
+    reminder_id: int,
+    req: SnoozeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Snoozes a reminder without modifying the underlying SM-2 spaced repetition dates.
+    """
+    reminder = NotificationService.snooze_reminder(db, current_user.id, reminder_id, req)
+    return NotificationService.to_response(reminder)
+
+
+@app.patch("/reminders/{reminder_id}/complete", response_model=ReminderResponse, tags=["Notifications & Reminders"])
+def complete_reminder_endpoint(
+    reminder_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Marks a reminder as completed. Spawns next recurring occurrence if daily/weekly.
+    """
+    reminder = NotificationService.complete_reminder(db, current_user.id, reminder_id)
+    return NotificationService.to_response(reminder)
+
+
+@app.patch("/reminders/{reminder_id}/dismiss", response_model=ReminderResponse, tags=["Notifications & Reminders"])
+def dismiss_reminder_endpoint(
+    reminder_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Dismisses a reminder without modifying learning history.
+    """
+    reminder = NotificationService.dismiss_reminder(db, current_user.id, reminder_id)
+    return NotificationService.to_response(reminder)
+
+
+@app.delete("/reminders/{reminder_id}", tags=["Notifications & Reminders"])
+def delete_reminder_endpoint(
+    reminder_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permanently deletes a reminder.
+    """
+    NotificationService.delete_reminder(db, current_user.id, reminder_id)
+    return {"message": "Reminder deleted successfully", "id": reminder_id}
+
+
+@app.get("/user/notification-settings", tags=["Notifications & Reminders"])
+def get_user_notification_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves user notification preferences and quiet hours settings.
+    """
+    pref = NotificationService.get_or_create_preference(db, current_user.id)
+    return {
+        "browser_notifications_enabled": pref.browser_notifications_enabled,
+        "sm2_auto_reminders": pref.sm2_auto_reminders,
+        "quiet_hours_enabled": pref.quiet_hours_enabled,
+        "quiet_hours_start": pref.quiet_hours_start,
+        "quiet_hours_end": pref.quiet_hours_end,
+    }
+
+
+@app.patch("/user/notification-settings", tags=["Notifications & Reminders"])
+def update_user_notification_settings(
+    req: NotificationPreferenceUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates user notification preferences and quiet hours settings.
+    """
+    pref = NotificationService.update_preference(db, current_user.id, req)
+    return {
+        "browser_notifications_enabled": pref.browser_notifications_enabled,
+        "sm2_auto_reminders": pref.sm2_auto_reminders,
+        "quiet_hours_enabled": pref.quiet_hours_enabled,
+        "quiet_hours_start": pref.quiet_hours_start,
+        "quiet_hours_end": pref.quiet_hours_end,
+    }
+
+
+# =============================================================================
+# ADAPTIVE STUDY PLANNER
+# =============================================================================
+
+@app.post("/study-plans", response_model=StudyPlanResponse, tags=["Adaptive Study Planner"])
+def create_study_plan(
+    req: PlanCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generates a personalized, adaptive study plan orchestrating existing learner
+    mastery, SM-2 spaced repetition dates, quiz results, and session intelligence.
+    """
+    # 1. Enforce Subscription Quotas
+    check_plan_limit(current_user, "active_study_plans", db)
+    check_plan_limit(current_user, "study_plans_per_day", db)
+
+    # 2. Enforce Mode & Duration Entitlements
+    plan = current_user.plan or "free"
+    allowed_modes = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get(
+        "allowed_plan_modes", ["daily", "weekly", "goal"]
+    )
+    if not getattr(current_user, "is_admin", False) and req.plan_mode not in allowed_modes:
+        raise HTTPException(
+            status_code=402,
+            detail=f"The '{req.plan_mode.upper()}' study plan mode is available on Pro and Premium plans. Please upgrade to unlock deadline-aware study schedules."
+        )
+
+    max_days = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get("max_planning_days", 7)
+    if not getattr(current_user, "is_admin", False) and max_days != -1:
+        if req.target_date:
+            now_dt = datetime.utcnow()
+            td = req.target_date
+            if td.tzinfo is not None:
+                td = td.astimezone(timezone.utc).replace(tzinfo=None)
+            diff_days = (td - now_dt).days
+            if diff_days > max_days:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Your {plan.upper()} plan supports up to {max_days}-day planning horizon. Upgrade to Pro for 60-day or Premium for unlimited horizons."
+                )
+
+    # 3. Generate Plan
+    plan_obj = StudyPlannerService.generate_plan(db, current_user.id, req)
+    log_activity(db, current_user.id, "Generated Study Plan", f"Mode: {req.plan_mode}, Title: {req.title}")
+    return StudyPlannerService.serialize_plan(plan_obj)
+
+
+@app.get("/study-plans", response_model=List[StudyPlanResponse], tags=["Adaptive Study Planner"])
+def list_study_plans(
+    status: Optional[str] = Query(None, description="Filter by status: active | completed | archived"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lists all study plans for the authenticated learner.
+    """
+    plans = StudyPlannerService.list_plans(db, current_user.id, status=status)
+    return [StudyPlannerService.serialize_plan(p) for p in plans]
+
+
+@app.get("/study-plans/{plan_id}", response_model=StudyPlanResponse, tags=["Adaptive Study Planner"])
+def get_study_plan_details(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves full details of a study plan including all scheduled tasks.
+    Enforces multi-tenant isolation (IDOR protection).
+    """
+    plan = StudyPlannerService.get_plan_or_404(db, current_user.id, plan_id)
+    return StudyPlannerService.serialize_plan(plan)
+
+
+@app.put("/study-plans/{plan_id}", response_model=StudyPlanResponse, tags=["Adaptive Study Planner"])
+def update_study_plan(
+    plan_id: int,
+    req: PlanUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates study plan title, description, time availability, or status.
+    """
+    plan = StudyPlannerService.update_plan(db, current_user.id, plan_id, req)
+    return StudyPlannerService.serialize_plan(plan)
+
+
+@app.delete("/study-plans/{plan_id}", tags=["Adaptive Study Planner"])
+def delete_study_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permanently deletes a study plan and all associated tasks.
+    """
+    StudyPlannerService.delete_plan(db, current_user.id, plan_id)
+    return {"detail": "Study plan deleted successfully", "id": plan_id}
+
+
+@app.post("/study-plans/{plan_id}/adapt", response_model=PlanAdaptResponse, tags=["Adaptive Study Planner"])
+def adapt_study_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Adaptively recalibrates task priorities and dates based on latest quiz
+    accuracy and topic mastery scores.
+    """
+    return StudyPlannerService.adapt_plan(db, current_user.id, plan_id)
+
+
+@app.post("/study-plans/{plan_id}/tasks", response_model=StudyPlanTaskResponse, tags=["Adaptive Study Planner"])
+def add_task_to_plan(
+    plan_id: int,
+    req: TaskCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Allows the learner to add a custom or manual study task into an existing plan.
+    """
+    task = StudyPlannerService.add_manual_task(db, current_user.id, plan_id, req)
+    return StudyPlannerService.serialize_task(task)
+
+
+@app.put("/study-plans/tasks/{task_id}", response_model=StudyPlanTaskResponse, tags=["Adaptive Study Planner"])
+def update_plan_task(
+    task_id: int,
+    req: TaskUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates task parameters (reschedule date, duration, priority).
+    """
+    task = StudyPlannerService.update_task(db, current_user.id, task_id, req)
+    return StudyPlannerService.serialize_task(task)
+
+
+@app.post("/study-plans/tasks/{task_id}/complete", response_model=StudyPlanTaskResponse, tags=["Adaptive Study Planner"])
+def complete_plan_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Marks a study task as completed and increments plan progress.
+    """
+    task = StudyPlannerService.complete_task(db, current_user.id, task_id)
+    return StudyPlannerService.serialize_task(task)
+
+
+@app.post("/study-plans/tasks/{task_id}/skip", response_model=StudyPlanTaskResponse, tags=["Adaptive Study Planner"])
+def skip_plan_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Marks a task skipped and applies intelligent bounded rescheduling.
+    """
+    task = StudyPlannerService.skip_task(db, current_user.id, task_id)
+    return StudyPlannerService.serialize_task(task)
+
+
+@app.delete("/study-plans/tasks/{task_id}", tags=["Adaptive Study Planner"])
+def delete_plan_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Removes a task from the study plan.
+    """
+    StudyPlannerService.delete_task(db, current_user.id, task_id)
+    return {"detail": "Task removed successfully", "id": task_id}
+
+
+@app.post("/study-plans/tasks/{task_id}/remind", response_model=StudyPlanTaskResponse, tags=["Adaptive Study Planner"])
+def schedule_task_reminder(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Connects task to the existing Revision Notification & Reminder Infrastructure.
+    """
+    task = StudyPlannerService.get_task_or_404(db, current_user.id, task_id)
+    if not task.reminder_id:
+        rem_req = ReminderCreateRequest(
+            title=f"Study: {task.title}",
+            message=task.description or "Scheduled task from your Adaptive Study Plan",
+            scheduled_at=task.scheduled_date,
+            session_id=task.session_id,
+            target_type="session" if task.task_type == "study_topic" else "flashcard",
+            target_reference=f"plan_task:{task.id}",
+            recurrence="once"
+        )
+        rem = NotificationService.create_manual_reminder(db, current_user.id, rem_req)
+        task.reminder_id = rem.id
+        db.commit()
+        db.refresh(task)
+    return StudyPlannerService.serialize_task(task)
+
+
+# =============================================================================
+# EXAM / MOCK EXAM ENGINE ROUTES
+# =============================================================================
+
+@app.post("/exams", response_model=ExamResponse, tags=["Exam Engine"])
+def create_exam(
+    req: ExamCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Creates a source-grounded exam blueprint with validated questions.
+    Enforces plan limits on question count and allowed modes.
+    """
+    # Gating & Limits
+    check_plan_limit(current_user, "max_exam_questions", db, value=req.num_questions)
+
+    plan = current_user.plan or "free"
+    allowed_modes = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"]).get(
+        "allowed_exam_modes", ["practice", "topic"]
+    )
+    if not getattr(current_user, "is_admin", False) and req.exam_mode not in allowed_modes:
+        raise HTTPException(
+            status_code=402,
+            detail=f"The '{req.exam_mode}' exam mode requires an upgraded plan. Allowed on {plan.upper()}: {', '.join(allowed_modes)}."
+        )
+
+    return ExamService.create_exam(
+        db=db,
+        user=current_user,
+        req=req,
+        gemini_client=client,
+        model_name=MODEL_NAME,
+        generate_fallback_fn=generate_with_fallback
+    )
+
+
+@app.get("/exams", response_model=List[ExamResponse], tags=["Exam Engine"])
+def list_exams(
+    session_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lists all exams created by the user, optionally filtered by study session.
+    """
+    return ExamService.list_user_exams(db, current_user.id, session_id)
+
+
+@app.get("/exams/{exam_id}", response_model=ExamResponse, tags=["Exam Engine"])
+def get_exam(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves a single exam blueprint with attempt history summary.
+    """
+    exam = ExamService.get_exam_or_404(db, current_user.id, exam_id)
+    return ExamService.serialize_exam(exam)
+
+
+@app.delete("/exams/{exam_id}", tags=["Exam Engine"])
+def delete_exam(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Deletes an exam and cascades to questions, attempts, and answers.
+    """
+    return ExamService.delete_exam(db, current_user.id, exam_id)
+
+
+@app.post("/exams/{exam_id}/start", response_model=ExamAttemptResponse, tags=["Exam Engine"])
+def start_exam_attempt(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Starts an exam attempt or resumes an active in-progress attempt.
+    Returns sanitized questions withholding answers and explanations.
+    """
+    exam = ExamService.get_exam_or_404(db, current_user.id, exam_id)
+    # Check if this will create a new attempt (not resuming)
+    existing = db.query(ExamAttempt).filter(
+        ExamAttempt.exam_id == exam.id,
+        ExamAttempt.user_id == current_user.id,
+        ExamAttempt.status == "in_progress"
+    ).first()
+    if not existing:
+        check_plan_limit(current_user, "exams_per_day", db)
+
+    return ExamService.start_attempt(db, current_user, exam_id)
+
+
+@app.get("/exams/attempts/{attempt_id}", response_model=ExamAttemptResponse, tags=["Exam Engine"])
+def get_active_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves the current active attempt state with sanitized questions,
+    saved answers, and remaining time.
+    """
+    attempt = ExamService.get_attempt_or_404(db, current_user.id, attempt_id)
+    now = datetime.utcnow()
+    # Check if timer has expired
+    if attempt.status == "in_progress" and attempt.expires_at and now > (attempt.expires_at + timedelta(seconds=15)):
+        ExamService.submit_attempt(db, current_user, attempt.id)
+        attempt = ExamService.get_attempt_or_404(db, current_user.id, attempt_id)
+
+    return ExamService.serialize_active_attempt(attempt)
+
+
+@app.put("/exams/attempts/{attempt_id}/answers", tags=["Exam Engine"])
+def save_attempt_answers(
+    attempt_id: int,
+    req: ExamAnswerSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Saves in-progress question responses and review flags.
+    """
+    return ExamService.save_answers(
+        db, current_user, attempt_id, [a.model_dump() for a in req.answers]
+    )
+
+
+@app.delete("/exams/attempts/{attempt_id}", tags=["Exam Engine"])
+@app.post("/exams/attempts/{attempt_id}/cancel", tags=["Exam Engine"])
+def cancel_exam_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cancels and discards an exam attempt, releasing in-progress locks.
+    """
+    return ExamService.cancel_attempt(db, current_user.id, attempt_id)
+
+
+@app.post("/exams/attempts/{attempt_id}/submit", response_model=ExamAttemptReviewResponse, tags=["Exam Engine"])
+def submit_exam_attempt(
+    attempt_id: int,
+    req: Optional[ExamSubmitRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Submits and grades an attempt deterministically, updating topic mastery
+    and recording learning events. Idempotent against duplicate requests.
+    """
+    answers_data = [a.model_dump() for a in req.answers] if req and req.answers else None
+    return ExamService.submit_attempt(db, current_user, attempt_id, answers_data)
+
+
+@app.get("/exams/attempts/{attempt_id}/review", response_model=ExamAttemptReviewResponse, tags=["Exam Engine"])
+def get_attempt_review(
+    attempt_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves comprehensive results, mistake analysis, and citations for a completed attempt.
+    """
+    return ExamService.get_attempt_review(db, current_user.id, attempt_id)
+
+
+@app.post("/exams/{exam_id}/remind", tags=["Exam Engine"])
+def schedule_exam_reminder(
+    exam_id: int,
+    scheduled_at: str = Query(..., description="ISO datetime string"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Schedules an exam reminder using the existing Revision Notification & Reminder Infrastructure.
+    """
+    exam = ExamService.get_exam_or_404(db, current_user.id, exam_id)
+    try:
+        sched_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ISO datetime format for scheduled_at")
+
+    rem_req = ReminderCreateRequest(
+        title=f"Upcoming Exam: {exam.title}",
+        message=f"{exam.exam_mode.capitalize()} Exam ({exam.total_questions} questions, {exam.duration_minutes} min)",
+        scheduled_at=sched_dt,
+        session_id=exam.session_id,
+        target_type="quiz",
+        target_reference=f"exam:{exam.id}",
+        recurrence="once"
+    )
+    rem = NotificationService.create_manual_reminder(db, current_user.id, rem_req)
+    return {"detail": "Exam reminder scheduled successfully", "reminder_id": rem.id}
+
+
+# =============================================================================
+# MISTAKE INTELLIGENCE / METACOGNITIVE DEBUGGER ENDPOINTS
+# =============================================================================
+
+@app.post("/mistakes/analyze", response_model=MistakeAnalysisResponse, tags=["Mistake Intelligence"])
+def analyze_mistake(
+    req: MistakeAnalyzeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Analyzes an incorrect learner response using grounded metacognitive diagnostics.
+    Identifies error taxonomy category, root misconception, correct reasoning,
+    prerequisite concepts, and longitudinal pattern state.
+    """
+    check_plan_limit(current_user, "mistake_analyses_per_day", db)
+    res = MistakeService.analyze_and_record(
+        db=db,
+        user=current_user,
+        req=req,
+        gemini_client=client,
+        model_name=MODEL_NAME
+    )
+    log_activity(db, current_user.id, "Mistake Analyzed", f"Analyzed error for topic {req.topic or 'General'}")
+    return res
+
+
+@app.get("/mistakes", response_model=List[MistakeAnalysisResponse], tags=["Mistake Intelligence"])
+def list_mistakes(
+    session_id: Optional[int] = Query(None),
+    topic: Optional[str] = Query(None),
+    error_category: Optional[str] = Query(None),
+    is_resolved: Optional[bool] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lists tracked mistakes and metacognitive diagnoses for the authenticated learner.
+    """
+    return MistakeService.list_user_mistakes(
+        db=db,
+        user_id=current_user.id,
+        session_id=session_id,
+        topic=topic,
+        error_category=error_category,
+        is_resolved=is_resolved
+    )
+
+
+@app.get("/mistakes/{mistake_id}", response_model=MistakeAnalysisResponse, tags=["Mistake Intelligence"])
+def get_mistake(
+    mistake_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retrieves full metacognitive diagnosis and citations for a specific mistake.
+    """
+    rec = MistakeService.get_mistake_or_404(db, current_user.id, mistake_id)
+    return MistakeService.serialize_mistake(rec)
+
+
+@app.post("/mistakes/{mistake_id}/resolve", response_model=MistakeAnalysisResponse, tags=["Mistake Intelligence"])
+def resolve_mistake(
+    mistake_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Marks a mistake as resolved and advances pattern state to RESOLVED.
+    """
+    return MistakeService.resolve_mistake(db, current_user.id, mistake_id)
+
+
+@app.delete("/mistakes/{mistake_id}", tags=["Mistake Intelligence"])
+def delete_mistake(
+    mistake_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Deletes a tracked mistake record with strict multi-tenant authorization.
+    """
+    return MistakeService.delete_mistake(db, current_user.id, mistake_id)
+
+
+@app.post("/mistakes/{mistake_id}/practice", response_model=TargetedPracticeResponse, tags=["Mistake Intelligence"])
+def generate_targeted_practice(
+    mistake_id: int,
+    req: Optional[TargetedPracticeRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generates targeted practice questions directly addressing the diagnosed misconception
+    using AssessmentEngine and verified source chunks.
+    """
+    check_plan_limit(current_user, "ai_practice_generations_per_day", db)
+    if req is None:
+        req = TargetedPracticeRequest(num_questions=3)
+    res = MistakeService.generate_targeted_practice(
+        db=db,
+        user_id=current_user.id,
+        mistake_id=mistake_id,
+        req=req,
+        gemini_client=client,
+        model_name=MODEL_NAME
+    )
+    log_activity(db, current_user.id, "Mistake Targeted Practice", f"Generated practice for mistake {mistake_id}")
+    return res
+
+
+@app.post("/mistakes/{mistake_id}/practice/submit", response_model=PracticeResultResponse, tags=["Mistake Intelligence"])
+def submit_targeted_practice(
+    mistake_id: int,
+    req: PracticeSubmitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Deterministically grades targeted practice, updates LearnerTopicMastery via LearnerEngine,
+    and updates mistake pattern state to IMPROVING or RESOLVED.
+    """
+    res = MistakeService.submit_targeted_practice(db, current_user.id, mistake_id, req)
+    log_activity(
+        db,
+        current_user.id,
+        "Mistake Practice Completed",
+        f"Completed targeted practice for mistake {mistake_id}: score {res.score}/{res.total_questions}"
+    )
+    return res
+
+
+@app.post("/mistakes/{mistake_id}/plan", tags=["Mistake Intelligence"])
+def schedule_mistake_planner_task(
+    mistake_id: int,
+    plan_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Schedules a weak-area practice task for this mistake into the Adaptive Study Planner.
+    """
+    return MistakeService.schedule_planner_task(db, current_user.id, mistake_id, plan_id)
+
+
+@app.post("/mistakes/{mistake_id}/remind", tags=["Mistake Intelligence"])
+def schedule_mistake_reminder(
+    mistake_id: int,
+    scheduled_at: str = Query(..., description="ISO datetime string"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Schedules a revision reminder for this mistake using the Revision Notification & Reminder Infrastructure.
+    """
+    try:
+        sched_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ISO datetime format for scheduled_at")
+
+    return MistakeService.schedule_notification_reminder(db, current_user.id, mistake_id, sched_dt)
+
+
+# =============================================================================
+# VIVA / ORAL EXAMINATION MODE ENDPOINTS
+# =============================================================================
+
+@app.post("/viva", response_model=VivaSessionResponse, tags=["Viva Mode"])
+def create_viva_session(
+    req: VivaCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Creates an academic viva session with evidence-grounded questions.
+    Enforces daily session and question count subscription limits.
+    """
+    check_plan_limit(current_user, "viva_sessions_per_day", db)
+    check_plan_limit(current_user, "max_viva_questions", db, value=req.total_questions)
+
+    session_res = VivaService.create_viva(
+        db=db,
+        user=current_user,
+        req=req,
+        gemini_client=client,
+        model_name=MODEL_NAME,
+        generate_fallback_fn=None
+    )
+    log_activity(
+        db,
+        current_user.id,
+        "Viva Created",
+        f"Initialized {req.viva_mode} on topic '{req.topic}' ({req.total_questions} questions)"
+    )
+    return session_res
+
+
+@app.get("/viva", response_model=List[VivaSessionResponse], tags=["Viva Mode"])
+def list_viva_sessions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Lists all viva sessions owned by current user."""
+    vivas = db.query(VivaSession).filter(
+        VivaSession.user_id == current_user.id
+    ).order_by(VivaSession.created_at.desc()).all()
+    return [VivaService.serialize_session(v) for v in vivas]
+
+
+@app.get("/viva/{viva_id}", response_model=VivaSessionResponse, tags=["Viva Mode"])
+def get_viva_session(
+    viva_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieves viva session details with tenant isolation."""
+    viva = VivaService.get_viva_or_404(db, current_user.id, viva_id)
+    return VivaService.serialize_session(viva)
+
+
+@app.delete("/viva/{viva_id}", tags=["Viva Mode"])
+def delete_viva_session(
+    viva_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Deletes a viva session and cascades to questions and turns."""
+    viva = VivaService.get_viva_or_404(db, current_user.id, viva_id)
+    db.delete(viva)
+    db.commit()
+    log_activity(db, current_user.id, "Viva Deleted", f"Deleted viva session #{viva_id}")
+    return {"status": "deleted", "viva_id": viva_id}
+
+
+@app.post("/viva/{viva_id}/start", response_model=VivaSessionResponse, tags=["Viva Mode"])
+def start_viva_session(
+    viva_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Starts or resumes a viva session, establishing server-authoritative timers."""
+    session_res = VivaService.start_viva(db, current_user, viva_id)
+    log_activity(db, current_user.id, "Viva Started", f"Started viva session #{viva_id}")
+    return session_res
+
+
+@app.post("/viva/{viva_id}/answer", tags=["Viva Mode"])
+def submit_viva_answer(
+    viva_id: int,
+    req: VivaAnswerRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Submits an oral or typed response.
+    Performs grounded evaluation, manages follow-up branching, and updates mistake intelligence.
+    """
+    res = VivaService.submit_answer(
+        db=db,
+        user=current_user,
+        viva_id=viva_id,
+        req=req,
+        gemini_client=client,
+        model_name=MODEL_NAME,
+        generate_fallback_fn=None
+    )
+    log_activity(
+        db,
+        current_user.id,
+        "Viva Answer Submitted",
+        f"Submitted response for question #{req.question_id} in viva #{viva_id}"
+    )
+    return res
+
+
+@app.post("/viva/{viva_id}/pause", response_model=VivaSessionResponse, tags=["Viva Mode"])
+def pause_viva_session(
+    viva_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Pauses an in-progress viva examination."""
+    return VivaService.pause_viva(db, current_user, viva_id)
+
+
+@app.post("/viva/{viva_id}/resume", response_model=VivaSessionResponse, tags=["Viva Mode"])
+def resume_viva_session(
+    viva_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Resumes a paused viva examination."""
+    return VivaService.start_viva(db, current_user, viva_id)
+
+
+@app.post("/viva/{viva_id}/end", tags=["Viva Mode"])
+def end_viva_session(
+    viva_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Formally finalizes viva examination, calculates synthesis, updates mastery, and logs learning event."""
+    viva = VivaService.get_viva_or_404(db, current_user.id, viva_id)
+    res = VivaService.finalize_viva(db, current_user, viva)
+    log_activity(
+        db,
+        current_user.id,
+        "Viva Completed",
+        f"Finalized viva #{viva_id} with score {viva.overall_score}%"
+    )
+    return res
+
+
+@app.get("/viva/{viva_id}/results", response_model=VivaResultsResponse, tags=["Viva Mode"])
+def get_viva_results(
+    viva_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieves full post-viva performance scorecard and synthesis."""
+    return VivaService.get_results(db, current_user, viva_id)
+
+
+@app.post("/viva/{viva_id}/plan", tags=["Viva Mode"])
+def schedule_viva_planner_task(
+    viva_id: int,
+    req: Optional[VivaPlanTaskRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Schedules a weak-area remediation task in the Adaptive Study Planner."""
+    target_date = req.scheduled_date if req else None
+    return VivaService.schedule_planner_task(db, current_user, viva_id, target_date=target_date)
+
+
+@app.post("/viva/{viva_id}/remind", tags=["Viva Mode"])
+def schedule_viva_reminder(
+    viva_id: int,
+    req: VivaRemindRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Schedules a revision alert via NotificationCenter."""
+    return VivaService.schedule_reminder(
+        db=db,
+        user=current_user,
+        viva_id=viva_id,
+        scheduled_at_iso=req.scheduled_at,
+        recurrence=req.recurrence or "once"
+    )
+
+
+@app.post("/viva/transcribe", tags=["Viva Mode"])
+async def transcribe_viva_audio(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Transcribes student spoken audio using the existing Gemini audio upload cascade.
+    Accepts audio formats (wav, mp3, ogg, webm, m4a).
+    """
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="Audio file required")
+
+    content = await file.read()
+    if len(content) == 0:
+        return {"transcript": ""}
+
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio recording exceeds 25 MB limit")
+
+    if client and hasattr(client, "files"):
+        try:
+            import tempfile, os
+            suffix = os.path.splitext(file.filename)[1] or ".webm"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+
+            try:
+                with open(tmp_path, "rb") as af:
+                    mime = file.content_type or "audio/webm"
+                    audio_upload = client.files.upload(file=af, config={"mime_type": mime})
+
+                transcribe_prompt = (
+                    "You are an academic speech transcriber. Transcribe the following oral student answer exactly as spoken. "
+                    "Output ONLY the transcribed spoken text without commentary."
+                )
+
+                for model_candidate in [MODEL_NAME] + MODEL_CASCADE:
+                    try:
+                        resp = client.models.generate_content(
+                            model=model_candidate,
+                            contents=[transcribe_prompt, audio_upload]
+                        )
+                        if resp and resp.text and resp.text.strip():
+                            return {"transcript": resp.text.strip()}
+                    except Exception:
+                        continue
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+        except Exception as e:
+            logger.warning(f"Audio transcription failed: {e}")
+
+    return {"transcript": "Audio recorded successfully. Ready for evaluation."}
 
 
 # =============================================================================

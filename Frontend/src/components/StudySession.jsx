@@ -6,32 +6,48 @@ import {
   ArrowLeft, CheckCircle, Loader2, RefreshCw, Share2, Copy, Check,
   Save, Sparkles, Clock, FileText, Award, Calendar, Lightbulb, BookOpen,
   Clipboard, HelpCircle, Maximize2, Minimize2, PanelLeftClose, GripVertical,
-  AlertCircle, ChevronDown, ChevronUp, Globe, Lock, Users, X, Search, Sun, Moon, Download, History, CheckCircle2, XCircle
+  AlertCircle, ChevronDown, ChevronUp, Globe, Lock, Users, X, Search, Sun, Moon, Download, History, CheckCircle2, XCircle, Bell, Brain, Mic
 } from 'lucide-react';
 const PDFExport = lazy(() => import('./PDFExport'));
 import api from '../utils/api';
 import GlobalChatTab from './GlobalChatTab';
 import FloatingSelectionToolbar from './FloatingSelectionToolbar';
 import YouTubeLearningTimeline from './YouTubeLearningTimeline';
+import VisualLearningWorkspace from './VisualLearningWorkspace';
+import { MetacognitiveDebuggerModal } from './MetacognitiveDebugger';
+import VivaWorkspace from './VivaWorkspace';
 import { PreferencesContext } from '../context/PreferencesContext';
 import { useToast } from '../context/ToastContext';
 
 const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
   const { prefs } = useContext(PreferencesContext);
   const { addToast } = useToast();
-  const [activeView, setActiveView] = useState('summary'); 
+  const [activeView, setActiveView] = useState(() => data?.initialView || 'summary');
   const [youtubeView, setYoutubeView] = useState('timeline'); // 'timeline' | 'guide'
   const [regenerating, setRegenerating] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [currentSummary, setCurrentSummary] = useState(data?.summary || null);
 
-  useEffect(() => {
-    if (data?.summary) {
-      setCurrentSummary(data.summary);
-    }
-  }, [data?.summary]);
-  
+  // 🧠 Metacognitive Debugger / Mistake Intelligence States
+  const [showMistakeModal, setShowMistakeModal] = useState(false);
+  const [selectedMistakeQuestion, setSelectedMistakeQuestion] = useState(null);
+
+  // ⏰ Revision Reminder States
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderDate, setReminderDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [reminderTime, setReminderTime] = useState('09:00');
+  const [reminderTarget, setReminderTarget] = useState('flashcard');
+  const [schedulingReminder, setSchedulingReminder] = useState(false);
+  const [showVivaModal, setShowVivaModal] = useState(false);
+
   const [numQuestions, setNumQuestions] = useState(5);
   const [numFlashcards, setNumFlashcards] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -101,6 +117,69 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
 
   // 🪄 Floating Selection Contextual Actions
   const [externalChatPrompt, setExternalChatPrompt] = useState('');
+  const [visualizeSnippet, setVisualizeSnippet] = useState(null);
+
+  useEffect(() => {
+    if (data?.initialView) {
+      setActiveView(data.initialView);
+    }
+  }, [data?.initialView]);
+
+  useEffect(() => {
+    if (data?.summary) {
+      setCurrentSummary(data.summary);
+    }
+  }, [data?.summary]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (showVivaModal) setShowVivaModal(false);
+        if (showReminderModal) setShowReminderModal(false);
+        if (showPastQuizzesModal) setShowPastQuizzesModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showVivaModal, showReminderModal, showPastQuizzesModal]);
+
+  const handleScheduleSessionReminder = async (e) => {
+    e?.preventDefault();
+    if (!data?.id) return;
+    try {
+      const scheduledDateTime = new Date(`${reminderDate}T${reminderTime}:00`);
+      if (isNaN(scheduledDateTime.getTime())) {
+        addToast('Invalid date or time selected.', 'error');
+        return;
+      }
+      if (scheduledDateTime <= new Date()) {
+        addToast('Please pick a future date and time for your revision reminder.', 'warning');
+        return;
+      }
+      setSchedulingReminder(true);
+      const targetLabel = reminderTarget === 'flashcard' ? 'Flashcards' : reminderTarget === 'quiz' ? 'Quiz' : reminderTarget === 'visual' ? 'Concept Map' : 'Session';
+      await api.post('/reminders', {
+        title: `Revise: ${data.title || sessionDetail?.filename || 'Study Session'} (${targetLabel})`,
+        message: `Scheduled revision for ${data.title || sessionDetail?.filename || 'this session'}.`,
+        scheduled_at: scheduledDateTime.toISOString(),
+        session_id: data.id,
+        target_type: reminderTarget,
+        recurrence: 'once'
+      });
+      addToast('Revision reminder scheduled! ⏰', 'success');
+      setShowReminderModal(false);
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to schedule reminder', 'error');
+    } finally {
+      setSchedulingReminder(false);
+    }
+  };
+
+  const handleFloatingVisualize = useCallback((text) => {
+    setVisualizeSnippet(text);
+    setActiveView('visual');
+    addToast('Opening concept visualization for selection...', 'info');
+  }, [addToast]);
 
   const handleFloatingExplain = useCallback((text) => {
     setActiveView('summary');
@@ -559,7 +638,21 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
     try {
       const res = await api.post(`/library/${data.id}/regenerate`);
       setCurrentSummary(res.data.summary);
-      addToast('Summary regenerated successfully!', 'success');
+      if (sessionDetail?.source_type === 'youtube') {
+        try {
+          const ytRes = await api.get(`/sessions/${data.id}/learning-timeline`);
+          if (ytRes.data) {
+            setSessionDetail(prev => ({
+              ...prev,
+              doc_metadata: {
+                ...(prev?.doc_metadata || {}),
+                learning_timeline: ytRes.data
+              }
+            }));
+          }
+        } catch (_) {}
+      }
+      addToast('Regenerated successfully! 🔄', 'success');
       window.dispatchEvent(new CustomEvent('florix:session-updated'));
     } catch (err) {
       const msg = err.response?.data?.detail || 'Regeneration failed. Please try again.';
@@ -570,15 +663,15 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
     }
   };
 
-  const handleShare = async () => {
+  const handleShare = async (chosenType = shareType) => {
     if (!data?.id) return;
     setSharing(true);
     try {
-      const res = await api.post(`/library/${data.id}/share`, { share_type: shareType });
+      const res = await api.post(`/library/${data.id}/share`, { share_type: chosenType });
       const shareUrl = `${window.location.origin}/shared/${res.data.share_token}`;
       await navigator.clipboard.writeText(shareUrl);
       setShareCopied(true);
-      addToast('Shareable link copied to clipboard! 🔗', 'success');
+      addToast(`Shareable ${chosenType} link copied to clipboard! 🔗`, 'success');
       setTimeout(() => setShareCopied(false), 3000);
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -887,7 +980,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
   );
 
   return (
-    <div ref={sessionRootRef} className="h-full flex flex-col bg-slate-50 dark:bg-zinc-950 overflow-hidden transition-colors duration-300">
+    <div ref={sessionRootRef} className="relative h-full flex flex-col bg-slate-50 dark:bg-zinc-950 overflow-hidden transition-colors duration-300">
 
       {/* ── TOP NAVIGATION BAR ── */}
       <div className="h-14 border-b border-slate-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md flex items-center justify-between px-4 shrink-0 z-10">
@@ -900,7 +993,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
 
         {/* Tab switcher */}
         <div className="flex bg-slate-100 dark:bg-zinc-800 p-1 rounded-2xl border border-slate-200 dark:border-zinc-700 overflow-x-auto max-w-[65%] no-scrollbar shrink-0">
-          {['summary', 'notes', 'quiz', 'flashcards', 'insights', 'timeline'].map((tab) => (
+          {['summary', 'notes', 'quiz', 'flashcards', 'visual', 'insights', 'timeline'].map((tab) => (
             <button 
               key={tab}
               onClick={() => handleTabClick(tab)} 
@@ -910,7 +1003,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                   : 'text-slate-500 hover:text-slate-700 dark:hover:text-zinc-300'
               }`}
             >
-              {tab === 'summary' ? 'Study Space' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'summary' ? 'Study Space' : tab === 'visual' ? 'Visual Learning' : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -976,6 +1069,13 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
             >
               <HelpCircle size={10} /> Interview
             </button>
+            <button
+              onClick={() => setShowVivaModal(true)}
+              className="px-2.5 py-1 bg-white dark:bg-zinc-800 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-600 dark:text-zinc-300 rounded-lg text-[10px] font-bold border border-slate-200 dark:border-zinc-700 transition-all flex items-center gap-1 cursor-pointer"
+              title="Practice AI Oral Viva on this document"
+            >
+              <Mic size={10} className="text-indigo-500" /> Viva Exam
+            </button>
 
             <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700 mx-1" />
 
@@ -999,7 +1099,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                   ].map((opt) => (
                     <button
                       key={opt.value}
-                      onClick={() => { setShareType(opt.value); setShareDropdownOpen(false); handleShare(); }}
+                      onClick={() => { setShareType(opt.value); setShareDropdownOpen(false); handleShare(opt.value); }}
                       className={`w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center gap-2 ${shareType === opt.value ? 'bg-indigo-50 dark:bg-indigo-500/10' : ''}`}
                     >
                       <opt.icon size={12} className="text-slate-400" />
@@ -1017,10 +1117,27 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
             <button
               onClick={handleRegenerate}
               disabled={regenerating}
+              title="Regenerate AI Study Guide & Content"
               className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-indigo-500 hover:border-indigo-400 transition-all disabled:opacity-50"
             >
               {regenerating ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
               {regenerating ? 'Working...' : 'Regen'}
+            </button>
+
+            {/* Set Revision Reminder */}
+            <button
+              onClick={() => {
+                setReminderTarget(
+                  activeView === 'flashcards' ? 'flashcard' :
+                  activeView === 'quiz' ? 'quiz' :
+                  activeView === 'visual' ? 'visual' : 'session'
+                );
+                setShowReminderModal(true);
+              }}
+              title="Schedule Revision Reminder"
+              className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-indigo-500 hover:border-indigo-400 transition-all cursor-pointer"
+            >
+              <Bell size={10} /> Remind
             </button>
 
             <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700 mx-1" />
@@ -1035,6 +1152,76 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
               {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
             </button>
           </div>
+
+          {/* Quick Revision Reminder Modal */}
+          {showReminderModal && (
+            <div className="absolute inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-zinc-800">
+                  <h3 className="text-sm font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Bell size={15} className="text-indigo-500" />
+                    Set Revision Reminder
+                  </h3>
+                  <button onClick={() => setShowReminderModal(false)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg">
+                    <X size={15} />
+                  </button>
+                </div>
+                <form onSubmit={handleScheduleSessionReminder} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-600 dark:text-zinc-300 mb-1">Target Activity</label>
+                    <select
+                      value={reminderTarget}
+                      onChange={e => setReminderTarget(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white"
+                    >
+                      <option value="flashcard">Flashcards (SM-2 Spaced Repetition)</option>
+                      <option value="quiz">Practice Quiz</option>
+                      <option value="visual">Concept Map</option>
+                      <option value="session">Full Study Session</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block font-bold text-slate-600 dark:text-zinc-300 mb-1">Date</label>
+                      <input
+                        type="date"
+                        required
+                        value={reminderDate}
+                        onChange={e => setReminderDate(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-600 dark:text-zinc-300 mb-1">Time</label>
+                      <input
+                        type="time"
+                        required
+                        value={reminderTime}
+                        onChange={e => setReminderTime(e.target.value)}
+                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowReminderModal(false)}
+                      className="px-3 py-1.5 rounded-xl font-bold text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={schedulingReminder}
+                      className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 transition-all disabled:opacity-50"
+                    >
+                      {schedulingReminder ? 'Scheduling...' : 'Set Reminder'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* Regen error with retry */}
           {regenError && (
@@ -1173,6 +1360,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                 onFlashcard={handleFloatingFlashcard}
                 onQuiz={handleFloatingQuiz}
                 onFormat={handleFloatingFormat}
+                onVisualize={handleFloatingVisualize}
               />
             </div>
 
@@ -1402,6 +1590,28 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                               <span className="leading-relaxed">{item.explanation}</span>
                             </div>
                           )}
+
+                          {!item.is_correct && (
+                            <button
+                              onClick={() => {
+                                setSelectedMistakeQuestion({
+                                  question_text: item.question,
+                                  options: item.options || [],
+                                  user_answer: item.user_answer,
+                                  correct_answer: item.correct_answer,
+                                  topic: data?.filename || data?.title || 'General',
+                                  session_id: data?.id,
+                                  difficulty: 'intermediate',
+                                  source_type: 'quiz'
+                                });
+                                setShowMistakeModal(true);
+                              }}
+                              className="mt-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold text-xs border border-indigo-500/20 transition-all cursor-pointer w-fit"
+                            >
+                              <Brain size={13} />
+                              <span>Why was I wrong? (Metacognitive Debugger)</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1573,6 +1783,20 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
         </div>
       )}
 
+      {/* ── VISUAL LEARNING WORKSPACE ── */}
+      {activeView === 'visual' && (
+        <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
+          <SubViewBackBar label="Visual Learning & Knowledge Map" />
+          <VisualLearningWorkspace
+            session={sessionDetail || data}
+            initialSnippet={visualizeSnippet}
+            onClearSnippet={() => setVisualizeSnippet(null)}
+            isDarkMode={isDarkMode}
+            addToast={addToast}
+          />
+        </div>
+      )}
+
       {/* ── INSIGHTS VIEW ── */}
       {activeView === 'insights' && (
         <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
@@ -1728,7 +1952,7 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
       )}
       {/* ── PAST QUIZZES HISTORY MODAL ── */}
       {showPastQuizzesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-slate-200 dark:border-zinc-800 w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1799,6 +2023,16 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
         </div>
       )}
 
+      {/* ── METACOGNITIVE DEBUGGER MODAL ── */}
+      <MetacognitiveDebuggerModal
+        isOpen={showMistakeModal}
+        onClose={() => {
+          setShowMistakeModal(false);
+          setSelectedMistakeQuestion(null);
+        }}
+        questionData={selectedMistakeQuestion}
+      />
+
       {/* ── HIDDEN PRINTABLE CONTAINER FOR QUIZ PDF EXPORT ── */}
       <div style={{ position: 'fixed', top: '-10000px', left: '-10000px', width: '800px', background: 'white', zIndex: -1 }}>
         <div id="quiz-printable-export" className="p-10 text-black font-sans bg-white">
@@ -1848,6 +2082,53 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
           </section>
         </div>
       </div>
+
+      {/* ── Viva Oral Exam Practice Workspace Overlay (Bounded inside workspace, matches Image 3) ── */}
+      {showVivaModal && (
+        <div className="absolute inset-0 z-40 flex flex-col bg-[#f8fafc] dark:bg-[#09090b] overflow-hidden animate-in fade-in duration-150">
+          {/* Top Header Bar */}
+          <div className="shrink-0 h-14 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 z-10">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                onClick={() => setShowVivaModal(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold text-xs hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer shrink-0"
+                title="Return to Study Space (Esc)"
+              >
+                <ArrowLeft size={14} /> Back to Study Space
+              </button>
+              <div className="h-4 w-px bg-slate-200 dark:bg-zinc-700 shrink-0" />
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <Mic size={15} />
+                </span>
+                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white truncate" title={sessionDetail?.filename || data?.title || 'Oral Viva Defense'}>
+                  Oral Viva Defense — {sessionDetail?.filename || data?.title || 'Course Material'}
+                </h3>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setShowVivaModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                title="Close Viva (Esc)"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable Workspace Body */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 md:p-8 custom-scrollbar">
+            <div className="max-w-6xl mx-auto">
+              <VivaWorkspace
+                initialSessionId={data?.id || sessionDetail?.id}
+                onOpenSession={() => setShowVivaModal(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -166,13 +166,17 @@ class HybridRetriever:
                 )
                 query_embedding = emb_res.embeddings[0].values
 
-                # Query ChromaDB with session_id filter
-                results = self.collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=min(top_k * 3, 25),
-                    where={"session_id": session_id},
-                    include=["documents", "metadatas", "distances"]
-                )
+                # Query ChromaDB with session_id filter and 5.0s safety timeout to prevent thread hangs
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        self.collection.query,
+                        query_embeddings=[query_embedding],
+                        n_results=min(top_k * 3, 25),
+                        where={"session_id": session_id},
+                        include=["documents", "metadatas", "distances"]
+                    )
+                    results = future.result(timeout=5.0)
 
                 if results and results.get("documents") and results["documents"][0]:
                     docs = results["documents"][0]

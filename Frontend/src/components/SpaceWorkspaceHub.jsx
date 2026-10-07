@@ -165,8 +165,10 @@ const SpaceWorkspaceHub = ({
       setSpace(prev => ({
         ...prev,
         subchats: prev.subchats.filter(c => c.id !== subchatId),
-        chat_count: prev.chat_count - 1
+        chat_count: Math.max(0, (prev.chat_count || 1) - 1)
       }));
+      window.dispatchEvent(new CustomEvent('florix:conversation-deleted', { detail: { chatId: subchatId } }));
+      window.dispatchEvent(new CustomEvent('florix:conversation-updated'));
       addToast('Subchat deleted', 'success');
     } catch (err) {
       addToast('Failed to delete subchat', 'error');

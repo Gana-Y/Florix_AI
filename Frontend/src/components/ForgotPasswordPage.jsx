@@ -74,8 +74,13 @@ const ForgotPasswordPage = () => {
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="w-full max-w-md bg-white/80 dark:bg-zinc-900/80 backdrop-blur-3xl border border-slate-200/50 dark:border-zinc-900/50 rounded-[28px] p-8 sm:p-10 text-center shadow-2xl transition-all duration-300"
+        className="relative w-full max-w-md bg-white/70 dark:bg-[#0c0d1b]/50 backdrop-blur-2xl sm:backdrop-blur-3xl border border-white/60 dark:border-white/[0.14] rounded-[28px] sm:rounded-[32px] p-8 sm:p-10 text-center shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.2),0_0_50px_rgba(99,102,241,0.06)] transition-all duration-300 overflow-hidden"
       >
+        {/* Subtle Ambient Sheen at Top of Glass */}
+        <div
+          className="pointer-events-none absolute -top-20 left-1/2 -translate-x-1/2 w-80 h-40 bg-gradient-to-b from-indigo-500/15 via-purple-500/10 to-transparent rounded-full blur-2xl"
+          aria-hidden="true"
+        />
         <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
           <CheckCircle2 size={40} className="text-emerald-500" />
         </div>
@@ -87,7 +92,7 @@ const ForgotPasswordPage = () => {
           whileHover={{ scale: 1.012 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => navigate('/login')}
-          className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-indigo-500/15 cursor-pointer text-sm sm:text-base"
+          className="w-full py-4 bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:brightness-110 text-white font-bold rounded-2xl transition-all shadow-xl shadow-indigo-500/25 ring-1 ring-white/20 cursor-pointer text-sm sm:text-base"
         >
           Back to Sign In
         </motion.button>
@@ -100,14 +105,20 @@ const ForgotPasswordPage = () => {
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="w-full max-w-md bg-white/80 dark:bg-zinc-900/80 backdrop-blur-3xl border border-slate-200/50 dark:border-zinc-900/50 rounded-[28px] p-8 sm:p-10 shadow-2xl transition-all duration-300"
+      className="relative w-full max-w-md bg-white/70 dark:bg-[#0c0d1b]/50 backdrop-blur-2xl sm:backdrop-blur-3xl border border-white/60 dark:border-white/[0.14] rounded-[28px] sm:rounded-[32px] p-8 sm:p-10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7),inset_0_1px_1px_rgba(255,255,255,0.2),0_0_50px_rgba(99,102,241,0.06)] transition-all duration-300 overflow-hidden"
     >
+      {/* Subtle Ambient Sheen at Top of Glass */}
+      <div
+        className="pointer-events-none absolute -top-20 left-1/2 -translate-x-1/2 w-80 h-40 bg-gradient-to-b from-indigo-500/15 via-purple-500/10 to-transparent rounded-full blur-2xl"
+        aria-hidden="true"
+      />
+
       {/* Back button */}
       <button
         onClick={() => navigate('/login')}
-        className="flex items-center gap-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 text-xs sm:text-sm font-semibold mb-6 transition-colors group cursor-pointer"
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/40 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/10 text-slate-500 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-white text-xs font-semibold mb-6 transition-all group cursor-pointer backdrop-blur-md hover:bg-white/60 dark:hover:bg-white/[0.1] hover:border-white/20"
       >
-        <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-0.5" /> Back to Sign In
+        <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" /> Back to Sign In
       </button>
 
       {/* Step 1: Email */}

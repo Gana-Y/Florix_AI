@@ -31,6 +31,10 @@ const SystemMonitor = () => {
         addToast('Monitoring data refreshed', 'success');
       }
     } catch (err) {
+      if (err.response?.status === 401) {
+        window.dispatchEvent(new CustomEvent('florix:session-expired'));
+        return;
+      }
       console.error('Error fetching monitoring metrics:', err);
       addToast('Failed to fetch system metrics: ' + (err.response?.data?.detail || 'Forbidden/Access Denied'), 'error');
     } finally {

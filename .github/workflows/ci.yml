@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Syntax check
-        run: python -c "import ast; [ast.parse(open(f, encoding='utf-8').read()) for f in ['main.py', 'database.py', 'auth.py']]; print('✅ All Python files pass syntax check')"
+        run: python -c "import ast; [ast.parse(open(f, encoding='utf-8').read()) for f in ['main.py', 'database.py', 'auth.py']]; print('All Python files pass syntax check')"
 
   # ── Frontend Build ─────────────────────────────────────────────────────────
   frontend-build:

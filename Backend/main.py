@@ -6790,6 +6790,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
     reply = ""
 
     for loop in range(max_loops):
+        prev_results_block = ("Previous Tool Call Results:\n" + "\n".join(tool_results) + "\n\n") if tool_results else ""
         agent_instruction = (
             "You are Florix AI, an intelligent, empathetic, multi-disciplinary Academic AI Tutor and Learning Companion. "
             "You possess deep expertise across Science, Mathematics, Engineering, Medicine, History, Philosophy, Literature, Economics, and the Arts, "
@@ -6831,7 +6832,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "   - NEVER include conversational text alongside a tool call in the same turn.\n"
             "   - When you receive the tool results, write your final response naturally to the student.\n"
             "   - NEVER mention or repeat '[CALL_TOOL: ...]' or internal tool names in your final student-facing response! Tool syntax is strictly internal.\n\n"
-            f"{f'Previous Tool Call Results:\n' + chr(10).join(tool_results) if tool_results else ''}"
+            + prev_results_block
         )
 
         reply = generate_with_fallback(current_prompt, agent_instruction)

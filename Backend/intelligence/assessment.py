@@ -61,14 +61,12 @@ class AssessmentEngine:
             logger.warning("No evidence chunks available for grounded quiz generation.")
             return []
 
-        has_pages = any(c.get("page_number") is not None for c in chunks)
-
+        topic_clause = f"TARGET TOPIC: {topic}\n" if topic else ""
         prompt = f"""You are an expert academic examiner.
 Generate exactly {num_questions} high-quality, evidence-grounded questions based SOLELY on the study context below.
 
 DIFFICULTY LEVEL: {difficulty.upper()}
-{f"TARGET TOPIC: {topic}" if topic else ""}
-
+{topic_clause}
 STRICT GROUNDING INSTRUCTIONS:
 1. Every question and answer MUST be directly supported by facts in the provided chunks.
 2. DO NOT make up questions about concepts not mentioned in the source context.
@@ -207,13 +205,11 @@ Return ONLY a valid JSON array of objects with no surrounding markdown or conver
             logger.warning("No evidence chunks available for flashcard generation.")
             return []
 
-        has_pages = any(c.get("page_number") is not None for c in chunks)
-
+        topic_clause = f"TARGET TOPIC: {topic}\n" if topic else ""
         prompt = f"""Create exactly {num_cards} high-yield academic study flashcards based SOLELY on the study context below.
 
 DIFFICULTY LEVEL: {difficulty.upper()}
-{f"TARGET TOPIC: {topic}" if topic else ""}
-
+{topic_clause}
 STRICT GROUNDING INSTRUCTIONS:
 1. Every card MUST test a concrete concept, formula, rule, or definition present in the text.
 2. "front": Concise prompt, question, or term (maximum 15 words).

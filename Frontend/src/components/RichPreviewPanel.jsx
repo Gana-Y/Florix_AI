@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import { preprocessLatex } from '../utils/latexHelper';
 import {
   X, Send, Loader2, Youtube, Globe, FileText,
   ExternalLink, Sparkles, Bot, User, BookOpen
@@ -166,8 +169,8 @@ const ChatPanel = ({ context, contextType, sessionId, initialQuery }) => {
               >
                 {msg.role === 'assistant' ? (
                   <div className="prose prose-sm dark:prose-invert max-w-none text-slate-800 dark:text-zinc-200 leading-relaxed break-words">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {preprocessLatex(msg.content)}
                     </ReactMarkdown>
                   </div>
                 ) : (

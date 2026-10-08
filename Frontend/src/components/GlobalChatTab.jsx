@@ -6,7 +6,10 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import api from '../utils/api';
+import { preprocessLatex } from '../utils/latexHelper';
 import { extractBestTranscript, combineSpokenWithBase, configureSpeechRecognition, AUDIO_CAPTURE_CONSTRAINTS } from '../utils/speechCorrection';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
@@ -40,7 +43,7 @@ const formatTutorMarkdown = (rawText) => {
   if (!rawText || typeof rawText !== 'string') return '';
   
   const parts = rawText.split(/(```[\s\S]*?```)/g);
-  return parts.map((part, index) => {
+  const formatted = parts.map((part, index) => {
     if (index % 2 === 1) return part; // code block, preserve untouched
     
     // Ensure any heading that follows text or single newline has a double newline before it
@@ -48,6 +51,7 @@ const formatTutorMarkdown = (rawText) => {
       .replace(/([^#\n])[ \t]*(#{1,6}\s+[^\n]+)/g, '$1\n\n$2')
       .replace(/([^#\n])\n(#{1,6}\s+[^\n]+)/g, '$1\n\n$2');
   }).join('');
+  return preprocessLatex(formatted);
 };
 
 // ── Custom Academic Components for ReactMarkdown ──
@@ -249,7 +253,8 @@ const GlobalChatMessageBubble = React.memo(({ msg }) => {
         <div className="text-slate-800 dark:text-zinc-200">
           <ChatErrorBoundary>
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={tutorMarkdownComponents}
             >
               {formatTutorMarkdown(String(msg.text || ""))}

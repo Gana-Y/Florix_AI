@@ -74,8 +74,9 @@ const Signup = () => {
     setLoading(true);
     try {
       const res = await signup(name.trim(), email.trim(), password);
-      addToast('Sign up successful! Let’s personalize your workspace 🎉', 'success');
-      navigate('/onboarding');
+      const firstName = name.trim().split(' ')[0] || 'there';
+      addToast(`Account created! Welcome to Florix AI, ${firstName}! 🎉`, 'success');
+      navigate('/dashboard');
     } catch (err) {
       if (!err.response) {
         setError('Server is offline. Please check your network connection or verify that the backend is running.');

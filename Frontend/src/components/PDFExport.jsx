@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import api from '../utils/api';
+import { preprocessLatex } from '../utils/latexHelper';
 
 const PDFExport = ({ summary, quizData, flashcards }) => {
   const [isExporting, setIsExporting] = useState(false);
@@ -83,8 +86,8 @@ const PDFExport = ({ summary, quizData, flashcards }) => {
               <section className="mb-10">
                   <h2 className="text-2xl font-bold mb-4 text-indigo-600 uppercase tracking-wide">Summary</h2>
                   <article className="prose prose-slate max-w-none text-gray-800">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {summary || "No summary available."}
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {preprocessLatex(summary || "No summary available.")}
                     </ReactMarkdown>
                   </article>
               </section>

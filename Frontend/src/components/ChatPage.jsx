@@ -6,8 +6,11 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
+import { preprocessLatex } from '../utils/latexHelper';
 import { extractBestTranscript, combineSpokenWithBase, configureSpeechRecognition, AUDIO_CAPTURE_CONSTRAINTS } from '../utils/speechCorrection';
 import { PreferencesContext } from '../context/PreferencesContext';
 import { useToast } from '../context/ToastContext';
@@ -69,7 +72,8 @@ const ChatMessageBubble = React.memo(({ msg }) => {
           msg.role === 'user' ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white' : ''
         }`}>
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
             components={{
               code({ node, inline, className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
@@ -87,7 +91,7 @@ const ChatMessageBubble = React.memo(({ msg }) => {
               }
             }}
           >
-            {String(msg.content || '')}
+            {preprocessLatex(String(msg.content || ''))}
           </ReactMarkdown>
         </div>
       </div>

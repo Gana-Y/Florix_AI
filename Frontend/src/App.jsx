@@ -95,9 +95,10 @@ function AppInner() {
 
     const welcomed = localStorage.getItem(`florix_welcomed_${user.id}`);
     if (!welcomed) {
-      // New or un-welcomed user: must complete /onboarding questions first, then /welcome
-      if (currentView !== 'onboarding' && currentView !== 'welcome' && currentView !== 'landing') {
-        navigate('/onboarding');
+      if (currentView === 'dashboard') {
+        localStorage.setItem(`florix_welcomed_${user.id}`, 'true');
+      } else if (currentView !== 'onboarding' && currentView !== 'welcome' && currentView !== 'landing') {
+        navigate('/dashboard');
       }
     } else {
       // Welcomed user: prevent navigating back to auth, onboarding, or welcome screens

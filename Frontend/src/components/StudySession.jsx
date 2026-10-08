@@ -1,7 +1,10 @@
 import React, { useState, useContext, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm'; 
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import rehypeSanitize from 'rehype-sanitize';
+import { preprocessLatex } from '../utils/latexHelper';
 import { 
   ArrowLeft, CheckCircle, Loader2, RefreshCw, Share2, Copy, Check,
   Save, Sparkles, Clock, FileText, Award, Calendar, Lightbulb, BookOpen,
@@ -1308,8 +1311,8 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                           <p className="text-slate-500 text-sm">AI is writing your custom study sheet...</p>
                         </div>
                       ) : (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                          {aiOutputContent}
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                          {preprocessLatex(aiOutputContent)}
                         </ReactMarkdown>
                       )}
                     </article>
@@ -1344,8 +1347,8 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                       </div>
                     ) : (
                       <article className="prose prose-slate dark:prose-invert max-w-none prose-h1:text-3xl prose-h1:font-extrabold prose-h1:text-indigo-600 prose-h1:mb-6 prose-h2:text-xl prose-h2:font-bold prose-h2:mt-10 prose-h2:mb-3 prose-h2:border-b prose-h2:pb-2 prose-p:text-slate-600 dark:prose-p:text-zinc-400 prose-p:leading-relaxed prose-p:mb-4 prose-li:my-1.5 select-text animate-fade-in">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                          {currentSummary ?? data?.summary ?? ''}
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                          {preprocessLatex(currentSummary ?? data?.summary ?? '')}
                         </ReactMarkdown>
                       </article>
                     )}

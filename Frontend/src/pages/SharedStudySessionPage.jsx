@@ -8,7 +8,10 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import api from '../utils/api';
+import { preprocessLatex } from '../utils/latexHelper';
 
 export default function SharedStudySessionPage() {
   const { shareToken } = useParams();
@@ -217,8 +220,8 @@ export default function SharedStudySessionPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl leading-relaxed">
             {session?.summary && session.summary !== 'Processing...' ? (
               <div className="prose prose-invert prose-indigo max-w-none text-slate-300 text-sm">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {session.summary}
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                  {preprocessLatex(session.summary)}
                 </ReactMarkdown>
               </div>
             ) : (

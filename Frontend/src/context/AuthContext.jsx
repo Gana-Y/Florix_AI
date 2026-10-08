@@ -52,8 +52,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const hasDetectedCountry = React.useRef(false);
   useEffect(() => {
-    if (user) {
+    if (user && !hasDetectedCountry.current) {
+      hasDetectedCountry.current = true;
       detectAndSaveCountry();
     }
   }, [user]);
@@ -64,10 +66,8 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
     scheduleSessionWarning(token);
     const userData = res.data.user;
-    if (userData?.id && userData?.onboarding_completed) {
+    if (userData?.id) {
       localStorage.setItem(`florix_welcomed_${userData.id}`, 'true');
-    } else if (userData?.id) {
-      localStorage.removeItem(`florix_welcomed_${userData.id}`);
     }
     setUser(userData);
     return res.data;
@@ -79,9 +79,8 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
     scheduleSessionWarning(token);
     const userData = res.data.user;
-    // New signup: clear welcomed flag so user answers questions and sees welcome screen
     if (userData?.id) {
-      localStorage.removeItem(`florix_welcomed_${userData.id}`);
+      localStorage.setItem(`florix_welcomed_${userData.id}`, 'true');
     }
     setUser(userData);
     return res.data;

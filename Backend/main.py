@@ -2298,10 +2298,10 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         plan="free",
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    db.flush()
     log_activity(db, new_user.id, "Account Created", f"Welcome to Florix AI, {new_user.name}!")
     db.commit()
+    db.refresh(new_user)
     logger.info(f"New user registered: {new_user.email}")
 
     token = create_access_token(
@@ -6807,7 +6807,12 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "   - LIVE / REAL-TIME SENSOR DATA (e.g., live current weather outside right now, live sports scores):\n"
             "     - You do not possess live real-time GPS or live weather station feeds for hyper-local current atmospheric conditions.\n"
             "     - If asked about current local weather (e.g. 'what's the weather today', 'monsoon updates'): Explain the general weather or seasonal climate patterns warmly and informatively (e.g., explaining monsoon timing, regional seasonal behavior, typical conditions), and kindly suggest checking a local weather service or app (like AccuWeather or weather.com) for live minute-by-minute radar.\n\n"
-            "3. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
+            "3. MATHEMATICAL & CODE FORMULATIONS:\n"
+            "   - Always format all mathematical equations in standard LaTeX syntax.\n"
+            "   - Wrap inline mathematical variables and symbols in single dollar signs: e.g. `$f: X \\to Y$` or `$L$` or `$\\theta$`.\n"
+            "   - Wrap block display equations on their own line in double dollar signs: e.g. `$$\\frac{1}{N} \\sum_{i=1}^{N} L(y_i, f(x_i))$$`.\n"
+            "   - ALWAYS verify that both opening and closing dollar signs are present.\n\n"
+            "4. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
             "   - When the student asks for a visual, picture, photo, illustration, or diagram, choose the appropriate visual medium:\n"
             "     a) REAL-WORLD VISUALS, ART, CULTURE, BIOLOGY & GEOGRAPHY:\n"
             "        - When asked for images of real-world objects, artworks, historical figures/events, dance forms, cultural traditions, anatomical structures, or animals, call the image tool:\n"

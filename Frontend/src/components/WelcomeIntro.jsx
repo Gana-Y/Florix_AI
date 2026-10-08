@@ -13,9 +13,9 @@ const WelcomeIntro = ({ userName, userId, onComplete }) => {
     }
   }, [userId]);
 
-  // Auto-advance after 3.8 seconds
+  // Auto-advance after 1.8 seconds
   useEffect(() => {
-    const timer = setTimeout(onComplete, 3800);
+    const timer = setTimeout(onComplete, 1800);
     return () => clearTimeout(timer);
   }, [onComplete]);
 

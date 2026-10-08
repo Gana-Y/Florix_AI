@@ -175,6 +175,13 @@ const OnboardingFlow = ({ onComplete }) => {
               <span className="text-xs text-zinc-300 font-medium">03</span>
             </div>
 
+            <button
+              onClick={() => onComplete({ role: 'Student', domain: 'General', source: 'Direct' })}
+              className="text-xs font-semibold text-zinc-400 hover:text-white transition-colors px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer"
+            >
+              Skip to Workspace →
+            </button>
+
             {/* Glowing Segmented Space Progress Bar */}
             <div className="flex items-center gap-2">
               {STEPS.map((_, i) => (

@@ -7016,7 +7016,7 @@ def extract_search_candidates(prompt: str, user_query: str = "") -> list:
     candidates = []
     cleaned = prompt.strip().replace('\n', ' ')
     cleaned = re.sub(
-        r'(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(a|an|the)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*',
+        r'(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(?:\b(?:a|an|the|any|some)\b)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*',
         '',
         cleaned
     ).strip()
@@ -7032,7 +7032,7 @@ def extract_search_candidates(prompt: str, user_query: str = "") -> list:
 
     if user_query:
         u_clean = re.sub(
-            r'(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(a|an|the)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*',
+            r'(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(?:\b(?:a|an|the|any|some)\b)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*',
             '',
             user_query
         ).strip()
@@ -7044,6 +7044,16 @@ def extract_search_candidates(prompt: str, user_query: str = "") -> list:
         candidates.append(primary_segment)
     if cleaned and cleaned not in candidates:
         candidates.append(cleaned)
+
+    # Word deduplication for queries like "flower red flower" -> "red flower"
+    for c in list(candidates):
+        tokens = c.lower().split()
+        dedup_tokens = []
+        for t in tokens:
+            if t not in dedup_tokens:
+                dedup_tokens.append(t)
+        if len(dedup_tokens) < len(tokens):
+            candidates.append(" ".join(dedup_tokens))
 
     seen = set()
     res = []
@@ -7071,6 +7081,14 @@ def agent_generate_image(prompt: str, user_query: str = "") -> str:
     # -------------------------------------------------------------
     # TIER 1: Wikipedia Canonical Entity API
     # -------------------------------------------------------------
+    media_entertainment_keywords = {
+        "film", "movie", "album", "soundtrack", "song", "single",
+        "novel", "comic", "manga", "anime", "video game", "tv series",
+        "television series", "band", "fictional character", "poster", "discography"
+    }
+    user_context_lower = f"{prompt} {user_query}".lower()
+    user_requested_media = any(k in user_context_lower for k in media_entertainment_keywords)
+
     for cand in candidates:
         for variant in [cand.title().replace(" ", "_"), cand.replace(" ", "_")]:
             try:
@@ -7078,13 +7096,27 @@ def agent_generate_image(prompt: str, user_query: str = "") -> str:
                 resp = requests.get(wiki_url, headers=headers, timeout=2.5)
                 if resp.status_code == 200:
                     data = resp.json()
+                    desc = (data.get("description") or "").lower()
+
+                    # Semantic check: If Wikipedia article is about a movie/film/poster but user didn't ask for that, skip
+                    if not user_requested_media:
+                        if any(k in desc for k in ["film", "movie", "album", "soundtrack", "single", "video game", "tv series", "comic"]):
+                            logger.info(f"⏭️ Skipping Wikipedia '{variant}' because it is a media/film article ('{desc}'), but user did not request media.")
+                            continue
+
+                    img_url = None
                     if "originalimage" in data and data["originalimage"].get("source"):
                         img_url = data["originalimage"]["source"]
-                        logger.info(f"🎨 Tier 1 match (Wikipedia original) for '{cand}': {img_url[:90]}")
-                        return f"![{data.get('title') or alt_label}]({img_url})"
                     elif "thumbnail" in data and data["thumbnail"].get("source"):
                         img_url = data["thumbnail"]["source"]
-                        logger.info(f"🎨 Tier 1 match (Wikipedia thumb) for '{cand}': {img_url[:90]}")
+
+                    if img_url:
+                        img_lower = img_url.lower()
+                        if not user_requested_media and any(k in img_lower for k in ["_poster", "-poster", "/poster", "_cover", "/cover"]):
+                            logger.info(f"⏭️ Skipping Wikipedia '{variant}' image because filename contains poster/cover ({img_url}).")
+                            continue
+
+                        logger.info(f"🎨 Tier 1 match (Wikipedia) for '{cand}': {img_url[:90]}")
                         return f"![{data.get('title') or alt_label}]({img_url})"
             except Exception as ex:
                 logger.debug(f"Tier 1 lookup error for {cand}: {ex}")
@@ -7200,7 +7232,8 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    user_msg = ChatMessage(role="user", content=data.message, conversation_id=conv_id)
+    message = data.message
+    user_msg = ChatMessage(role="user", content=message, conversation_id=conv_id)
     db.add(user_msg)
     db.flush()
 
@@ -7236,7 +7269,8 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
 
     max_loops = 2
     tool_results = []
-    current_prompt = f"Response style: {style_instr}{student_profile_context}{space_knowledge}\n\nConversation history:\n{history_text}\n\nRespond to: {data.message}"
+    generated_images = []
+    current_prompt = f"Response style: {style_instr}{student_profile_context}{space_knowledge}\n\nConversation history:\n{history_text}\n\nRespond to: {message}"
     reply = ""
 
     for loop in range(max_loops):
@@ -7325,6 +7359,8 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
                 elif tool_name == "generate_image":
                     prompt_arg = tool_args_raw.strip("\"'")
                     res = agent_generate_image(prompt_arg, user_query=message)
+                    if res.startswith("!["):
+                        generated_images.append(res)
                 else:
                     res = f"Error: Tool '{tool_name}' is not recognized."
             except Exception as ex:
@@ -7338,11 +7374,20 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             # Answer is direct, break out of tool loop
             break
 
+    # Ensure any successfully generated image is present in final reply
+    for g_img in generated_images:
+        if g_img not in reply:
+            reply = f"{g_img}\n\n{reply}"
+
     # Defensive post-filter against stubborn LLM canned image refusals
     canned_refusal_patterns = [
         r"i (?:don't|do not) have the ability to (?:directly )?(?:render|output|generate) image(?:s)?",
         r"i am unable to (?:render|display|output|generate) image(?:s)?",
-        r"as an ai (?:text )?model, I cannot (?:provide|render|generate) image(?:s)?"
+        r"as an ai (?:text )?model, I cannot (?:provide|render|generate) image(?:s)?",
+        r"can(?:'t|not) generate an? image",
+        r"can(?:'t|not) show you a picture",
+        r"unable to (?:create|provide|display|produce) an? image",
+        r"encountering an issue and can(?:'t|not) generate an? image",
     ]
     if any(re.search(p, reply, re.IGNORECASE) for p in canned_refusal_patterns):
         logger.warning("Detected canned image refusal in reply; repairing dynamically.")

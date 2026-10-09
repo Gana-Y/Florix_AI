@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from '../components/Sidebar';
 import {
@@ -214,17 +214,72 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
   const [activeSpaceId, setActiveSpaceId]   = useState(null);
   const [selectedChatId, setSelectedChatId] = useState(null);
 
-  // Fetch stats once; if unauthenticated, ensure clean logout & redirect
-  useEffect(() => {
+  // Centralized stats fetcher with silent background sync option
+  const fetchStats = useCallback(async (isSilent = false) => {
     if (!localStorage.getItem('token')) {
       handleLogout();
       return;
     }
-    api.get('/stats')
-      .then(r => setStats(r.data))
-      .catch(err => console.error('Stats fetch failed', err))
-      .finally(() => setStatsLoading(false));
+    if (!isSilent) setStatsLoading(true);
+    try {
+      const res = await api.get('/stats');
+      setStats(res.data);
+    } catch (err) {
+      console.error('Stats fetch failed', err);
+    } finally {
+      setStatsLoading(false);
+    }
   }, [handleLogout]);
+
+  // Initial stats fetch on mount
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  // Re-fetch stats in real-time whenever switching to the Home tab
+  useEffect(() => {
+    if (activeTab === 'Home') {
+      fetchStats(true);
+    }
+  }, [activeTab, fetchStats]);
+
+  // Real-time synchronization event listeners across entire app
+  useEffect(() => {
+    const handleStatsUpdate = (e) => {
+      // Optimistic instant local update for 0ms latency UI response
+      if (e?.detail?.action === 'delete_session') {
+        setStats(prev => prev ? {
+          ...prev,
+          total_sessions: Math.max(0, (prev.total_sessions || 0) - 1)
+        } : prev);
+      } else if (e?.detail?.action === 'upload_session') {
+        setStats(prev => prev ? {
+          ...prev,
+          total_sessions: (prev.total_sessions || 0) + 1
+        } : prev);
+      } else if (e?.detail?.action === 'toggle_bookmark' || e?.detail?.action === 'remove_bookmark') {
+        // Bookmark count updated
+        if (e?.detail?.action === 'remove_bookmark') {
+          setStats(prev => prev ? {
+            ...prev,
+            bookmarks_count: Math.max(0, (prev.bookmarks_count || 0) - 1)
+          } : prev);
+        }
+      }
+      // Silently refresh authoritative state and recent activities from server
+      fetchStats(true);
+    };
+
+    window.addEventListener('florix:stats-updated', handleStatsUpdate);
+    window.addEventListener('florix:session-updated', handleStatsUpdate);
+    window.addEventListener('florix:session-created', handleStatsUpdate);
+
+    return () => {
+      window.removeEventListener('florix:stats-updated', handleStatsUpdate);
+      window.removeEventListener('florix:session-updated', handleStatsUpdate);
+      window.removeEventListener('florix:session-created', handleStatsUpdate);
+    };
+  }, [fetchStats]);
 
 
 

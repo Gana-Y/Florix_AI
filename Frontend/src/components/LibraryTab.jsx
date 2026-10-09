@@ -144,6 +144,8 @@ const LibraryTab = ({ onBack, onUploadNew, onStudyTopic }) => {
       if (response.data?.summary) {
         setToast({ message: `"${response.data.filename}" processed successfully!`, type: 'success' });
         fetchLibrary();
+        window.dispatchEvent(new CustomEvent('florix:session-created', { detail: { session: response.data } }));
+        window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { action: 'upload_session' } }));
       }
     } catch (error) {
       const status  = error.response?.status;
@@ -164,10 +166,13 @@ const LibraryTab = ({ onBack, onUploadNew, onStudyTopic }) => {
 
   const confirmDelete = async () => {
     if (!deleteCandidate) return;
+    const deletedId = deleteCandidate.id;
     try {
-      await api.delete(`/library/${deleteCandidate.id}`);
-      setFiles(files.filter(f => f.id !== deleteCandidate.id));
+      await api.delete(`/library/${deletedId}`);
+      setFiles(files.filter(f => f.id !== deletedId));
       setToast({ message: "File deleted successfully", type: 'success' });
+      window.dispatchEvent(new CustomEvent('florix:session-updated', { detail: { sessionId: deletedId, action: 'delete' } }));
+      window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { sessionId: deletedId, action: 'delete_session' } }));
     } catch (error) {
       setToast({ message: "Failed to delete file", type: 'error' });
     } finally {
@@ -181,6 +186,7 @@ const LibraryTab = ({ onBack, onUploadNew, onStudyTopic }) => {
         await api.delete(`/bookmarks/${file.id}`);
         setToast({ message: `Removed bookmark for "${file.filename}"`, type: 'success' });
         fetchLibrary();
+        window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { action: 'toggle_bookmark' } }));
       } catch (error) {
         setToast({ message: "Failed to remove bookmark", type: 'error' });
       }
@@ -198,6 +204,7 @@ const LibraryTab = ({ onBack, onUploadNew, onStudyTopic }) => {
       });
       setToast({ message: `"${bookmarkCandidate.filename}" added to Bookmarks!`, type: 'success' });
       fetchLibrary();
+      window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { action: 'toggle_bookmark' } }));
     } catch (error) {
       setToast({ message: error.response?.data?.detail || "Failed to add bookmark", type: 'error' });
     } finally {

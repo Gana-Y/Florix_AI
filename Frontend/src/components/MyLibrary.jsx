@@ -29,6 +29,8 @@ const MyLibrary = ({ onSelectFile }) => {
           full_summary: response.data.summary,
         };
         setFiles([newFile, ...files]);
+        window.dispatchEvent(new CustomEvent('florix:session-created', { detail: { session: response.data } }));
+        window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { action: 'upload_session' } }));
       }
     } catch (error) {
       alert("Upload failed: " + (error.response?.data?.detail || error.response?.data?.error || ""));
@@ -41,6 +43,8 @@ const MyLibrary = ({ onSelectFile }) => {
     try {
       await api.delete(`/library/${id}`);
       setFiles(files.filter(f => f.id !== id));
+      window.dispatchEvent(new CustomEvent('florix:session-updated', { detail: { sessionId: id, action: 'delete' } }));
+      window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { sessionId: id, action: 'delete_session' } }));
     } catch (e) {
       alert("Failed to delete file.");
     }

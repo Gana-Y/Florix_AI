@@ -339,6 +339,8 @@ const Sidebar = ({
       fetchSessions();
       fetchSpaces();
       addToast('Session deleted', 'success');
+      window.dispatchEvent(new CustomEvent('florix:session-updated', { detail: { sessionId, action: 'delete' } }));
+      window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { sessionId, action: 'delete_session' } }));
     } catch {
       addToast('Failed to delete session', 'error');
     }

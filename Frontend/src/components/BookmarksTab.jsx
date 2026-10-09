@@ -64,6 +64,7 @@ const BookmarksTab = ({ onOpenSession }) => {
       await api.delete(`/bookmarks/${sessionId}`);
       setBookmarks(prev => prev.filter(b => b.session_id !== sessionId));
       addToast('Bookmark removed', 'info');
+      window.dispatchEvent(new CustomEvent('florix:stats-updated', { detail: { action: 'remove_bookmark', sessionId } }));
     } catch {
       addToast('Failed to remove bookmark', 'error');
     } finally {

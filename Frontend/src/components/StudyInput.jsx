@@ -12,6 +12,7 @@ import RichPreviewPanel from './RichPreviewPanel';
 import { useToast } from '../context/ToastContext';
 import PipelineVisualizer from './PipelineVisualizer';
 import { AuthContext } from '../context/AuthContext';
+import CelestialThemeToggle from './CelestialThemeToggle';
 
 // Plan-based workspace source limits
 const PLAN_SOURCE_LIMITS = {
@@ -463,15 +464,11 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
         {/* Right: Theme Toggle or Spacer */}
         <div className="shrink-0 w-[88px] flex justify-end">
           {toggleTheme && (
-            <motion.button
-              whileHover={{ scale: 1.08, rotate: 15 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={toggleTheme}
-              className="w-10 h-10 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md text-slate-600 dark:text-zinc-300 shadow-md border border-slate-200/50 dark:border-zinc-800/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center shrink-0"
-              aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {isDarkMode ? <Sun size={17} /> : <Moon size={17} />}
-            </motion.button>
+            <CelestialThemeToggle
+              isDarkMode={isDarkMode}
+              toggleTheme={toggleTheme}
+              size="md"
+            />
           )}
         </div>
       </div>

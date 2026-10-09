@@ -29,6 +29,7 @@ import SystemMonitor    from '../components/SystemMonitor';
 import ProvideFeedbackModal from '../components/ProvideFeedbackModal';
 import SpaceWorkspaceHub from '../components/SpaceWorkspaceHub';
 import NotificationCenter from '../components/NotificationCenter';
+import CelestialThemeToggle from '../components/CelestialThemeToggle';
 import api from '../utils/api';
 
 // ── Color Map ─────────────────────────────────────────────────────────────────
@@ -474,14 +475,11 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
                 }}
                 currentSessionId={studyData?.id || null}
               />
-              <motion.button
-                whileHover={{ scale: 1.08, rotate: 15 }} whileTap={{ scale: 0.9 }}
-                onClick={toggleTheme}
-                className="w-10 h-10 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md text-slate-600 dark:text-zinc-300 shadow-md border border-slate-200/50 dark:border-zinc-800/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center shrink-0"
-                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                {isDarkMode ? <Sun size={17} /> : <Moon size={17} />}
-              </motion.button>
+              <CelestialThemeToggle
+                isDarkMode={isDarkMode}
+                toggleTheme={toggleTheme}
+                size="md"
+              />
             </div>
           </div>
         )}

@@ -21,6 +21,7 @@ import { MetacognitiveDebuggerModal } from './MetacognitiveDebugger';
 import VivaWorkspace from './VivaWorkspace';
 import { PreferencesContext } from '../context/PreferencesContext';
 import { useToast } from '../context/ToastContext';
+import CelestialThemeToggle from './CelestialThemeToggle';
 
 const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
   const { prefs } = useContext(PreferencesContext);
@@ -1022,14 +1023,11 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
             </Suspense>
           )}
           {toggleTheme && (
-            <button
-              onClick={toggleTheme}
-              className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-zinc-700/60"
-              aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
-            </button>
+            <CelestialThemeToggle
+              isDarkMode={isDarkMode}
+              toggleTheme={toggleTheme}
+              size="sm"
+            />
           )}
         </div>
       </div>

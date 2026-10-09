@@ -3,6 +3,7 @@ import {
   MessageSquare, Plus, Trash2, Search, Send, Mic, MicOff,
   Bot, Loader2, Sparkles, Zap, BookOpen, Brain,
   ChevronLeft, ChevronRight, PenLine, Check, X as XIcon, Pin, Folder,
+  Volume2, VolumeX, Copy,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,7 +13,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
 import { preprocessLatex } from '../utils/latexHelper';
 import { extractBestTranscript, combineSpokenWithBase, configureSpeechRecognition, AUDIO_CAPTURE_CONSTRAINTS } from '../utils/speechCorrection';
-import { PreferencesContext } from '../context/PreferencesContext';
+import { PreferencesContext, BUBBLE_COLOR_MAP } from '../context/PreferencesContext';
+import { speakText, stopSpeaking, LANGUAGE_LOCALE_MAP } from '../utils/tts';
 import { useToast } from '../context/ToastContext';
 import CodeBlock from './CodeBlock';
 
@@ -51,7 +53,18 @@ import ChatImage from './ChatImage';
 import InteractiveBotAvatar from './InteractiveBotAvatar';
 
 // ── Memoized Message Bubble (Eliminates Markdown AST Re-parsing Jank) ───────────
-const ChatMessageBubble = React.memo(({ msg }) => {
+const ChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak }) => {
+  const { prefs } = useContext(PreferencesContext);
+  const bubbleTheme = BUBBLE_COLOR_MAP[prefs?.bubbleColor] || BUBBLE_COLOR_MAP.default;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!msg.content) return;
+    navigator.clipboard.writeText(msg.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -65,7 +78,7 @@ const ChatMessageBubble = React.memo(({ msg }) => {
 
       <div className={`max-w-[85%] md:max-w-[78%] rounded-3xl shadow-sm px-5 py-4 ${
         msg.role === 'user'
-          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-br-md shadow-indigo-500/20 text-[15px] sm:text-[15.5px] leading-[1.65]'
+          ? `bg-gradient-to-br ${bubbleTheme.bg} text-white rounded-br-md ${bubbleTheme.shadow} text-[15px] sm:text-[15.5px] leading-[1.65]`
           : 'bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 rounded-bl-md text-[15px] sm:text-[15.5px] leading-[1.75]'
       }`}>
         <div className="w-full">
@@ -225,13 +238,39 @@ const ChatMessageBubble = React.memo(({ msg }) => {
             {preprocessLatex(String(msg.content || ''))}
           </ReactMarkdown>
         </div>
+
+        {msg.role === 'assistant' && (
+          <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-zinc-800/80 text-xs text-slate-400 dark:text-zinc-500">
+            <button
+              onClick={() => onToggleSpeak?.(msg)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                isSpeaking
+                  ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 animate-pulse'
+                  : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400'
+              }`}
+              title={isSpeaking ? 'Stop speaking' : 'Listen to response'}
+            >
+              {isSpeaking ? <VolumeX className="w-3.5 h-3.5 text-rose-500" /> : <Volume2 className="w-3.5 h-3.5" />}
+              <span>{isSpeaking ? 'Stop' : 'Listen'}</span>
+            </button>
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400 transition-all"
+              title="Copy message"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+          </div>
+        )}
       </div>
     </motion.div>
   );
 }, (prev, next) => (
   prev.msg.id === next.msg.id &&
   prev.msg.content === next.msg.content &&
-  prev.msg.role === next.msg.role
+  prev.msg.role === next.msg.role &&
+  prev.isSpeaking === next.isSpeaking
 ));
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -257,14 +296,34 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
   const recognitionRef = useRef(null);
   const baseInputRef = useRef('');
 
-  // Clean up recognition on unmount
+  const [speakingMsgId, setSpeakingMsgId] = useState(null);
+
+  // Clean up recognition and speech synthesis on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch (_) {}
       }
+      stopSpeaking();
     };
   }, []);
+
+  const handleToggleSpeak = (msg) => {
+    if (speakingMsgId === msg.id) {
+      stopSpeaking();
+      setSpeakingMsgId(null);
+    } else {
+      stopSpeaking();
+      setSpeakingMsgId(msg.id);
+      speakText(msg.content, {
+        voiceProfile: prefs?.voiceAssistant || 'female-us',
+        language: prefs?.language || 'en-US',
+        speechRate: prefs?.speechRate || 1.0,
+        onEnd: () => setSpeakingMsgId(null),
+        onError: () => setSpeakingMsgId(null),
+      });
+    }
+  };
 
   const activeConvIdRef = useRef(activeConvId);
   useEffect(() => {
@@ -432,8 +491,25 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
       const res = await api.post(`/conversations/${convId}/message`, {
         message: userMsg,
         response_style: prefs?.responseStyle || 'balanced',
+        language: prefs?.language || 'en-US',
+        model: prefs?.model,
+        temperature: prefs?.temperature,
+        learning_goal: prefs?.learningGoal,
       });
-      setMessages((p) => [...p, { id: `a-${Date.now()}`, role: 'assistant', content: res.data.reply }]);
+      const assistantId = `a-${Date.now()}`;
+      setMessages((p) => [...p, { id: assistantId, role: 'assistant', content: res.data.reply }]);
+
+      if (prefs?.autoReadAnswers && res.data?.reply) {
+        setSpeakingMsgId(assistantId);
+        speakText(res.data.reply, {
+          voiceProfile: prefs?.voiceAssistant || 'female-us',
+          language: prefs?.language || 'en-US',
+          speechRate: prefs?.speechRate || 1.0,
+          onEnd: () => setSpeakingMsgId(null),
+          onError: () => setSpeakingMsgId(null),
+        });
+      }
+
       // Update title in sidebar and header with AI-generated conceptual topic title
       if (res.data.title) {
         setConversations((p) => p.map((c) =>
@@ -524,7 +600,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.interimResults = true;
-      configureSpeechRecognition(rec);
+      configureSpeechRecognition(rec, LANGUAGE_LOCALE_MAP[prefs?.language] || prefs?.language || null);
 
       rec.onstart = () => {
         setIsListening(true);
@@ -809,7 +885,12 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
           {/* Message bubbles */}
           <AnimatePresence initial={false}>
             {messages.map((msg) => (
-              <ChatMessageBubble key={msg.id} msg={msg} />
+              <ChatMessageBubble
+                key={msg.id}
+                msg={msg}
+                isSpeaking={speakingMsgId === msg.id}
+                onToggleSpeak={handleToggleSpeak}
+              />
             ))}
           </AnimatePresence>
 

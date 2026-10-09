@@ -570,6 +570,10 @@ class ChatRequest(BaseModel):
     context_text: str | None = None
     response_style: str | None = None
     history: Optional[List[Dict[str, str]]] = None
+    language: Optional[str] = None
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    learning_goal: Optional[str] = None
 
     @field_validator("message")
     @classmethod
@@ -603,6 +607,10 @@ class ConversationCreate(BaseModel):
 class MessageCreate(BaseModel):
     message: str
     response_style: str | None = None
+    language: Optional[str] = None
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    learning_goal: Optional[str] = None
 
     @field_validator("message")
     @classmethod
@@ -615,6 +623,32 @@ class MessageCreate(BaseModel):
         if len(clean) > 20000:
             raise ValueError("Message exceeds maximum allowed length of 20,000 characters")
         return clean
+
+def _build_preference_instructions(language: Optional[str] = None, learning_goal: Optional[str] = None) -> str:
+    instrs = []
+    if language and language.lower() not in ["en-us", "en-gb", "en"]:
+        lang_names = {
+            "hi": "Hindi", "te": "Telugu", "ta": "Tamil", "es": "Spanish",
+            "fr": "French", "de": "German", "ja": "Japanese", "zh": "Chinese",
+            "ar": "Arabic", "ru": "Russian"
+        }
+        lang_name = lang_names.get(language.lower(), language)
+        instrs.append(
+            f"TARGET LANGUAGE INSTRUCTION:\nThe student has set their preferred language to {lang_name}. "
+            f"Formulate all your explanations, conversational remarks, and replies in natural, fluent {lang_name} while keeping programming code and technical identifiers intact."
+        )
+
+    if learning_goal:
+        goal_map = {
+            "exams": "STUDENT LEARNING FOCUS:\nFocus on high-yield exam takeaways, common traps/mistakes, and concise recall points.",
+            "skills": "STUDENT LEARNING FOCUS:\nFocus on practical engineering mechanics, runnable code implementations, and real-world architectures.",
+            "curiosity": "STUDENT LEARNING FOCUS:\nFocus on broad intuitive analogies, fascinating connections, and first-principles curiosity.",
+            "research": "STUDENT LEARNING FOCUS:\nFocus on academic rigor, formal citations, methodology trade-offs, and empirical evidence."
+        }
+        if learning_goal.lower() in goal_map:
+            instrs.append(goal_map[learning_goal.lower()])
+
+    return ("\n" + "\n\n".join(instrs) + "\n") if instrs else ""
 
 class ConversationTitleUpdate(BaseModel):
     title: str
@@ -891,7 +925,12 @@ def _is_quota_or_transient_error(e: Exception) -> bool:
     return any(indicator in err_str for indicator in quota_indicators)
 
 
-def generate_with_fallback(prompt: str, instruction: str = "Summarize this text professionally in Markdown format") -> str:
+def generate_with_fallback(
+    prompt: str,
+    instruction: str = "Summarize this text professionally in Markdown format",
+    model_override: Optional[str] = None,
+    temperature: Optional[float] = None,
+) -> str:
     """Call Gemini with bounded retry on quota or unavailable demand spikes, cascading dynamically across active models."""
     safety = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -899,8 +938,8 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
-    # Build unique cascade order starting with primary MODEL_NAME
-    raw_models = [MODEL_NAME] + MODEL_CASCADE
+    # Build unique cascade order starting with model_override or primary MODEL_NAME
+    raw_models = ([model_override] if model_override else []) + [MODEL_NAME] + MODEL_CASCADE
     models_to_try = []
     for m in raw_models:
         if m and m not in models_to_try:
@@ -932,13 +971,17 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
     for model in models_to_try:
         try:
             logger.info(f"🤖 Invoking Gemini model '{model}' for generation...")
+            gen_config = {
+                "safety_settings": safety,
+                "max_output_tokens": 8192
+            }
+            if temperature is not None:
+                gen_config["temperature"] = float(temperature)
+
             response = client.models.generate_content(
                 model=model,
                 contents=contents,
-                config={
-                    "safety_settings": safety,
-                    "max_output_tokens": 8192
-                },
+                config=gen_config,
             )
             track_gemini_tokens(response)
             if response and response.text and response.text.strip():
@@ -5354,9 +5397,10 @@ async def chat_with_document(
 
         intent, mode = detect_learning_intent(request.message)
         scaffold = TeachingEngine.get_scaffolding_instruction(mode, intent)
-        enhanced_context = f"{scaffold}\n\n{doc_header}{doc_context}"
+        pref_instr = _build_preference_instructions(request.language, request.learning_goal)
+        enhanced_context = f"{scaffold}{pref_instr}\n\n{doc_header}{doc_context}"
 
-        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
         grounded_res = generator.generate(
             query=request.message,
             context=enhanced_context,
@@ -5390,10 +5434,11 @@ async def chat_with_document(
         }
     else:
         intent, mode = detect_learning_intent(request.message)
-        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        pref_instr = _build_preference_instructions(request.language, request.learning_goal)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
         grounded_res = generator.generate(
             query=request.message,
-            context=request.context_text or "",
+            context=f"{pref_instr}\n{request.context_text or ''}".strip(),
             citations=[],
             response_style=request.response_style or "balanced",
             history=request.history or []
@@ -5482,7 +5527,8 @@ async def chat_stream(
 
         intent, mode = detect_learning_intent(request.message)
         scaffold = TeachingEngine.get_scaffolding_instruction(mode, intent)
-        enhanced_context = f"{scaffold}\n\n{doc_context}"
+        pref_instr = _build_preference_instructions(request.language, request.learning_goal)
+        enhanced_context = f"{scaffold}{pref_instr}\n\n{doc_context}"
 
         # Record user message
         try:
@@ -5494,7 +5540,7 @@ async def chat_stream(
             logger.warning(f"Failed to record user chat message: {pe}")
             db.rollback()
 
-        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
         return StreamingResponse(
             generator.generate_stream(
                 query=request.message,
@@ -5510,11 +5556,12 @@ async def chat_stream(
             },
         )
     else:
-        generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
+        pref_instr = _build_preference_instructions(request.language, request.learning_goal)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
         return StreamingResponse(
             generator.generate_stream(
                 query=request.message,
-                context="",
+                context=pref_instr.strip(),
                 citations=[],
                 response_style=request.response_style or "balanced",
                 history=request.history or []
@@ -7255,7 +7302,9 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
     max_loops = 2
     tool_results = []
     generated_images = []
-    current_prompt = f"Response style: {style_instr}{student_profile_context}{space_knowledge}\n\nConversation history:\n{history_text}\n\nRespond to: {message}"
+
+    pref_instr = _build_preference_instructions(data.language, data.learning_goal)
+    current_prompt = f"Response style: {style_instr}{pref_instr}{student_profile_context}{space_knowledge}\n\nConversation history:\n{history_text}\n\nRespond to: {message}"
     reply = ""
 
     for loop in range(max_loops):
@@ -7326,7 +7375,12 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             + prev_results_block
         )
 
-        reply = generate_with_fallback(current_prompt, agent_instruction)
+        reply = generate_with_fallback(
+            current_prompt,
+            agent_instruction,
+            model_override=data.model,
+            temperature=data.temperature,
+        )
 
         # Check if the model wants to call a tool
         tool_call_match = re.search(r"\[CALL_TOOL:\s*(\w+)\((.*?)\)\]", reply)

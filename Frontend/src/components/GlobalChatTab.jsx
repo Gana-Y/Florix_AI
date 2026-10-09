@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useContext, Component } from 'react
 import {
   Send, Mic, MicOff, Bot, User, Loader2, AlertCircle, Sparkles,
   Zap, BookOpen, Lightbulb, Award, FileText, Cpu, HelpCircle, ArrowRight,
-  Copy, Check, ChevronDown, ChevronUp
+  Copy, Check, ChevronDown, ChevronUp, Volume2, VolumeX
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -13,7 +13,8 @@ import { preprocessLatex } from '../utils/latexHelper';
 import { extractBestTranscript, combineSpokenWithBase, configureSpeechRecognition, AUDIO_CAPTURE_CONSTRAINTS } from '../utils/speechCorrection';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
-import { PreferencesContext } from '../context/PreferencesContext';
+import { PreferencesContext, BUBBLE_COLOR_MAP } from '../context/PreferencesContext';
+import { speakText, stopSpeaking, LANGUAGE_LOCALE_MAP } from '../utils/tts';
 import { useToast } from '../context/ToastContext';
 import MermaidDiagram from './MermaidDiagram';
 import ChatImage from './ChatImage';
@@ -205,7 +206,10 @@ const CitationPill = ({ citation, index }) => {
 };
 
 // ── Memoized Message Item (User Bubble vs Academic Tutor Card) ──
-const GlobalChatMessageBubble = React.memo(({ msg }) => {
+const GlobalChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak }) => {
+  const { prefs } = useContext(PreferencesContext);
+  const bubbleTheme = BUBBLE_COLOR_MAP[prefs?.bubbleColor] || BUBBLE_COLOR_MAP.default;
+
   if (msg.role === 'user') {
     return (
       <motion.div
@@ -214,7 +218,7 @@ const GlobalChatMessageBubble = React.memo(({ msg }) => {
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
         className="flex justify-end w-full"
       >
-        <div className="max-w-[85%] px-5 py-3 rounded-2xl rounded-tr-xs bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[15px] sm:text-[15.5px] font-medium shadow-sm shadow-indigo-500/20 leading-[1.65] break-words">
+        <div className={`max-w-[85%] px-5 py-3 rounded-2xl rounded-tr-xs bg-gradient-to-r ${bubbleTheme.bg} text-white text-[15px] sm:text-[15.5px] font-medium shadow-sm ${bubbleTheme.shadow} leading-[1.65] break-words`}>
           {msg.text}
         </div>
       </motion.div>
@@ -249,6 +253,17 @@ const GlobalChatMessageBubble = React.memo(({ msg }) => {
                 <Check size={10} className="stroke-[3]" /> Grounded
               </span>
             )}
+            <button
+              onClick={() => onToggleSpeak?.(msg)}
+              className={`p-1.5 rounded-lg text-xs transition-all ${
+                isSpeaking
+                  ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 animate-pulse'
+                  : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 dark:text-zinc-500'
+              }`}
+              title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+            >
+              {isSpeaking ? <VolumeX size={14} className="text-rose-500" /> : <Volume2 size={14} />}
+            </button>
             <CopyButton text={msg.text} />
           </div>
         </div>
@@ -287,7 +302,8 @@ const GlobalChatMessageBubble = React.memo(({ msg }) => {
   (prev.msg.id ? prev.msg.id === next.msg.id : true) &&
   prev.msg.text === next.msg.text &&
   prev.msg.role === next.msg.role &&
-  (prev.msg.citations?.length === next.msg.citations?.length)
+  (prev.msg.citations?.length === next.msg.citations?.length) &&
+  prev.isSpeaking === next.isSpeaking
 ));
 
 const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandled }) => {
@@ -332,14 +348,35 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
   const recognitionRef = useRef(null);
   const baseInputRef = useRef('');
 
-  // Clean up recognition on unmount
+  const [speakingMsgId, setSpeakingMsgId] = useState(null);
+
+  // Clean up recognition and speech synthesis on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch (_) {}
       }
+      stopSpeaking();
     };
   }, []);
+
+  const handleToggleSpeak = (msg) => {
+    const msgId = msg.id || msg.text;
+    if (speakingMsgId === msgId) {
+      stopSpeaking();
+      setSpeakingMsgId(null);
+    } else {
+      stopSpeaking();
+      setSpeakingMsgId(msgId);
+      speakText(msg.text, {
+        voiceProfile: prefs?.voiceAssistant || 'female-us',
+        language: prefs?.language || 'en-US',
+        speechRate: prefs?.speechRate || 1.0,
+        onEnd: () => setSpeakingMsgId(null),
+        onError: () => setSpeakingMsgId(null),
+      });
+    }
+  };
 
   const toggleListen = async () => {
     if (isListening) {
@@ -381,7 +418,7 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
-      configureSpeechRecognition(recognition);
+      configureSpeechRecognition(recognition, LANGUAGE_LOCALE_MAP[prefs?.language] || prefs?.language || null);
 
       recognition.onstart = () => {
         setIsListening(true);
@@ -438,6 +475,10 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
       const payload = {
         message: userMessage,
         response_style: prefs?.responseStyle || 'balanced',
+        language: prefs?.language || 'en-US',
+        model: prefs?.model,
+        temperature: prefs?.temperature,
+        learning_goal: prefs?.learningGoal,
         history: messages.slice(-10).map((m) => ({
           role: m.role === 'bot' ? 'assistant' : m.role,
           content: m.text || ''
@@ -445,12 +486,14 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
       };
       if (sessionId) payload.session_id = sessionId;
       const response = await api.post('/chat', payload);
+      const newBotId = Date.now() + Math.random();
+      const botReply = response.data.reply || "No reply";
       setMessages(prev => [
         ...prev,
         {
-          id: Date.now() + Math.random(),
+          id: newBotId,
           role: 'bot',
-          text: response.data.reply || "No reply",
+          text: botReply,
           citations: response.data.citations || [],
           isGrounded: response.data.is_grounded,
           sourcesUsed: response.data.sources_used,
@@ -458,6 +501,17 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
           teachingMode: response.data.teaching_mode
         }
       ]);
+
+      if (prefs?.autoReadAnswers && botReply) {
+        setSpeakingMsgId(newBotId);
+        speakText(botReply, {
+          voiceProfile: prefs?.voiceAssistant || 'female-us',
+          language: prefs?.language || 'en-US',
+          speechRate: prefs?.speechRate || 1.0,
+          onEnd: () => setSpeakingMsgId(null),
+          onError: () => setSpeakingMsgId(null),
+        });
+      }
     } catch (error) {
       const errDetail = error.response?.data?.detail || error.message || "Error connecting to neural network";
       setMessages(prev => [
@@ -543,7 +597,12 @@ const GlobalChatTab = ({ sessionId, documentTitle, externalPrompt, onPromptHandl
       <div ref={chatScrollRef} data-lenis-prevent className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 space-y-4 custom-scrollbar relative min-h-0">
         <AnimatePresence>
           {messages.map((msg, idx) => (
-            <GlobalChatMessageBubble key={msg.id || idx} msg={msg} />
+            <GlobalChatMessageBubble
+              key={msg.id || idx}
+              msg={msg}
+              isSpeaking={speakingMsgId === (msg.id || msg.text)}
+              onToggleSpeak={handleToggleSpeak}
+            />
           ))}
         </AnimatePresence>
 

@@ -3,7 +3,7 @@ import {
   MessageSquare, Plus, Trash2, Search, Send, Mic, MicOff,
   Bot, Loader2, Sparkles, Zap, BookOpen, Brain,
   ChevronLeft, ChevronRight, PenLine, Check, X as XIcon, Pin, Folder,
-  Volume2, VolumeX, Copy,
+  Volume2, VolumeX, Copy, Paperclip, FileText, Code2, Headphones, Video, Eye, Download, UploadCloud
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -17,6 +17,8 @@ import { PreferencesContext, BUBBLE_COLOR_MAP } from '../context/PreferencesCont
 import { speakText, stopSpeaking, LANGUAGE_LOCALE_MAP } from '../utils/tts';
 import { useToast } from '../context/ToastContext';
 import CodeBlock from './CodeBlock';
+import ChatSnippetModal from './ChatSnippetModal';
+import ChatAttachmentDock from './ChatAttachmentDock';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const formatDateGroup = (isoString) => {
@@ -53,7 +55,7 @@ import ChatImage from './ChatImage';
 import InteractiveBotAvatar from './InteractiveBotAvatar';
 
 // ── Memoized Message Bubble (Eliminates Markdown AST Re-parsing Jank) ───────────
-const ChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak }) => {
+const ChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak, onPreviewSnippet, onPreviewImage }) => {
   const { prefs } = useContext(PreferencesContext);
   const bubbleTheme = BUBBLE_COLOR_MAP[prefs?.bubbleColor] || BUBBLE_COLOR_MAP.default;
   const [copied, setCopied] = useState(false);
@@ -81,6 +83,110 @@ const ChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak }) => {
           ? `bg-gradient-to-br ${bubbleTheme.bg} text-white rounded-br-md ${bubbleTheme.shadow} text-[15px] sm:text-[15.5px] leading-[1.65]`
           : 'bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 rounded-bl-md text-[15px] sm:text-[15.5px] leading-[1.75]'
       }`}>
+        {/* ── Render Attached Files / Text Snippets / Media (Claude & ChatGPT Style) ── */}
+        {msg.attachments && msg.attachments.length > 0 && (
+          <div className="mb-3 space-y-2">
+            {msg.attachments.map((att, idx) => {
+              const isImage = att.type === 'image' || (att.mime_type && att.mime_type.startsWith('image/'));
+              const isTextSnippet = att.type === 'text' || att.type === 'snippet' || Boolean(att.content);
+              const isAudio = att.type === 'audio' || (att.mime_type && att.mime_type.startsWith('audio/'));
+              const isVideo = att.type === 'video' || (att.mime_type && att.mime_type.startsWith('video/'));
+
+              if (isTextSnippet) {
+                return (
+                  <div
+                    key={att.id || idx}
+                    onClick={() => onPreviewSnippet?.(att)}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                      msg.role === 'user'
+                        ? 'bg-white/15 border-white/25 hover:bg-white/25 text-white'
+                        : 'bg-slate-50 dark:bg-zinc-800/80 border-slate-200/80 dark:border-zinc-700/80 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      msg.role === 'user' ? 'bg-white/20 text-white' : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
+                    }`}>
+                      {att.name?.endsWith('.py') || att.name?.endsWith('.js') || att.name?.endsWith('.cpp') ? (
+                        <Code2 size={16} />
+                      ) : (
+                        <FileText size={16} />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold truncate">{att.name || 'Pasted text'}</p>
+                      <p className={`text-[11px] truncate ${msg.role === 'user' ? 'text-white/80' : 'text-slate-400 dark:text-zinc-500'}`}>
+                        {att.lines ? `${att.lines} lines • ` : ''}
+                        {att.size ? `${(att.size / 1024).toFixed(1)} KB` : 'Text file'}
+                        {' • Click to view'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(att.content || '');
+                      }}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        msg.role === 'user' ? 'hover:bg-white/20 text-white' : 'hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400'
+                      }`}
+                      title="Copy snippet"
+                    >
+                      <Copy size={13} />
+                    </button>
+                  </div>
+                );
+              }
+
+              if (isImage) {
+                return (
+                  <div
+                    key={att.id || idx}
+                    className="rounded-xl overflow-hidden my-2 max-w-sm border border-black/10 dark:border-white/10 shadow-sm cursor-pointer"
+                    onClick={() => onPreviewImage?.(att.data_url || att.url)}
+                  >
+                    <img
+                      src={att.data_url || att.url}
+                      alt={att.name || 'Image'}
+                      className="w-full max-h-64 object-contain bg-black/5 dark:bg-black/40 rounded-xl"
+                    />
+                  </div>
+                );
+              }
+
+              if (isAudio) {
+                return (
+                  <div key={att.id || idx} className={`p-2.5 rounded-xl border my-2 ${
+                    msg.role === 'user' ? 'bg-white/15 border-white/25 text-white' : 'bg-slate-50 dark:bg-zinc-800/80 border-slate-200 dark:border-zinc-700'
+                  }`}>
+                    <div className="flex items-center gap-2 mb-1.5 text-xs font-medium truncate">
+                      <Headphones size={14} />
+                      <span>{att.name || 'Audio clip'}</span>
+                    </div>
+                    <audio controls src={att.url || att.data_url} className="w-full h-8" />
+                  </div>
+                );
+              }
+
+              if (isVideo) {
+                return (
+                  <div key={att.id || idx} className="rounded-xl overflow-hidden my-2 border border-black/10 dark:border-white/10 shadow-sm">
+                    <video controls src={att.url} className="w-full max-h-64 rounded-xl" />
+                  </div>
+                );
+              }
+
+              return (
+                <div key={att.id || idx} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border ${
+                  msg.role === 'user' ? 'bg-white/15 border-white/25 text-white' : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700'
+                }`}>
+                  <Paperclip size={14} />
+                  <span className="truncate">{att.name || 'Attachment'}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="w-full">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
@@ -239,6 +345,19 @@ const ChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak }) => {
           </ReactMarkdown>
         </div>
 
+        {msg.role === 'user' && (
+          <div className="flex items-center justify-end gap-2 mt-2 pt-1 text-xs text-white/70">
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium hover:bg-white/20 text-white/90 transition-all"
+              title="Copy message"
+            >
+              {copied ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+          </div>
+        )}
+
         {msg.role === 'assistant' && (
           <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-zinc-800/80 text-xs text-slate-400 dark:text-zinc-500">
             <button
@@ -270,7 +389,8 @@ const ChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak }) => {
   prev.msg.id === next.msg.id &&
   prev.msg.content === next.msg.content &&
   prev.msg.role === next.msg.role &&
-  prev.isSpeaking === next.isSpeaking
+  prev.isSpeaking === next.isSpeaking &&
+  JSON.stringify(prev.msg.attachments) === JSON.stringify(next.msg.attachments)
 ));
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -297,6 +417,138 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
   const baseInputRef = useRef('');
 
   const [speakingMsgId, setSpeakingMsgId] = useState(null);
+
+  // 📎 Attachments & Clipboard Snippet States (Claude / ChatGPT style)
+  const [attachments, setAttachments] = useState([]);
+  const [selectedSnippet, setSelectedSnippet] = useState(null);
+  const [previewImageModal, setPreviewImageModal] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleRemoveAttachment = (attId) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== attId));
+  };
+
+  const processIncomingFile = (file) => {
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) {
+      addToast(`File "${file.name}" exceeds maximum allowed size (50MB)`, 'error');
+      return;
+    }
+
+    const fn = file.name.toLowerCase();
+    const isImage = file.type?.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(fn);
+    const isAudio = file.type?.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(fn);
+    const isVideo = file.type?.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(fn);
+    const isText = file.type?.startsWith('text/') || /\.(txt|md|py|js|jsx|ts|tsx|json|csv|html|css|sql|c|cpp|java|rs|go|xml|yml|yaml)$/i.test(fn);
+
+    const attType = isImage ? 'image' : isAudio ? 'audio' : isVideo ? 'video' : isText ? 'text' : 'file';
+
+    if (isText) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result || '';
+        const lines = content.split('\n').length;
+        setAttachments((prev) => [
+          ...prev,
+          {
+            id: `att-f-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            type: 'text',
+            name: file.name,
+            size: file.size,
+            mime_type: file.type || 'text/plain',
+            content,
+            lines,
+            file,
+          }
+        ]);
+        addToast(`Attached text file: ${file.name}`, 'info', 2000);
+      };
+      reader.readAsText(file);
+    } else if (isImage) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setAttachments((prev) => [
+          ...prev,
+          {
+            id: `att-f-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            type: 'image',
+            name: file.name,
+            size: file.size,
+            mime_type: file.type || 'image/png',
+            data_url: e.target?.result,
+            url: URL.createObjectURL(file),
+            file,
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      const localUrl = URL.createObjectURL(file);
+      setAttachments((prev) => [
+        ...prev,
+        {
+          id: `att-f-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: attType,
+          name: file.name,
+          size: file.size,
+          mime_type: file.type || 'application/octet-stream',
+          url: localUrl,
+          file,
+        }
+      ]);
+      addToast(`Attached ${attType}: ${file.name}`, 'info', 2000);
+    }
+  };
+
+  const handleFileInputChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(processIncomingFile);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handlePaste = (e) => {
+    // 1. Check for images in clipboard (e.g. copied screenshots)
+    const items = e.clipboardData?.items;
+    if (items) {
+      const imageItems = Array.from(items).filter((item) => item.type && item.type.indexOf('image') !== -1);
+      if (imageItems.length > 0) {
+        e.preventDefault();
+        for (const item of imageItems) {
+          const file = item.getAsFile();
+          if (file) {
+            processIncomingFile(file);
+            addToast('Pasted image screenshot attached', 'info', 2000);
+          }
+        }
+        return;
+      }
+    }
+
+    // 2. Intercept large text / multi-line code (Claude & ChatGPT behavior)
+    const pastedText = e.clipboardData?.getData('text');
+    if (!pastedText) return;
+
+    const lines = pastedText.split('\n');
+    // Threshold: more than 350 characters OR 5+ lines
+    if (pastedText.length > 350 || lines.length >= 5) {
+      e.preventDefault();
+      const isCode = /^(import|export|function|const|let|var|class|def|from|#include|<html|SELECT|INSERT|package|public|private)\b/im.test(pastedText.trim());
+      const name = isCode ? 'code_snippet.txt' : 'pasted_text.txt';
+      const newSnippet = {
+        id: `att-txt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: 'text',
+        name,
+        content: pastedText,
+        lines: lines.length,
+        size: new Blob([pastedText]).size,
+        mime_type: 'text/plain',
+      };
+      setAttachments((prev) => [...prev, newSnippet]);
+      addToast(`Pasted ${lines.length} lines as attached text snippet`, 'info', 2500);
+    }
+    // Otherwise: allows default small text pasting directly into the input bar!
+  };
 
   // Clean up recognition and speech synthesis on unmount
   useEffect(() => {
@@ -465,7 +717,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
 
   const handleSend = async (textToSend) => {
     const userMsg = (typeof textToSend === 'string' ? textToSend : input).trim();
-    if (!userMsg || isLoading) return;
+    if ((!userMsg && attachments.length === 0) || isLoading) return;
 
     if (isListening && recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (_) {}
@@ -483,13 +735,67 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
       } catch { return; }
     }
 
+    const sendingAttachments = [...attachments];
     setInput('');
-    setMessages((p) => [...p, { id: `u-${Date.now()}`, role: 'user', content: userMsg }]);
+    setAttachments([]);
+
+    setMessages((p) => [
+      ...p,
+      {
+        id: `u-${Date.now()}`,
+        role: 'user',
+        content: userMsg || (sendingAttachments.length > 0 ? '' : 'Hello'),
+        attachments: sendingAttachments
+      }
+    ]);
     setIsLoading(true);
 
     try {
+      // Upload any binary files that don't have a backend url yet
+      const processedAttachments = await Promise.all(
+        sendingAttachments.map(async (att) => {
+          if (att.file && !att.data_url && att.type !== 'text') {
+            const formData = new FormData();
+            formData.append('file', att.file);
+            try {
+              const upRes = await api.post('/conversations/upload-attachment', formData);
+              return {
+                id: att.id,
+                name: att.name,
+                size: att.size,
+                mime_type: upRes.data.mime_type,
+                type: att.type,
+                url: upRes.data.url,
+              };
+            } catch (upErr) {
+              console.warn('Attachment upload fallback:', upErr);
+              return {
+                id: att.id,
+                name: att.name,
+                size: att.size,
+                mime_type: att.mime_type,
+                type: att.type,
+                url: att.url,
+              };
+            }
+          }
+          return {
+            id: att.id,
+            name: att.name,
+            size: att.size,
+            mime_type: att.mime_type,
+            type: att.type,
+            data_url: att.data_url,
+            url: att.url,
+            content: att.content,
+            lines: att.lines,
+          };
+        })
+      );
+
       const res = await api.post(`/conversations/${convId}/message`, {
-        message: userMsg,
+        message: userMsg || 'Please analyze the attached content.',
+        attachments: processedAttachments,
         response_style: prefs?.responseStyle || 'balanced',
         language: prefs?.language || 'en-US',
         model: prefs?.model,
@@ -890,6 +1196,8 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
                 msg={msg}
                 isSpeaking={speakingMsgId === msg.id}
                 onToggleSpeak={handleToggleSpeak}
+                onPreviewSnippet={(snippet) => setSelectedSnippet(snippet)}
+                onPreviewImage={(img) => setPreviewImageModal(img)}
               />
             ))}
           </AnimatePresence>
@@ -908,8 +1216,37 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
-        <div className="shrink-0 p-4 md:p-5 border-t border-slate-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-xl">
+        {/* Input Area with Drag-and-Drop support */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) {
+              setIsDragging(false);
+            }
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const droppedFiles = Array.from(e.dataTransfer.files || []);
+            droppedFiles.forEach(processIncomingFile);
+          }}
+          className={`relative shrink-0 p-4 md:p-5 border-t border-slate-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-xl transition-all ${
+            isDragging ? 'ring-2 ring-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20' : ''
+          }`}
+        >
+          {/* Drag Overlay Feedback */}
+          {isDragging && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-indigo-600/10 backdrop-blur-sm border-2 border-dashed border-indigo-500 rounded-xl m-2 pointer-events-none">
+              <div className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-full text-xs font-semibold shadow-lg">
+                <UploadCloud size={16} />
+                <span>Drop images, audio, video or text files here</span>
+              </div>
+            </div>
+          )}
+
           <div className="max-w-4xl mx-auto">
             {/* Live Interactive Typing Companion Pill */}
             <AnimatePresence>
@@ -928,44 +1265,143 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* ── Compact Claude & ChatGPT Style Attachment Tray ── */}
+            <ChatAttachmentDock
+              attachments={attachments}
+              onRemoveAttachment={handleRemoveAttachment}
+              onPreviewSnippet={(s) => setSelectedSnippet(s)}
+              onPreviewImage={(img) => setPreviewImageModal(img)}
+            />
+
+            {/* Hidden File Picker */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFileInputChange}
+              accept="image/*,audio/*,video/*,.pdf,.docx,.doc,.txt,.md,.json,.csv,.py,.js,.jsx,.ts,.tsx,.html,.css,.sql,.c,.cpp,.java,.rs,.go"
+            />
+
             <form
               onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-              className="relative flex items-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-lg focus-within:ring-4 focus-within:ring-indigo-500/15 focus-within:border-indigo-500 transition-all"
+              className="relative flex items-end bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-lg focus-within:ring-4 focus-within:ring-indigo-500/15 focus-within:border-indigo-500 transition-all p-1.5"
             >
-              <motion.button
-                type="button" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-                onClick={toggleListen}
-                className={`absolute left-3 p-2.5 rounded-xl transition-all z-10 ${
-                  isListening
-                    ? 'bg-red-100 dark:bg-red-900/40 text-red-500 animate-pulse'
-                    : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
-                }`}
-              >
-                {isListening ? <Mic size={18} /> : <MicOff size={18} />}
-              </motion.button>
+              <div className="flex items-center gap-1 pl-1.5 pb-1 shrink-0">
+                {/* File Attachment Button */}
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all"
+                  title="Attach images, audio, video, or files"
+                >
+                  <Paperclip size={18} />
+                </motion.button>
 
-              <input
+                {/* Voice Input Button */}
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={toggleListen}
+                  className={`p-2 rounded-xl transition-all ${
+                    isListening
+                      ? 'bg-red-100 dark:bg-red-900/40 text-red-500 animate-pulse'
+                      : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
+                  }`}
+                  title={isListening ? 'Stop listening' : 'Voice input'}
+                >
+                  {isListening ? <Mic size={18} /> : <MicOff size={18} />}
+                </motion.button>
+              </div>
+
+              {/* Dynamic Auto-growing Textarea with Keyboard & Paste Handler */}
+              <textarea
                 ref={inputRef}
-                type="text"
+                rows={1}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={isListening ? 'Listening…' : 'Message Florix AI…'}
-                className="flex-1 pl-14 pr-14 py-4 bg-transparent text-slate-800 dark:text-zinc-200 focus:outline-none text-sm font-medium placeholder:text-slate-400"
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                onPaste={handlePaste}
+                placeholder={
+                  isListening
+                    ? 'Listening…'
+                    : attachments.length > 0
+                    ? 'Ask a question about the attachment or press Enter to send...'
+                    : 'Message Florix AI… (or paste code/images)'
+                }
+                className="flex-1 px-3 py-2.5 bg-transparent text-slate-800 dark:text-zinc-200 focus:outline-none text-sm font-medium placeholder:text-slate-400 resize-none max-h-40 min-h-[44px] leading-relaxed"
               />
 
-              <motion.button
-                type="submit" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                disabled={!input.trim() || isLoading}
-                className="absolute right-3 p-2.5 bg-gradient-to-br from-indigo-600 to-purple-600 disabled:from-slate-300 disabled:to-slate-300 dark:disabled:from-zinc-700 dark:disabled:to-zinc-700 text-white rounded-xl shadow-lg shadow-indigo-500/30 transition-all disabled:shadow-none"
-              >
-                {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-              </motion.button>
+              <div className="pb-1 pr-1 shrink-0">
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                  className="p-2.5 bg-gradient-to-br from-indigo-600 to-purple-600 disabled:from-slate-300 disabled:to-slate-300 dark:disabled:from-zinc-700 dark:disabled:to-zinc-700 text-white rounded-xl shadow-lg shadow-indigo-500/30 transition-all disabled:shadow-none"
+                  title="Send message"
+                >
+                  {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                </motion.button>
+              </div>
             </form>
             <p className="text-center text-xs text-slate-400 dark:text-zinc-600 mt-2">
               Florix AI may make mistakes. Always verify important information.
             </p>
           </div>
         </div>
+
+        {/* ── Snippet Viewer Modal (Claude & ChatGPT Style) ── */}
+        <ChatSnippetModal
+          snippet={selectedSnippet}
+          isOpen={Boolean(selectedSnippet)}
+          onClose={() => setSelectedSnippet(null)}
+        />
+
+        {/* ── Lightbox Image Modal ── */}
+        {previewImageModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
+            onClick={() => setPreviewImageModal(null)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+              <img
+                src={previewImageModal}
+                alt="Preview"
+                className="max-w-full max-h-[82vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+              />
+              <div className="flex items-center gap-3 mt-4">
+                <a
+                  href={previewImageModal}
+                  download="image.png"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-medium backdrop-blur-md transition-colors"
+                >
+                  <Download size={14} />
+                  <span>Download Image</span>
+                </a>
+                <button
+                  onClick={() => setPreviewImageModal(null)}
+                  className="px-4 py-2 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-medium backdrop-blur-md transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

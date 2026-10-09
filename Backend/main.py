@@ -28,9 +28,11 @@ from urllib.parse import urlparse, parse_qs, urljoin, quote
 import chromadb
 import razorpay
 
+import base64
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func, text
@@ -389,6 +391,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+os.makedirs("uploads/chat_attachments", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 # ── RAG Pipeline Progress Tracker ──────────────────────────────────────────────
 pipeline_progress = {}  # progress_id -> steps
 
@@ -605,8 +610,9 @@ class ConversationCreate(BaseModel):
     project_id: Optional[int] = None
 
 class MessageCreate(BaseModel):
-    message: str
-    response_style: str | None = None
+    message: Optional[str] = ""
+    attachments: Optional[List[Dict[str, Any]]] = None
+    response_style: Optional[str] = None
     language: Optional[str] = None
     model: Optional[str] = None
     temperature: Optional[float] = None
@@ -614,15 +620,17 @@ class MessageCreate(BaseModel):
 
     @field_validator("message")
     @classmethod
-    def validate_message(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Message cannot be empty or whitespace only")
-        clean = v.replace("\x00", "").strip()
-        if not clean:
-            raise ValueError("Message cannot be empty after sanitization")
-        if len(clean) > 20000:
-            raise ValueError("Message exceeds maximum allowed length of 20,000 characters")
+    def validate_message(cls, v: Optional[str]) -> str:
+        clean = (v or "").replace("\x00", "").strip()
+        if len(clean) > 50000:
+            raise ValueError("Message exceeds maximum allowed length of 50,000 characters")
         return clean
+
+    @model_validator(mode="after")
+    def validate_non_empty(self):
+        if not self.message.strip() and not self.attachments:
+            raise ValueError("Message or attachment is required and cannot be empty or whitespace only")
+        return self
 
 def _build_preference_instructions(language: Optional[str] = None, learning_goal: Optional[str] = None) -> str:
     instrs = []
@@ -930,6 +938,7 @@ def generate_with_fallback(
     instruction: str = "Summarize this text professionally in Markdown format",
     model_override: Optional[str] = None,
     temperature: Optional[float] = None,
+    multimodal_parts: Optional[List[Any]] = None,
 ) -> str:
     """Call Gemini with bounded retry on quota or unavailable demand spikes, cascading dynamically across active models."""
     safety = [
@@ -959,13 +968,18 @@ def generate_with_fallback(
         truncated = prompt
 
     if "<untrusted_study_material>" in instruction and not truncated:
-        contents = instruction
+        main_content = instruction
     elif instruction and truncated:
-        contents = f"{instruction}:\n\n{truncated}"
+        main_content = f"{instruction}:\n\n{truncated}"
     elif instruction:
-        contents = instruction
+        main_content = instruction
     else:
-        contents = truncated
+        main_content = truncated
+
+    if multimodal_parts:
+        contents = list(multimodal_parts) + [main_content]
+    else:
+        contents = main_content
     last_err = None
 
     for model in models_to_try:
@@ -6996,7 +7010,78 @@ def get_messages(conv_id: int, db: Session = Depends(get_db), current_user: User
     conv = db.query(ChatConversation).filter(ChatConversation.id == conv_id, ChatConversation.user_id == current_user.id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return [{"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at.isoformat()} for m in conv.messages]
+    res = []
+    for m in conv.messages:
+        atts = []
+        if getattr(m, "attachments", None):
+            try:
+                atts = json.loads(m.attachments) if isinstance(m.attachments, str) else m.attachments
+            except Exception:
+                atts = []
+        res.append({
+            "id": m.id,
+            "role": m.role,
+            "content": m.content,
+            "attachments": atts,
+            "created_at": m.created_at.isoformat()
+        })
+    return res
+
+
+@app.post("/conversations/upload-attachment", tags=["Chat"])
+async def upload_chat_attachment(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload images, audio, video, or documents to attach to chat conversations."""
+    MAX_SIZE = 50 * 1024 * 1024  # 50MB
+    contents = await file.read()
+    if len(contents) > MAX_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Maximum attachment size is 50MB.")
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    fn = (file.filename or "attachment").lower()
+    is_image = any(fn.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"))
+    is_audio = any(fn.endswith(ext) for ext in (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm", ".flac"))
+    is_video = any(fn.endswith(ext) for ext in (".mp4", ".webm", ".mov", ".mkv", ".avi"))
+    is_text = any(fn.endswith(ext) for ext in (".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".csv", ".html", ".css", ".sql", ".c", ".cpp", ".java", ".xml", ".yaml", ".yml", ".rs", ".go"))
+
+    att_type = "image" if is_image else "audio" if is_audio else "video" if is_video else "text" if is_text else "file"
+
+    os.makedirs("uploads/chat_attachments", exist_ok=True)
+    clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename or "file")
+    unique_name = f"{uuid.uuid4().hex[:10]}_{clean_name}"
+    disk_path = os.path.join("uploads", "chat_attachments", unique_name)
+    with open(disk_path, "wb") as f:
+        f.write(contents)
+
+    text_content = None
+    line_count = None
+    if is_text or (file.content_type and file.content_type.startswith("text/")):
+        try:
+            text_content = contents.decode("utf-8", errors="replace")
+            line_count = len(text_content.splitlines())
+        except Exception:
+            pass
+
+    data_url = None
+    if is_image and len(contents) <= 6 * 1024 * 1024:
+        mime = file.content_type or "image/png"
+        b64 = base64.b64encode(contents).decode("ascii")
+        data_url = f"data:{mime};base64,{b64}"
+
+    return {
+        "id": f"att-{uuid.uuid4().hex[:8]}",
+        "name": file.filename or "attachment",
+        "size": len(contents),
+        "mime_type": file.content_type or "application/octet-stream",
+        "type": att_type,
+        "url": f"/uploads/chat_attachments/{unique_name}",
+        "data_url": data_url,
+        "content": text_content,
+        "lines": line_count
+    }
 
 
 def agent_search_user_library(query: str, user_id: int, db: Session) -> str:
@@ -7264,14 +7349,93 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    message = data.message
-    user_msg = ChatMessage(role="user", content=message, conversation_id=conv_id)
+    message = (data.message or "").strip()
+    attachments = data.attachments or []
+    if not message and not attachments:
+        raise HTTPException(status_code=400, detail="Message or attachment is required")
+    if not message and attachments:
+        message = "Please analyze the attached content."
+
+    attachments_json = json.dumps(attachments) if attachments else None
+    user_msg = ChatMessage(role="user", content=message, attachments=attachments_json, conversation_id=conv_id)
     db.add(user_msg)
     db.flush()
 
     recent = conv.messages[-10:] if len(conv.messages) >= 10 else conv.messages
     history_text = "\n".join(f"{m.role.upper()}: {m.content}" for m in recent)
     style_instr = get_style_instruction(data.response_style)
+
+    # 📎 Attachment multimodal parts & text context processing
+    multimodal_parts = []
+    attached_text_blocks = []
+
+    for att in attachments:
+        att_type = att.get("type", "")
+        # Text/snippet
+        if att_type in ("text", "snippet", "file", "document") or att.get("content"):
+            content = att.get("content", "")
+            name = att.get("name", "pasted_text.txt")
+            if content:
+                attached_text_blocks.append(f"\n\n[ATTACHED FILE / SNIPPET: {name}]\n```\n{content}\n```")
+        # Image
+        elif att_type == "image" or (att.get("mime_type") and att.get("mime_type").startswith("image/")):
+            mime = att.get("mime_type", "image/png")
+            data_url = att.get("data_url") or ""
+            if data_url and "," in data_url:
+                try:
+                    header, encoded = data_url.split(",", 1)
+                    if "image/" in header:
+                        mime = header.split(";")[0].replace("data:", "")
+                    img_bytes = base64.b64decode(encoded)
+                    multimodal_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
+                except Exception as ex:
+                    logger.warning(f"Error decoding image data_url: {ex}")
+            elif att.get("url") and "/uploads/" in att.get("url"):
+                local_rel = att["url"].split("/uploads/", 1)[1]
+                local_path = os.path.join("uploads", local_rel)
+                if os.path.exists(local_path):
+                    try:
+                        with open(local_path, "rb") as f:
+                            img_bytes = f.read()
+                        multimodal_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime))
+                    except Exception as ex:
+                        logger.warning(f"Error reading image attachment: {ex}")
+        # Audio
+        elif att_type == "audio" or (att.get("mime_type") and att.get("mime_type").startswith("audio/")):
+            mime = att.get("mime_type", "audio/mp3")
+            data_url = att.get("data_url") or ""
+            if data_url and "," in data_url:
+                try:
+                    _, encoded = data_url.split(",", 1)
+                    audio_bytes = base64.b64decode(encoded)
+                    multimodal_parts.append(types.Part.from_bytes(data=audio_bytes, mime_type=mime))
+                except Exception as ex:
+                    logger.warning(f"Error decoding audio data_url: {ex}")
+            elif att.get("url") and "/uploads/" in att.get("url"):
+                local_rel = att["url"].split("/uploads/", 1)[1]
+                local_path = os.path.join("uploads", local_rel)
+                if os.path.exists(local_path):
+                    try:
+                        with open(local_path, "rb") as f:
+                            audio_bytes = f.read()
+                        multimodal_parts.append(types.Part.from_bytes(data=audio_bytes, mime_type=mime))
+                    except Exception as ex:
+                        logger.warning(f"Error reading audio attachment: {ex}")
+        # Video
+        elif att_type == "video" or (att.get("mime_type") and att.get("mime_type").startswith("video/")):
+            mime = att.get("mime_type", "video/mp4")
+            if att.get("url") and "/uploads/" in att.get("url"):
+                local_rel = att["url"].split("/uploads/", 1)[1]
+                local_path = os.path.join("uploads", local_rel)
+                if os.path.exists(local_path) and os.path.getsize(local_path) <= 25 * 1024 * 1024:
+                    try:
+                        with open(local_path, "rb") as f:
+                            video_bytes = f.read()
+                        multimodal_parts.append(types.Part.from_bytes(data=video_bytes, mime_type=mime))
+                    except Exception as ex:
+                        logger.warning(f"Error reading video attachment: {ex}")
+
+    attachment_text_context = "".join(attached_text_blocks)
 
     # 📂 Space Knowledge Grounding (YouLearn.ai & Claude Projects style)
     space_knowledge = ""
@@ -7304,7 +7468,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
     generated_images = []
 
     pref_instr = _build_preference_instructions(data.language, data.learning_goal)
-    current_prompt = f"Response style: {style_instr}{pref_instr}{student_profile_context}{space_knowledge}\n\nConversation history:\n{history_text}\n\nRespond to: {message}"
+    current_prompt = f"Response style: {style_instr}{pref_instr}{student_profile_context}{space_knowledge}{attachment_text_context}\n\nConversation history:\n{history_text}\n\nRespond to: {message}"
     reply = ""
 
     for loop in range(max_loops):
@@ -7380,6 +7544,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             agent_instruction,
             model_override=data.model,
             temperature=data.temperature,
+            multimodal_parts=multimodal_parts,
         )
 
         # Check if the model wants to call a tool

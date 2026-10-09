@@ -188,6 +188,7 @@ class ChatMessage(Base):
     id = Column(Integer, primary_key=True, index=True)
     role = Column(String, nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
+    attachments = Column(Text, nullable=True)  # JSON-encoded list of attachments (images, audio, video, snippets)
     created_at = Column(DateTime, default=datetime.utcnow)
     conversation_id = Column(Integer, ForeignKey("chat_conversations.id"), nullable=False)
 
@@ -686,6 +687,11 @@ def init_db():
             pass
         try:
             conn.execute(text("ALTER TABLE quiz_results ADD COLUMN details TEXT"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN attachments TEXT"))
             conn.commit()
         except Exception:
             pass

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Loader2,
   Maximize2,
@@ -11,7 +12,10 @@ import {
   Download,
   Sparkles,
   Layers,
-  Wand2
+  Wand2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 
 const GENERATION_STAGES = [
@@ -31,6 +35,12 @@ const ChatImage = ({ src, alt, ...props }) => {
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const autoRetryCountRef = useRef(0);
+
+  // Zoom & Pan state for interactive fullscreen inspection
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
 
   // Compute active image URL with seed rotation on retry
   const activeSrc = useMemo(() => {
@@ -113,16 +123,115 @@ const ChatImage = ({ src, alt, ...props }) => {
     };
   }, [activeSrc]);
 
-  // Keyboard listener for modal ESC
+  // Lock body scroll when fullscreen modal is open
+  useEffect(() => {
+    if (isModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isModalOpen]);
+
+  // Reset zoom & pan when modal opens/closes
+  useEffect(() => {
+    if (!isModalOpen) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setIsDragging(false);
+    }
+  }, [isModalOpen]);
+
+  // Keyboard navigation & zoom shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isModalOpen) {
-        setIsModalOpen(false);
+      if (!isModalOpen) return;
+      if (e.key === 'Escape') {
+        if (zoom > 1) {
+          setZoom(1);
+          setPan({ x: 0, y: 0 });
+        } else {
+          setIsModalOpen(false);
+        }
+      } else if (e.key === '+' || e.key === '=') {
+        setZoom((prev) => Math.min(3, +(prev + 0.25).toFixed(2)));
+      } else if (e.key === '-' || e.key === '_') {
+        setZoom((prev) => {
+          const next = Math.max(1, +(prev - 0.25).toFixed(2));
+          if (next === 1) setPan({ x: 0, y: 0 });
+          return next;
+        });
+      } else if (e.key === '0') {
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, zoom]);
+
+  const handleZoomIn = (e) => {
+    if (e) e.stopPropagation();
+    setZoom((prev) => Math.min(3, +(prev + 0.25).toFixed(2)));
+  };
+
+  const handleZoomOut = (e) => {
+    if (e) e.stopPropagation();
+    setZoom((prev) => {
+      const next = Math.max(1, +(prev - 0.25).toFixed(2));
+      if (next === 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  const handleResetZoom = (e) => {
+    if (e) e.stopPropagation();
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handleToggleZoom = (e) => {
+    e.stopPropagation();
+    if (zoom > 1) {
+      handleResetZoom();
+    } else {
+      setZoom(1.75);
+    }
+  };
+
+  const handleWheel = (e) => {
+    if (!isModalOpen) return;
+    if (e.deltaY < 0) {
+      setZoom((prev) => Math.min(3, +(prev + 0.15).toFixed(2)));
+    } else {
+      setZoom((prev) => {
+        const next = Math.max(1, +(prev - 0.15).toFixed(2));
+        if (next === 1) setPan({ x: 0, y: 0 });
+        return next;
+      });
+    }
+  };
+
+  const handleMouseDown = (e) => {
+    if (zoom <= 1) return;
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging || zoom <= 1) return;
+    e.preventDefault();
+    setPan({
+      x: e.clientX - dragStartRef.current.x,
+      y: e.clientY - dragStartRef.current.y
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
 
   const handleManualRetry = (e) => {
     e.stopPropagation();
@@ -135,7 +244,6 @@ const ChatImage = ({ src, alt, ...props }) => {
   const handleCopy = async (e) => {
     e.stopPropagation();
     try {
-      // Attempt blob copy first
       const res = await fetch(activeSrc);
       const blob = await res.blob();
       await navigator.clipboard.write([
@@ -144,13 +252,12 @@ const ChatImage = ({ src, alt, ...props }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback: Copy link
       try {
         await navigator.clipboard.writeText(activeSrc);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } catch {
-        // Silently ignore if browser denies clipboard
+        // Silently ignore if clipboard unavailable
       }
     }
   };
@@ -176,7 +283,6 @@ const ChatImage = ({ src, alt, ...props }) => {
       document.body.removeChild(link);
       URL.revokeObjectURL(blobUrl);
     } catch {
-      // Fallback: direct window download
       const link = document.createElement('a');
       link.href = activeSrc;
       link.target = '_blank';
@@ -211,6 +317,7 @@ const ChatImage = ({ src, alt, ...props }) => {
 
   return (
     <>
+      {/* Inline Chat Image Card */}
       <div className="my-4 max-w-2xl rounded-2xl overflow-hidden border border-slate-200/90 dark:border-zinc-800/90 bg-white/70 dark:bg-zinc-950/90 shadow-lg backdrop-blur-md transition-all hover:shadow-xl">
         <div
           className="relative group cursor-pointer overflow-hidden min-h-[260px] flex items-center justify-center bg-slate-950"
@@ -218,7 +325,7 @@ const ChatImage = ({ src, alt, ...props }) => {
           title={loading ? 'Synthesizing visual representation...' : 'Click to expand visual in full-screen'}
         >
           {/* =========================================================
-              HIGH-TECH GENERATIVE AI CANVAS ANIMATION (while loading)
+              GENERATIVE AI CANVAS ANIMATION (while loading)
               ========================================================= */}
           {loading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 bg-slate-950 overflow-hidden select-none">
@@ -267,7 +374,7 @@ const ChatImage = ({ src, alt, ...props }) => {
           )}
 
           {/* =========================================================
-              RENDERED IMAGE (smooth fade-in once ready)
+              RENDERED INLINE IMAGE
               ========================================================= */}
           <img
             src={activeSrc}
@@ -281,9 +388,7 @@ const ChatImage = ({ src, alt, ...props }) => {
             {...props}
           />
 
-          {/* =========================================================
-              GEMINI-STYLE TOP-RIGHT FLOATING ACTION TOOLBAR
-              ========================================================= */}
+          {/* Floating Action Toolbar */}
           {!loading && (
             <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-zinc-950/80 backdrop-blur-md border border-white/10 shadow-xl opacity-90 group-hover:opacity-100 transition-opacity">
               <button
@@ -342,67 +447,171 @@ const ChatImage = ({ src, alt, ...props }) => {
       </div>
 
       {/* =========================================================
-          LIGHTBOX FULLSCREEN MODAL
+          PORTALED FULLSCREEN LIGHTBOX MODAL
+          Directly attached to document.body:
+          - Bypasses parent transforms, framer-motion, and overflows
+          - Covers 100vw x 100vh of the true viewport
+          - Features interactive Zoom (+/-), Reset (0), Pan, and Copy/Download
+          - Unmistakable [✕ Close] button always visible
           ========================================================= */}
-      {isModalOpen && (
+      {typeof document !== 'undefined' && isModalOpen && createPortal(
         <div
-          className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fadeIn"
-          onClick={() => setIsModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={alt || 'Fullscreen visual viewer'}
+          className="fixed inset-0 z-[99999] bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-between select-none animate-fadeIn transition-opacity duration-200"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', margin: 0, padding: 0 }}
+          onClick={() => {
+            if (zoom > 1) {
+              handleResetZoom();
+            } else {
+              setIsModalOpen(false);
+            }
+          }}
         >
+          {/* Top Floating Glass Header */}
           <div
-            className="relative max-w-5xl w-full max-h-[94vh] bg-zinc-950 rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl flex flex-col"
+            className="w-full max-w-7xl mx-auto flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 z-30"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-4 py-3 bg-zinc-900 border-b border-zinc-800 text-xs text-zinc-300 font-semibold">
-              <div className="flex items-center gap-2 truncate pr-4">
-                <Sparkles size={14} className="text-indigo-400 shrink-0" />
-                <span className="truncate">{alt || 'Visual Illustration'}</span>
+            {/* Title / Badge */}
+            <div className="flex items-center gap-2 sm:gap-3 text-zinc-200 text-xs sm:text-sm font-semibold truncate pr-2 sm:pr-4">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                <Sparkles size={15} className="text-cyan-400" />
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  onClick={handleCopy}
-                  className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                  title="Copy image"
-                >
-                  {copied ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
-                </button>
-                <button
-                  onClick={handleDownload}
-                  className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                  title="Download Image"
-                >
-                  <Download size={15} />
-                </button>
-                <a
-                  href={activeSrc}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                  title="Open original in new tab"
-                >
-                  <ExternalLink size={15} />
-                </a>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                  title="Close (ESC)"
-                >
-                  <X size={16} />
-                </button>
-              </div>
+              <span className="truncate max-w-[180px] sm:max-w-md">{alt || 'Visual Illustration'}</span>
+              <span className="hidden md:inline-block px-2.5 py-0.5 rounded-full bg-zinc-800/90 border border-zinc-700/60 text-[10px] text-zinc-400 font-mono">
+                Ultra HD
+              </span>
             </div>
 
-            {/* Modal Image Body */}
-            <div className="p-3 overflow-auto flex items-center justify-center bg-zinc-950 min-h-[340px]">
-              <img
-                src={activeSrc}
-                alt={alt}
-                className="max-w-full max-h-[82vh] object-contain rounded-lg shadow-2xl"
-              />
+            {/* Actions Toolbar */}
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0 bg-zinc-900/95 border border-zinc-800 rounded-2xl p-1 sm:p-1.5 shadow-2xl backdrop-blur-xl">
+              {/* Zoom Out */}
+              <button
+                onClick={handleZoomOut}
+                disabled={zoom <= 1}
+                className="p-1.5 sm:p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+                title="Zoom out (-)"
+              >
+                <ZoomOut size={16} />
+              </button>
+
+              {/* Zoom Reset / Level Indicator */}
+              <button
+                onClick={handleResetZoom}
+                className="px-2 py-1 rounded-xl text-zinc-300 hover:text-white hover:bg-white/10 text-xs font-mono font-medium transition-all cursor-pointer"
+                title="Reset zoom (0)"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+
+              {/* Zoom In */}
+              <button
+                onClick={handleZoomIn}
+                disabled={zoom >= 3}
+                className="p-1.5 sm:p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+                title="Zoom in (+)"
+              >
+                <ZoomIn size={16} />
+              </button>
+
+              <div className="w-px h-5 bg-zinc-800 mx-0.5" />
+
+              {/* Copy Image */}
+              <button
+                onClick={handleCopy}
+                className="p-1.5 sm:p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer relative"
+                title={copied ? 'Copied to clipboard!' : 'Copy image'}
+              >
+                {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+                {copied && (
+                  <span className="absolute -bottom-8 right-0 text-[10px] font-semibold bg-emerald-500 text-white px-2 py-0.5 rounded shadow-lg whitespace-nowrap z-40">
+                    Copied!
+                  </span>
+                )}
+              </button>
+
+              {/* Download Image */}
+              <button
+                onClick={handleDownload}
+                disabled={downloading}
+                className="p-1.5 sm:p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                title="Download High-Res Image"
+              >
+                <Download size={16} className={downloading ? 'animate-bounce text-cyan-400' : ''} />
+              </button>
+
+              {/* External Link */}
+              <a
+                href={activeSrc}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 sm:p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                title="Open original in new tab"
+              >
+                <ExternalLink size={16} />
+              </a>
+
+              <div className="w-px h-5 bg-zinc-800 mx-0.5" />
+
+              {/* Prominent, Unmissable Close Button */}
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 hover:text-white font-medium text-xs transition-all cursor-pointer active:scale-95 shadow-sm"
+                title="Close (ESC)"
+              >
+                <X size={16} />
+                <span className="hidden sm:inline">Close</span>
+              </button>
             </div>
           </div>
-        </div>
+
+          {/* Central Full-View Canvas Viewport */}
+          <div
+            className={`relative flex-1 w-full h-full flex items-center justify-center p-2 sm:p-6 overflow-hidden ${
+              zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'
+            }`}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onWheel={handleWheel}
+            onDoubleClick={handleToggleZoom}
+          >
+            <img
+              src={activeSrc}
+              alt={alt || 'Visual representation'}
+              draggable={false}
+              className="max-w-[94vw] max-h-[84vh] object-contain rounded-xl shadow-2xl transition-transform duration-150 ease-out select-none"
+              style={{
+                transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                willChange: 'transform'
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            />
+          </div>
+
+          {/* Bottom Floating Hint Pill */}
+          <div
+            className="w-full max-w-md mx-auto pb-4 px-4 flex items-center justify-center z-30"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 shadow-2xl backdrop-blur-md text-[11px] text-zinc-400 font-medium">
+              <span className="inline-flex items-center gap-1 text-zinc-300">
+                <Layers size={12} className="text-indigo-400" />
+                True Fullscreen
+              </span>
+              <span className="text-zinc-600">•</span>
+              <span>Double-click or scroll to zoom</span>
+              <span className="text-zinc-600">•</span>
+              <span>ESC to close</span>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );

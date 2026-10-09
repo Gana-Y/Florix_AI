@@ -66,16 +66,105 @@ const ChatMessageBubble = React.memo(({ msg }) => {
 
       <div className={`max-w-[85%] md:max-w-[78%] rounded-3xl shadow-sm px-5 py-4 ${
         msg.role === 'user'
-          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-br-md shadow-indigo-500/20'
-          : 'bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 rounded-bl-md'
+          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-br-md shadow-indigo-500/20 text-[15px] sm:text-[15.5px] leading-[1.65]'
+          : 'bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 rounded-bl-md text-[15px] sm:text-[15.5px] leading-[1.75]'
       }`}>
-        <div className={`prose prose-sm dark:prose-invert max-w-none ${
-          msg.role === 'user' ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white' : ''
-        }`}>
+        <div className="w-full">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
             components={{
+              p({ node, ...props }) {
+                return (
+                  <p
+                    className={`mb-3.5 last:mb-0 leading-[1.75] ${
+                      msg.role === 'user' ? 'text-white' : 'text-slate-800 dark:text-zinc-200'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
+              ul({ node, ...props }) {
+                return (
+                  <ul
+                    className={`my-3 pl-6 space-y-2 list-disc leading-[1.75] ${
+                      msg.role === 'user'
+                        ? 'text-white marker:text-white/80'
+                        : 'text-slate-800 dark:text-zinc-200 marker:text-slate-400 dark:marker:text-zinc-500'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
+              ol({ node, ...props }) {
+                return (
+                  <ol
+                    className={`my-3 pl-6 space-y-2 list-decimal leading-[1.75] ${
+                      msg.role === 'user'
+                        ? 'text-white marker:text-white/80'
+                        : 'text-slate-800 dark:text-zinc-200 marker:text-slate-500 dark:marker:text-zinc-400 marker:font-medium'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
+              li({ node, ...props }) {
+                return <li className="leading-[1.75] pl-0.5" {...props} />;
+              },
+              strong({ node, ...props }) {
+                return (
+                  <strong
+                    className={`font-semibold ${
+                      msg.role === 'user' ? 'text-white' : 'text-slate-900 dark:text-zinc-100'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
+              h1({ node, ...props }) {
+                return (
+                  <h1
+                    className={`text-xl sm:text-2xl font-bold tracking-tight mt-6 mb-3 pb-1 border-b ${
+                      msg.role === 'user'
+                        ? 'text-white border-white/20'
+                        : 'text-slate-900 dark:text-zinc-100 border-slate-200/60 dark:border-zinc-800'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
+              h2({ node, ...props }) {
+                return (
+                  <h2
+                    className={`text-lg sm:text-xl font-bold tracking-tight mt-5 mb-2.5 ${
+                      msg.role === 'user' ? 'text-white' : 'text-slate-900 dark:text-zinc-100'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
+              h3({ node, ...props }) {
+                return (
+                  <h3
+                    className={`text-base sm:text-lg font-semibold mt-4 mb-2 ${
+                      msg.role === 'user' ? 'text-white' : 'text-slate-900 dark:text-zinc-100'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
+              blockquote({ node, ...props }) {
+                return (
+                  <blockquote
+                    className={`border-l-4 pl-4 py-2 my-3 rounded-r-lg italic text-[14.5px] sm:text-[15px] ${
+                      msg.role === 'user'
+                        ? 'border-white/70 bg-white/10 text-white'
+                        : 'border-indigo-500 bg-indigo-50/40 dark:bg-zinc-800/40 text-slate-700 dark:text-zinc-300'
+                    }`}
+                    {...props}
+                  />
+                );
+              },
               pre({ children }) {
                 return <>{children}</>;
               },
@@ -86,7 +175,14 @@ const ChatMessageBubble = React.memo(({ msg }) => {
                 }
                 if (inline) {
                   return (
-                    <code className="px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-mono border border-indigo-200/50 dark:border-indigo-800/50" {...props}>
+                    <code
+                      className={`px-1.5 py-0.5 rounded-md text-[13.5px] font-mono border font-medium ${
+                        msg.role === 'user'
+                          ? 'bg-white/20 text-white border-white/30'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 border-slate-200/60 dark:border-zinc-700/60'
+                      }`}
+                      {...props}
+                    >
                       {children}
                     </code>
                   );
@@ -101,6 +197,29 @@ const ChatMessageBubble = React.memo(({ msg }) => {
               },
               img({ node, ...props }) {
                 return <ChatImage {...props} />;
+              },
+              table({ node, ...props }) {
+                return (
+                  <div className="overflow-x-auto my-4 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm">
+                    <table className="w-full text-sm text-left border-collapse" {...props} />
+                  </div>
+                );
+              },
+              th({ node, ...props }) {
+                return (
+                  <th
+                    className="px-3.5 py-2.5 bg-slate-100 dark:bg-zinc-800 font-semibold text-slate-800 dark:text-zinc-200 border-b border-slate-200 dark:border-zinc-700 text-xs uppercase tracking-wider"
+                    {...props}
+                  />
+                );
+              },
+              td({ node, ...props }) {
+                return (
+                  <td
+                    className="px-3.5 py-2.5 border-b border-slate-100 dark:border-zinc-800 text-slate-700 dark:text-zinc-300"
+                    {...props}
+                  />
+                );
               }
             }}
           >

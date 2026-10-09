@@ -59,31 +59,31 @@ const formatTutorMarkdown = (rawText) => {
 /* eslint-disable no-unused-vars */
 const tutorMarkdownComponents = {
   h1: ({ node, ...props }) => (
-    <h3 className="text-sm md:text-base font-bold text-slate-900 dark:text-zinc-100 mt-4 mb-2 pb-1 border-b border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-1.5" {...props} />
+    <h3 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100 mt-6 mb-3 pb-1 border-b border-slate-200/60 dark:border-zinc-800/60 flex items-center gap-1.5" {...props} />
   ),
   h2: ({ node, ...props }) => (
-    <h4 className="text-xs md:text-sm font-bold text-indigo-700 dark:text-indigo-300 mt-3.5 mb-1.5 flex items-center gap-1.5" {...props} />
+    <h4 className="text-lg md:text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100 mt-5 mb-2.5 flex items-center gap-1.5" {...props} />
   ),
   h3: ({ node, ...props }) => (
-    <h5 className="text-xs font-semibold text-slate-800 dark:text-zinc-200 mt-3 mb-1" {...props} />
+    <h5 className="text-base md:text-lg font-semibold text-slate-900 dark:text-zinc-100 mt-4 mb-2" {...props} />
   ),
   p: ({ node, ...props }) => (
-    <p className="text-xs md:text-[13px] leading-relaxed text-slate-700 dark:text-zinc-300 mb-2.5 last:mb-0" {...props} />
+    <p className="text-[15px] md:text-[15.5px] leading-[1.75] text-slate-800 dark:text-zinc-200 mb-3.5 last:mb-0" {...props} />
   ),
   ul: ({ node, ...props }) => (
-    <ul className="space-y-1.5 my-2.5 pl-4 list-disc text-xs md:text-[13px] text-slate-700 dark:text-zinc-300 marker:text-indigo-500" {...props} />
+    <ul className="space-y-2 my-3 pl-6 list-disc text-[15px] md:text-[15.5px] leading-[1.75] text-slate-800 dark:text-zinc-200 marker:text-slate-400 dark:marker:text-zinc-500" {...props} />
   ),
   ol: ({ node, ...props }) => (
-    <ol className="space-y-1.5 my-2.5 pl-4 list-decimal text-xs md:text-[13px] text-slate-700 dark:text-zinc-300 marker:text-indigo-500 marker:font-semibold" {...props} />
+    <ol className="space-y-2 my-3 pl-6 list-decimal text-[15px] md:text-[15.5px] leading-[1.75] text-slate-800 dark:text-zinc-200 marker:text-slate-500 dark:marker:text-zinc-400 marker:font-medium" {...props} />
   ),
   li: ({ node, ...props }) => (
-    <li className="leading-relaxed pl-0.5" {...props} />
+    <li className="leading-[1.75] pl-0.5" {...props} />
   ),
   strong: ({ node, ...props }) => (
     <strong className="font-semibold text-slate-900 dark:text-zinc-100" {...props} />
   ),
   blockquote: ({ node, ...props }) => (
-    <blockquote className="border-l-2 border-indigo-500 pl-3 py-1.5 my-2.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-r-lg text-xs italic text-slate-600 dark:text-zinc-400" {...props} />
+    <blockquote className="border-l-4 border-indigo-500 pl-4 py-2 my-3 bg-indigo-50/40 dark:bg-zinc-800/40 rounded-r-lg text-[14.5px] md:text-[15px] italic text-slate-700 dark:text-zinc-300" {...props} />
   ),
   pre: ({ children }) => <>{children}</>,
   code: ({ node, inline, className, children, ...props }) => {
@@ -93,7 +93,7 @@ const tutorMarkdownComponents = {
     }
     if (inline) {
       return (
-        <code className="px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-mono border border-indigo-200/50 dark:border-indigo-800/50" {...props}>
+        <code className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 text-[13.5px] font-mono border border-slate-200/60 dark:border-zinc-700/60 font-medium" {...props}>
           {children}
         </code>
       );
@@ -110,15 +110,15 @@ const tutorMarkdownComponents = {
     <ChatImage {...props} />
   ),
   table: ({ node, ...props }) => (
-    <div className="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-zinc-800">
-      <table className="w-full text-xs text-left" {...props} />
+    <div className="overflow-x-auto my-4 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm">
+      <table className="w-full text-[14px] text-left border-collapse" {...props} />
     </div>
   ),
   th: ({ node, ...props }) => (
-    <th className="px-3 py-2 bg-slate-100 dark:bg-zinc-800 font-semibold text-slate-700 dark:text-zinc-200 border-b border-slate-200 dark:border-zinc-700" {...props} />
+    <th className="px-3.5 py-2.5 bg-slate-100 dark:bg-zinc-800 font-semibold text-slate-800 dark:text-zinc-200 border-b border-slate-200 dark:border-zinc-700 text-xs uppercase tracking-wider" {...props} />
   ),
   td: ({ node, ...props }) => (
-    <td className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800 text-slate-600 dark:text-zinc-300" {...props} />
+    <td className="px-3.5 py-2.5 border-b border-slate-100 dark:border-zinc-800 text-slate-700 dark:text-zinc-300" {...props} />
   ),
 };
 /* eslint-enable no-unused-vars */
@@ -214,7 +214,7 @@ const GlobalChatMessageBubble = React.memo(({ msg }) => {
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
         className="flex justify-end w-full"
       >
-        <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-tr-xs bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs md:text-sm font-medium shadow-sm shadow-indigo-500/20 leading-relaxed break-words">
+        <div className="max-w-[85%] px-5 py-3 rounded-2xl rounded-tr-xs bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[15px] sm:text-[15.5px] font-medium shadow-sm shadow-indigo-500/20 leading-[1.65] break-words">
           {msg.text}
         </div>
       </motion.div>

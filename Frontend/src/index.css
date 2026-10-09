@@ -446,7 +446,7 @@ body::-webkit-scrollbar {
 .token.doctype,
 .token.cdata {
   color: #8b949e;
-  font-style: italic;
+  font-style: normal;
 }
 
 .token.punctuation {

@@ -168,7 +168,7 @@ const ChatPanel = ({ context, contextType, sessionId, initialQuery }) => {
                 }`}
               >
                 {msg.role === 'assistant' ? (
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-slate-800 dark:text-zinc-200 leading-relaxed break-words">
+                  <div className="prose prose-base dark:prose-invert max-w-none text-[15px] sm:text-[15.5px] text-slate-800 dark:text-zinc-200 leading-[1.75] break-words">
                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                       {preprocessLatex(msg.content)}
                     </ReactMarkdown>

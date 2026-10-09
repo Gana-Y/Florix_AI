@@ -90,26 +90,26 @@ const CodeBlock = ({ code = '', language = 'python', filename = '' }) => {
   const lineCount = rawCode.split('\n').length;
 
   return (
-    <div className="my-4 rounded-2xl overflow-hidden border border-zinc-800 bg-[#0d1117] shadow-xl text-left select-text group/code">
-      {/* Code Header Bar (ChatGPT / Claude style) */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900/90 border-b border-zinc-800/80 text-xs text-zinc-300">
+    <div className="my-4 rounded-xl overflow-hidden border border-zinc-800/90 bg-[#0d1117] shadow-lg text-left select-text group/code">
+      {/* Code Header Bar (ChatGPT style) */}
+      <div className="flex items-center justify-between px-4 py-2 bg-[#18181b] border-b border-zinc-800/80 text-xs text-zinc-400">
         <div className="flex items-center gap-2">
-          <Icon size={14} className="text-indigo-400" />
-          <span className="font-semibold text-zinc-200 tracking-wide">{filename || meta.label}</span>
+          <Icon size={14} className="text-zinc-400" />
+          <span className="font-mono text-xs text-zinc-300 lowercase tracking-normal">{filename || meta.label}</span>
           {lineCount > 1 && (
-            <span className="text-[10px] text-zinc-500 font-mono">({lineCount} lines)</span>
+            <span className="text-[11px] text-zinc-500 font-mono">({lineCount} lines)</span>
           )}
         </div>
 
         <button
           onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-300 hover:text-white bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/50 transition-all active:scale-95 cursor-pointer shadow-sm"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-zinc-300 hover:text-white bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/40 transition-all active:scale-95 cursor-pointer shadow-sm"
           title="Copy code to clipboard"
         >
           {copied ? (
             <>
               <Check size={13} className="text-emerald-400 animate-in zoom-in-75 duration-200" />
-              <span className="text-emerald-400 font-semibold">Copied!</span>
+              <span className="text-emerald-400 font-medium">Copied!</span>
             </>
           ) : (
             <>
@@ -120,8 +120,8 @@ const CodeBlock = ({ code = '', language = 'python', filename = '' }) => {
         </button>
       </div>
 
-      {/* Code Content Area with Vibrant Syntax Colors */}
-      <div className="p-4 overflow-x-auto custom-scrollbar font-mono text-[12.5px] leading-relaxed text-[#e6edf3]">
+      {/* Code Content Area (Comfortable ChatGPT Zoom & Monospace Font) */}
+      <div className="p-4 sm:p-5 overflow-x-auto custom-scrollbar font-mono text-[13.5px] sm:text-[14px] leading-[1.7] text-[#e6edf3]">
         <pre className="!bg-transparent !p-0 !m-0 !border-0 whitespace-pre">
           <code
             className={`language-${meta.prismLang}`}

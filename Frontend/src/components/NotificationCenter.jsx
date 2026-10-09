@@ -15,7 +15,7 @@ import {
 } from '../utils/browserNotifications';
 import CelestialBellToggle from './CelestialBellToggle';
 
-export default function NotificationCenter({ onOpenSession, currentSessionId = null }) {
+export default function NotificationCenter({ onOpenSession, currentSessionId = null, isDarkMode }) {
   const { addToast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('due'); // 'due' | 'upcoming' | 'history'
@@ -450,6 +450,7 @@ export default function NotificationCenter({ onOpenSession, currentSessionId = n
         }}
         counts={counts}
         size="md"
+        isDarkMode={isDarkMode}
       />
 
       {/* Main Notification Dropdown Popover */}

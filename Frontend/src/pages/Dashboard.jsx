@@ -462,6 +462,7 @@ const Dashboard = ({ isDarkMode, toggleTheme, sessionData, onStartStudy, onLogou
 
             <div className="ml-auto flex items-center gap-3">
               <NotificationCenter
+                isDarkMode={isDarkMode}
                 onOpenSession={(session) => {
                   window.scrollTo(0, 0);
                   setStudyData({

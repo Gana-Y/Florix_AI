@@ -23,7 +23,17 @@ export const preprocessLatex = (content) => {
   // In LaTeX, unescaped underscores cause broken subscript parse errors.
   text = text.replace(/(?<![\$\\])\$([a-zA-Z0-9]+_[a-zA-Z0-9_]+)\$(?![\$])/g, '`$1`');
 
-  // 5. Fix missing opening $$ when an equation starts with a LaTeX command and ends with $$
+  // 5. Auto-wrap standalone lines of LaTeX math that lack $$ or $ (e.g. \frac{1}{n} \sum_{i=1}^{n} x_i)
+  text = text.replace(/(^|\n)([ \t]*\\(?:frac|sum|int|prod|lim|sqrt|mathbf|mathcal|begin|alpha|beta|gamma|delta|epsilon|sigma|mu|theta|lambda|pi)[^\n\$]+)(?=\n|$)/g, (match, prefix, mathLine) => {
+    return `${prefix}\n\n$$\n${mathLine.trim()}\n$$\n\n`;
+  });
+
+  // 6. Auto-wrap common inline Greek letters and symbols without dollars (e.g. (\mu) -> ($\mu$))
+  text = text.replace(/(^|[\s\(\[\{])(\\(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Delta|Gamma|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|partial|nabla|infty|approx|pm|times|div|leq|geq|neq))([\s\)\],\}\.\?!;:]|$)/g,
+    '$1$$$2$$$3'
+  );
+
+  // 7. Fix missing opening $$ when an equation starts with a LaTeX command and ends with $$
   // Matches e.g. "\frac{1}{N} \sum_{i=1}^{N} L(y_i, f(x_i))$$"
   text = text.replace(/(^|\n|[^\$])(\\(?:frac|sum|int|prod|lim|sqrt|mathbf|mathcal|begin|alpha|beta|gamma|delta|epsilon|sigma|mu|theta|lambda|pi)[\s\S]*?)\$\$/gm, (match, prefix, math) => {
     if (math.startsWith('$')) return match;

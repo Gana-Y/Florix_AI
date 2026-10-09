@@ -4,87 +4,109 @@ import {
   Brain, AlertCircle, CheckCircle2, XCircle, RotateCcw,
   Sparkles, Calendar, Bell, HelpCircle, BookOpen, Filter,
   Layers, ArrowRight, X, ChevronDown, ChevronUp, Check,
-  AlertTriangle, Lightbulb, ShieldAlert, Award
+  AlertTriangle, Lightbulb, ShieldAlert, Award, Trash2, Loader2,
+  Database, RefreshCw
 } from 'lucide-react';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
 
 export const CATEGORY_BADGES = {
-  MISCONCEPTION: {
-    label: 'Misconception',
+  CONCEPTUAL_MISUNDERSTANDING: {
+    label: 'Conceptual Misunderstanding',
     color: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
-    desc: 'Deep flaw in underlying conceptual model or principles.'
-  },
-  FORMULA_MISAPPLICATION: {
-    label: 'Formula Misapplication',
-    color: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
-    desc: 'Correct equation not selected or variables mapped incorrectly.'
-  },
-  CALCULATION_ERROR: {
-    label: 'Calculation Error',
-    color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-    desc: 'Algebraic or computational slip despite correct approach.'
-  },
-  CONCEPTUAL_INVERSION: {
-    label: 'Conceptual Inversion',
-    color: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
-    desc: 'Direct opposite polarity or inverted causal relationship.'
-  },
-  OVERGENERALIZATION: {
-    label: 'Overgeneralization',
-    color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-    desc: 'Applied a valid rule outside its boundary conditions.'
+    desc: 'Fundamental flaw in theoretical comprehension or core definitions.'
   },
   PARTIAL_UNDERSTANDING: {
     label: 'Partial Understanding',
     color: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
-    desc: 'Understood individual parts but missed systemic integration.'
+    desc: 'Grasps primary idea but misses specific nuances, boundaries, or constraints.'
   },
-  KEYWORD_ASSOCIATION_ERROR: {
-    label: 'Keyword Association',
-    color: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20',
-    desc: 'Superficially matched terminology without semantic comprehension.'
+  PROCEDURAL_ERROR: {
+    label: 'Procedural Error',
+    color: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
+    desc: 'Erred in executing a sequence of steps, algorithm, or methodology.'
   },
-  QUESTION_MISREAD: {
-    label: 'Question Misread',
+  CALCULATION_ERROR: {
+    label: 'Calculation Error',
+    color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+    desc: 'Mathematical, numerical, or indexing arithmetic slip.'
+  },
+  CARELESS_ERROR: {
+    label: 'Careless Error',
+    color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+    desc: 'Hasty option selection or overlooked obvious contextual cues.'
+  },
+  MISREAD_QUESTION: {
+    label: 'Misread Question',
     color: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20',
-    desc: 'Overlooked constraints such as EXCEPT, NOT, or specific units.'
+    desc: 'Misinterpreted prompt wording (e.g., overlooked NOT, EXCEPT, or FALSE).'
   },
-  RETRIEVAL_FAILURE: {
-    label: 'Retrieval Failure',
+  MEMORY_RECALL_FAILURE: {
+    label: 'Memory Recall Failure',
     color: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
-    desc: 'Unable to recall precise factual definition or terminology.'
+    desc: 'Inability to retrieve memorized facts, terms, or standard nomenclature.'
   },
-  GUESSING_UNFAMILIAR: {
-    label: 'Unfamiliar Concept',
-    color: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-    desc: 'Complete absence of prior mental schema for this topic.'
+  PREREQUISITE_GAP: {
+    label: 'Prerequisite Gap',
+    color: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+    desc: 'Lacks necessary foundational knowledge required to understand this topic.'
+  },
+  CONFUSION_BETWEEN_CONCEPTS: {
+    label: 'Confusion Between Concepts',
+    color: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+    desc: 'Conflated two distinct but related concepts.'
+  },
+  INCORRECT_APPLICATION: {
+    label: 'Incorrect Application',
+    color: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20',
+    desc: 'Understood theory correctly but applied it to an improper context.'
   },
   UNKNOWN: {
     label: 'Unclassified Error',
     color: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/20',
     desc: 'General discrepancy requiring further diagnostic context.'
+  },
+  // Legacy aliases
+  MISCONCEPTION: {
+    label: 'Conceptual Misunderstanding',
+    color: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+    desc: 'Fundamental flaw in theoretical comprehension or core definitions.'
+  },
+  FORMULA_MISAPPLICATION: {
+    label: 'Incorrect Application',
+    color: 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20',
+    desc: 'Understood theory correctly but applied it to an improper context.'
+  },
+  QUESTION_MISREAD: {
+    label: 'Misread Question',
+    color: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20',
+    desc: 'Misinterpreted prompt wording (e.g., overlooked NOT, EXCEPT, or FALSE).'
+  },
+  RETRIEVAL_FAILURE: {
+    label: 'Memory Recall Failure',
+    color: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+    desc: 'Inability to retrieve memorized facts, terms, or standard nomenclature.'
   }
 };
 
 export const PATTERN_BADGES = {
   ISOLATED: {
-    label: 'Isolated',
+    label: 'Isolated Slip',
     color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
     desc: 'First recorded mistake on this topic.'
   },
   RECURRING: {
-    label: 'Recurring',
+    label: 'Recurring (2x)',
     color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
     desc: 'Multiple slips recorded on this concept.'
   },
   PERSISTENT: {
-    label: 'Persistent Blocker',
+    label: 'Persistent Blocker (3+)',
     color: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
     desc: '3+ consecutive errors; targeted remediation needed.'
   },
   IMPROVING: {
-    label: 'Improving',
+    label: 'Improving Mastery',
     color: 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20',
     desc: 'Scored well on recent targeted practice.'
   },
@@ -636,6 +658,8 @@ export default function MetacognitiveDebugger({ user }) {
   const { addToast } = useToast();
   const [mistakes, setMistakes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'resolved'
@@ -689,6 +713,45 @@ export default function MetacognitiveDebugger({ user }) {
     return { total, resolved, recurring, resolutionRate };
   }, [mistakes]);
 
+  const handleSyncMistakes = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.post('/mistakes/sync-from-history');
+      addToast(res.data.message || `Synced ${res.data.synced_count} mistake(s)!`, 'success');
+      await fetchMistakes();
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to sync past mistakes', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleSeedSample = async () => {
+    setSeeding(true);
+    try {
+      const res = await api.post('/mistakes/seed-sample');
+      addToast('Sample diagnostic seeded! Opening Metacognitive Debugger...', 'success');
+      await fetchMistakes();
+      setActiveModalMistake(res.data);
+      setIsModalOpen(true);
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to seed sample mistake', 'error');
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  const handleQuickResolve = async (id, e) => {
+    e.stopPropagation();
+    try {
+      const res = await api.post(`/mistakes/${id}/resolve`);
+      setMistakes(prev => prev.map(m => m.id === id ? res.data : m));
+      addToast('Mistake marked as resolved!', 'success');
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to mark as resolved', 'error');
+    }
+  };
+
   const handleDeleteMistake = async (id, e) => {
     e.stopPropagation();
     if (!window.confirm('Delete this mistake record?')) return;
@@ -719,12 +782,24 @@ export default function MetacognitiveDebugger({ user }) {
           </p>
         </div>
 
-        <button
-          onClick={fetchMistakes}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-indigo-600 transition-colors"
-        >
-          <RotateCcw size={13} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncMistakes}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+            title="Import errors from past quizzes and exams"
+          >
+            {syncing ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+            <span>Sync Past Quizzes</span>
+          </button>
+
+          <button
+            onClick={fetchMistakes}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-indigo-600 transition-colors"
+          >
+            <RotateCcw size={13} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Metrics Row */}
@@ -803,9 +878,11 @@ export default function MetacognitiveDebugger({ user }) {
             className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs text-slate-700 dark:text-zinc-300 font-medium"
           >
             <option value="all">All Taxonomies</option>
-            {Object.entries(CATEGORY_BADGES).map(([key, meta]) => (
-              <option key={key} value={key}>{meta.label}</option>
-            ))}
+            {Object.entries(CATEGORY_BADGES)
+              .filter(([k]) => !['MISCONCEPTION', 'FORMULA_MISAPPLICATION', 'QUESTION_MISREAD', 'RETRIEVAL_FAILURE'].includes(k))
+              .map(([key, meta]) => (
+                <option key={key} value={key}>{meta.label}</option>
+              ))}
           </select>
         </div>
       </div>
@@ -817,14 +894,38 @@ export default function MetacognitiveDebugger({ user }) {
           <p className="text-xs text-slate-500">Loading mistake intelligence records...</p>
         </div>
       ) : filteredMistakes.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl bg-white/60 dark:bg-zinc-900/60 border border-slate-200/60 dark:border-zinc-800/60 space-y-3">
-          <CheckCircle2 size={36} className="text-emerald-500 mx-auto" />
-          <h3 className="text-sm font-bold text-slate-800 dark:text-zinc-200">
-            {statusFilter === 'active' ? 'No active cognitive blockers!' : 'No mistakes recorded yet.'}
-          </h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Take quizzes or exams. Any incorrect responses will be analyzed with grounded diagnostic explanations.
-          </p>
+        <div className="p-10 md:p-14 text-center rounded-3xl bg-white/70 dark:bg-zinc-900/70 border border-slate-200/80 dark:border-zinc-800/80 space-y-5 shadow-xs">
+          <div className="w-14 h-14 mx-auto rounded-3xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+            <Brain size={28} />
+          </div>
+          <div className="space-y-1.5 max-w-md mx-auto">
+            <h3 className="text-base font-bold text-slate-800 dark:text-zinc-200">
+              {statusFilter === 'active' ? 'No active cognitive blockers!' : 'No mistakes recorded yet.'}
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Every quiz and exam mistake is automatically tracked, classified against 11 pedagogical failure modes, and turned into targeted practice.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              onClick={handleSyncMistakes}
+              disabled={syncing}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+            >
+              {syncing ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />}
+              <span>Sync from Past Quizzes & Exams</span>
+            </button>
+
+            <button
+              onClick={handleSeedSample}
+              disabled={seeding}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold text-xs border border-slate-200 dark:border-zinc-700 shadow-xs transition-all disabled:opacity-50"
+            >
+              {seeding ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} className="text-amber-500" />}
+              <span>Try Diagnostic Sample Demo</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -839,7 +940,7 @@ export default function MetacognitiveDebugger({ user }) {
                   setActiveModalMistake(m);
                   setIsModalOpen(true);
                 }}
-                className="p-5 rounded-2xl bg-white/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800/80 hover:border-indigo-400 dark:hover:border-indigo-600 cursor-pointer shadow-xs transition-all space-y-3"
+                className="p-5 rounded-2xl bg-white/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800/80 hover:border-indigo-400 dark:hover:border-indigo-600 cursor-pointer shadow-xs transition-all space-y-3 group"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -858,11 +959,27 @@ export default function MetacognitiveDebugger({ user }) {
                     <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border uppercase ${patMeta.color}`}>
                       {patMeta.label}
                     </span>
-                    {m.is_resolved && (
+                    {m.is_resolved ? (
                       <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md">
                         ✓ Resolved
                       </span>
+                    ) : (
+                      <button
+                        onClick={(e) => handleQuickResolve(m.id, e)}
+                        title="Mark as Resolved"
+                        className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 bg-slate-100 dark:bg-zinc-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 px-2 py-0.5 rounded-md transition-colors"
+                      >
+                        Mark Resolved
+                      </button>
                     )}
+
+                    <button
+                      onClick={(e) => handleDeleteMistake(m.id, e)}
+                      title="Delete Mistake Record"
+                      className="p-1 rounded-md text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors opacity-70 group-hover:opacity-100"
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </div>
                 </div>
 
@@ -870,7 +987,7 @@ export default function MetacognitiveDebugger({ user }) {
                   {m.question_text}
                 </p>
 
-                <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 pt-1">
                   <div className="flex items-center gap-4">
                     <span>
                       Submitted: <strong className="text-rose-600 line-through">{m.user_answer}</strong>
@@ -880,9 +997,17 @@ export default function MetacognitiveDebugger({ user }) {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold">
-                    <span>Debug & Practice</span>
-                    <ArrowRight size={13} />
+                  <div className="flex items-center gap-3">
+                    {m.citations && m.citations.length > 0 && (
+                      <span className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
+                        <BookOpen size={12} /> {m.citations.length} cited
+                      </span>
+                    )}
+
+                    <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-bold group-hover:translate-x-0.5 transition-transform">
+                      <span>Debug & Practice</span>
+                      <ArrowRight size={13} />
+                    </div>
                   </div>
                 </div>
               </div>

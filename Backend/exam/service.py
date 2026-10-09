@@ -574,6 +574,13 @@ class ExamService:
             }
         ))
 
+        # Mistake Intelligence Integration: automatically record incorrect questions into Mistake Bank
+        try:
+            from mistake.service import MistakeService
+            MistakeService.auto_record_exam_mistakes(db=db, user=user, attempt=attempt)
+        except Exception as e:
+            logger.warning(f"Could not auto-record exam mistakes: {e}")
+
         db.commit()
         db.refresh(attempt)
         return cls.get_attempt_review(db, user.id, attempt.id)

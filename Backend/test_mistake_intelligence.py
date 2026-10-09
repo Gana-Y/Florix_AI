@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from database import (
     Base, User, StudySession, DocumentChunk, MistakeRecord,
     LearningEvent, StudyPlan, StudyPlanTask, Reminder,
-    VisualArtifact, Activity
+    VisualArtifact, Activity, QuizResult
 )
 from mistake.taxonomy import (
     MistakeCategory,
@@ -447,13 +447,12 @@ def test_schedule_notification_reminder(db_session, test_user, study_session):
 # =============================================================================
 
 def test_subscription_limits_free_user(db_session, test_user):
-    # Free tier mistake analysis limit = 10
-    assert PLAN_LIMITS["free"]["mistake_analyses_per_day"] == 10
-    assert PLAN_LIMITS["free"]["ai_practice_generations_per_day"] == 5
+    limit = PLAN_LIMITS["free"]["mistake_analyses_per_day"]
+    assert limit == 20
 
-    # Insert 10 mistake records for test_user today
+    # Insert limit mistake records for test_user today
     now = datetime.utcnow()
-    for i in range(10):
+    for i in range(limit):
         db_session.add(MistakeRecord(
             user_id=test_user.id,
             question_text=f"Question {i}",
@@ -467,17 +466,20 @@ def test_subscription_limits_free_user(db_session, test_user):
         ))
     db_session.commit()
 
-    # 11th should raise 402
+    # Next one should raise 402
     with pytest.raises(HTTPException) as exc:
         check_plan_limit(test_user, "mistake_analyses_per_day", db_session)
     assert exc.value.status_code == 402
-    assert "Daily mistake analysis limit (10) reached" in exc.value.detail
+    assert f"Daily mistake analysis limit ({limit}) reached" in exc.value.detail
 
 
 def test_subscription_limits_practice_generations(db_session, test_user):
-    # Insert 5 practice generations for test_user today
+    limit = PLAN_LIMITS["free"]["ai_practice_generations_per_day"]
+    assert limit == 15
+
+    # Insert limit practice generations for test_user today
     now = datetime.utcnow()
-    for i in range(5):
+    for i in range(limit):
         db_session.add(Activity(
             user_id=test_user.id,
             action="Mistake Targeted Practice",
@@ -486,11 +488,11 @@ def test_subscription_limits_practice_generations(db_session, test_user):
         ))
     db_session.commit()
 
-    # 6th should raise 402
+    # Next one should raise 402
     with pytest.raises(HTTPException) as exc:
         check_plan_limit(test_user, "ai_practice_generations_per_day", db_session)
     assert exc.value.status_code == 402
-    assert "Daily targeted practice generation limit (5) reached" in exc.value.detail
+    assert f"Daily targeted practice generation limit ({limit}) reached" in exc.value.detail
 
 
 def test_subscription_unlimited_premium_and_admin(db_session):
@@ -607,3 +609,57 @@ def test_api_mistake_endpoints_lifecycle(client, db_session, test_user, study_se
     # 10. GET /mistakes/{id} should return 404
     r = client.get(f"/mistakes/{mistake_id}")
     assert r.status_code == 404
+
+
+def test_sync_past_and_seed_sample_endpoints(client, db_session, test_user, study_session):
+    # 1. Test seed-sample endpoint
+    r = client.post("/mistakes/seed-sample")
+    assert r.status_code == 200
+    sample_data = r.json()
+    assert sample_data["topic"] == "Operating Systems (Deadlocks & Concurrency)"
+    assert sample_data["error_category"] == "CONCEPTUAL_MISUNDERSTANDING"
+    assert sample_data["is_resolved"] is False
+    assert len(sample_data["citations"]) > 0
+
+    # 2. Test sync-from-history endpoint
+    # First, insert a QuizResult with 1 wrong question
+    quiz_res = QuizResult(
+        score=1,
+        total_questions=2,
+        percentage=50,
+        user_id=test_user.id,
+        session_id=study_session.id,
+        details=[
+            {
+                "question": "What is 2 + 2?",
+                "user_answer": "4",
+                "correct_answer": "4",
+                "is_correct": True
+            },
+            {
+                "question": "What is the time complexity of binary search?",
+                "user_answer": "O(N)",
+                "correct_answer": "O(log N)",
+                "is_correct": False,
+                "options": ["O(1)", "O(log N)", "O(N)", "O(N log N)"],
+                "explanation": "Binary search divides the search space in half at each step, yielding logarithmic time."
+            }
+        ]
+    )
+    db_session.add(quiz_res)
+    db_session.commit()
+
+    # Call sync
+    r_sync = client.post("/mistakes/sync-from-history")
+    assert r_sync.status_code == 200
+    sync_json = r_sync.json()
+    assert sync_json["status"] == "success"
+    assert sync_json["synced_count"] >= 1
+
+    # Verify that the mistake is now in /mistakes
+    r_list = client.get("/mistakes")
+    assert r_list.status_code == 200
+    items = r_list.json()
+    q_texts = [item["question_text"] for item in items]
+    assert "What is the time complexity of binary search?" in q_texts
+

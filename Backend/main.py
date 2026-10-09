@@ -5165,6 +5165,18 @@ def save_quiz_result(
                 subtopic=d.get("section_heading")
             )
 
+        # Mistake Intelligence Integration: automatically record incorrect questions into Mistake Bank
+        try:
+            MistakeService.auto_record_quiz_mistakes(
+                db=db,
+                user=current_user,
+                session=session,
+                quiz_details=request.details,
+                quiz_id=result.id
+            )
+        except Exception as e:
+            logger.warning(f"Could not auto-record quiz mistakes: {e}")
+
     db.commit()
     db.refresh(result)
     return {"id": result.id, "score": result.score, "percentage": pct, "details": result.details}
@@ -8625,6 +8637,33 @@ def list_mistakes(
         error_category=error_category,
         is_resolved=is_resolved
     )
+
+
+@app.post("/mistakes/sync-from-history", tags=["Mistake Intelligence"])
+def sync_past_mistakes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Synchronizes past quiz and exam mistakes from historical assessment results
+    into the Mistake Intelligence Bank.
+    """
+    res = MistakeService.sync_past_mistakes(db, current_user)
+    log_activity(db, current_user.id, "Mistakes Synced", res.get("message", "Synced past mistakes"))
+    return res
+
+
+@app.post("/mistakes/seed-sample", response_model=MistakeAnalysisResponse, tags=["Mistake Intelligence"])
+def seed_sample_mistake(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Seeds a high-yield demonstration mistake record for instant interactive verification.
+    """
+    res = MistakeService.seed_sample_mistake(db, current_user)
+    log_activity(db, current_user.id, "Sample Mistake Seeded", "Seeded Operating Systems diagnostic demo")
+    return res
 
 
 @app.get("/mistakes/{mistake_id}", response_model=MistakeAnalysisResponse, tags=["Mistake Intelligence"])

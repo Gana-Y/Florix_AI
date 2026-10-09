@@ -1518,6 +1518,31 @@ const StudySession = ({ data, onBack, isDarkMode, toggleTheme }) => {
                         <span>Retake Quiz</span>
                       </button>
 
+                      {quizData.length - score > 0 && (
+                        <button
+                          onClick={() => {
+                            const firstWrong = userAnswers.find(a => !a.is_correct);
+                            if (firstWrong) {
+                              setSelectedMistakeQuestion({
+                                question_text: firstWrong.question,
+                                options: firstWrong.options || [],
+                                user_answer: firstWrong.user_answer,
+                                correct_answer: firstWrong.correct_answer,
+                                topic: data?.filename || data?.title || 'General',
+                                session_id: data?.id,
+                                difficulty: 'intermediate',
+                                source_type: 'quiz'
+                              });
+                              setShowMistakeModal(true);
+                            }
+                          }}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-all shadow-xs"
+                        >
+                          <Brain size={14} className="text-rose-600" />
+                          <span>Debug {quizData.length - score} Mistake{quizData.length - score > 1 ? 's' : ''}</span>
+                        </button>
+                      )}
+
                       {pastQuizzes.length > 0 && (
                         <button
                           onClick={() => setShowPastQuizzesModal(true)}

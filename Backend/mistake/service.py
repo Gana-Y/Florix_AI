@@ -21,7 +21,11 @@ from database import (
     User,
     LearningEvent,
     StudyPlan,
-    StudyPlanTask
+    StudyPlanTask,
+    QuizResult,
+    ExamAttempt,
+    ExamAnswer,
+    ExamQuestion
 )
 from intelligence import AssessmentEngine, LearnerEngine
 from planner.service import StudyPlannerService
@@ -563,3 +567,325 @@ class MistakeService:
         )
         rem = NotificationService.create_manual_reminder(db, user_id, rem_req)
         return {"status": "reminder_scheduled", "reminder_id": rem.id, "scheduled_at": scheduled_at.isoformat()}
+
+    @classmethod
+    def auto_record_quiz_mistakes(
+        cls,
+        db: Session,
+        user: User,
+        session: Any,
+        quiz_details: List[Dict[str, Any]],
+        quiz_id: Optional[int] = None
+    ) -> int:
+        """
+        Automatically records mistakes from a completed quiz into the Mistake Intelligence Bank.
+        Guarantees that learner errors are never lost and are available for metacognitive practice.
+        """
+        if not quiz_details:
+            return 0
+
+        recorded_count = 0
+        now = cls._now_utc()
+        session_id = getattr(session, "id", None)
+        session_name = getattr(session, "filename", None) or getattr(session, "title", None) or "General"
+
+        for d in quiz_details:
+            is_correct = d.get("is_correct")
+            if is_correct is None:
+                sel = d.get("selected")
+                ans = d.get("answer")
+                u_ans = d.get("user_answer")
+                c_ans = d.get("correct_answer")
+                is_correct = (
+                    (sel is not None and ans is not None and sel == ans) or
+                    (u_ans is not None and c_ans is not None and u_ans == c_ans)
+                )
+
+            if is_correct:
+                continue
+
+            q_text = str(d.get("question") or d.get("question_text") or "").strip()
+            if not q_text:
+                continue
+
+            # Idempotency / duplicate check for this user and question
+            existing = db.query(MistakeRecord).filter(
+                MistakeRecord.user_id == user.id,
+                MistakeRecord.question_text == q_text,
+                MistakeRecord.is_resolved == False
+            ).first()
+
+            if existing:
+                if existing.pattern_state == PatternState.ISOLATED.value:
+                    existing.pattern_state = PatternState.RECURRING.value
+                elif existing.pattern_state == PatternState.RECURRING.value:
+                    existing.pattern_state = PatternState.PERSISTENT.value
+                existing.updated_at = now
+                continue
+
+            opts = d.get("options") or []
+            u_ans_raw = d.get("user_answer") if d.get("user_answer") is not None else d.get("selected", "Unanswered")
+            c_ans_raw = d.get("correct_answer") if d.get("correct_answer") is not None else d.get("answer", "")
+            topic = d.get("topic") or session_name
+            subtopic = d.get("section_heading") or d.get("subtopic")
+            difficulty = d.get("difficulty") or "intermediate"
+
+            # Fast grounded diagnostic analysis
+            analysis = MistakeAnalyzer.analyze(
+                db=db,
+                user_id=user.id,
+                question_text=q_text,
+                user_answer_raw=u_ans_raw,
+                correct_answer_raw=c_ans_raw,
+                options=opts,
+                topic=topic,
+                subtopic=subtopic,
+                difficulty=difficulty,
+                session_id=session_id,
+                generate_fallback_fn=None,
+                gemini_client=None
+            )
+
+            provided_explanation = str(d.get("explanation") or "").strip()
+            correct_reasoning = analysis["correct_reasoning"]
+            if provided_explanation and len(provided_explanation) > 10:
+                correct_reasoning = f"{provided_explanation} {correct_reasoning}".strip()
+
+            from .analyzer import resolve_answer_text
+            u_text = resolve_answer_text(u_ans_raw, opts)
+            c_text = resolve_answer_text(c_ans_raw, opts)
+
+            record = MistakeRecord(
+                user_id=user.id,
+                session_id=session_id,
+                source_type="quiz",
+                source_id=quiz_id,
+                question_text=q_text,
+                user_answer=u_text,
+                correct_answer=c_text,
+                options=opts,
+                topic=topic,
+                subtopic=subtopic,
+                difficulty=difficulty,
+                teaching_mode="INTERMEDIATE",
+                error_category=analysis["error_category"],
+                misconception=analysis["misconception"],
+                why_incorrect=analysis["why_incorrect"],
+                correct_reasoning=correct_reasoning,
+                prerequisite_concept=analysis.get("prerequisite_concept"),
+                citations=analysis.get("citations", []),
+                pattern_state=analysis.get("pattern_state", "ISOLATED"),
+                is_resolved=False,
+                created_at=now,
+                updated_at=now
+            )
+            db.add(record)
+            recorded_count += 1
+
+        if recorded_count > 0:
+            db.commit()
+            logger.info(f"Auto-recorded {recorded_count} mistakes from quiz into Mistake Bank for user {user.id}")
+
+        return recorded_count
+
+    @classmethod
+    def auto_record_exam_mistakes(
+        cls,
+        db: Session,
+        user: User,
+        attempt: Any
+    ) -> int:
+        """
+        Automatically records mistakes from a completed exam attempt into the Mistake Bank.
+        """
+        if not attempt or not getattr(attempt, "exam", None) or not getattr(attempt.exam, "questions", None):
+            return 0
+
+        recorded_count = 0
+        now = cls._now_utc()
+
+        for q in attempt.exam.questions:
+            ans = next((a for a in attempt.answers if a.question_id == q.id), None)
+            is_corr = ans.is_correct if ans else False
+
+            if is_corr:
+                continue
+
+            q_text = (q.question_text or "").strip()
+            if not q_text:
+                continue
+
+            existing = db.query(MistakeRecord).filter(
+                MistakeRecord.user_id == user.id,
+                MistakeRecord.question_text == q_text,
+                MistakeRecord.is_resolved == False
+            ).first()
+
+            if existing:
+                if existing.pattern_state == PatternState.ISOLATED.value:
+                    existing.pattern_state = PatternState.RECURRING.value
+                elif existing.pattern_state == PatternState.RECURRING.value:
+                    existing.pattern_state = PatternState.PERSISTENT.value
+                existing.updated_at = now
+                continue
+
+            from .analyzer import resolve_answer_text
+            u_ans_raw = ans.user_answer if ans and ans.user_answer is not None else "Unanswered"
+            u_text = resolve_answer_text(u_ans_raw, q.options)
+            c_text = resolve_answer_text(q.correct_answer, q.options)
+
+            analysis = MistakeAnalyzer.analyze(
+                db=db,
+                user_id=user.id,
+                question_text=q_text,
+                user_answer_raw=u_ans_raw,
+                correct_answer_raw=q.correct_answer,
+                options=q.options or [],
+                topic=q.topic or "General",
+                subtopic=q.section_heading,
+                difficulty=q.difficulty or "intermediate",
+                session_id=attempt.exam.session_id,
+                generate_fallback_fn=None,
+                gemini_client=None
+            )
+
+            correct_reasoning = analysis["correct_reasoning"]
+            if getattr(q, "explanation", None) and len(str(q.explanation).strip()) > 10:
+                correct_reasoning = f"{q.explanation} {correct_reasoning}".strip()
+
+            record = MistakeRecord(
+                user_id=user.id,
+                session_id=attempt.exam.session_id,
+                source_type="exam",
+                source_id=attempt.id,
+                question_text=q_text,
+                user_answer=u_text,
+                correct_answer=c_text,
+                options=q.options or [],
+                topic=q.topic or "General",
+                subtopic=q.section_heading,
+                difficulty=q.difficulty or "intermediate",
+                teaching_mode="EXAM",
+                error_category=analysis["error_category"],
+                misconception=analysis["misconception"],
+                why_incorrect=analysis["why_incorrect"],
+                correct_reasoning=correct_reasoning,
+                prerequisite_concept=analysis.get("prerequisite_concept"),
+                citations=analysis.get("citations", []),
+                pattern_state=analysis.get("pattern_state", "ISOLATED"),
+                is_resolved=False,
+                created_at=now,
+                updated_at=now
+            )
+            db.add(record)
+            recorded_count += 1
+
+        if recorded_count > 0:
+            db.commit()
+            logger.info(f"Auto-recorded {recorded_count} mistakes from exam attempt {attempt.id} for user {user.id}")
+
+        return recorded_count
+
+    @classmethod
+    def sync_past_mistakes(cls, db: Session, user: User) -> Dict[str, Any]:
+        """
+        Scans all historical QuizResults and ExamAttempts for this user,
+        identifying any unlogged mistakes and synchronizing them into MistakeRecord.
+        """
+        total_synced = 0
+
+        # 1. Sync from QuizResults
+        past_quizzes = db.query(QuizResult).filter(QuizResult.user_id == user.id).all()
+        for qr in past_quizzes:
+            if not qr.details:
+                continue
+            session = db.query(StudySession).filter(StudySession.id == qr.session_id).first()
+            if not session:
+                class MockSession:
+                    id = qr.session_id
+                    filename = "General Study Session"
+                session = MockSession()
+            count = cls.auto_record_quiz_mistakes(
+                db=db,
+                user=user,
+                session=session,
+                quiz_details=qr.details,
+                quiz_id=qr.id
+            )
+            total_synced += count
+
+        # 2. Sync from ExamAttempts
+        attempts = db.query(ExamAttempt).filter(
+            ExamAttempt.user_id == user.id,
+            ExamAttempt.status.in_(["submitted", "graded", "timed_out"])
+        ).all()
+        for att in attempts:
+            count = cls.auto_record_exam_mistakes(db=db, user=user, attempt=att)
+            total_synced += count
+
+        return {
+            "status": "success",
+            "synced_count": total_synced,
+            "message": f"Successfully synchronized {total_synced} mistake(s) from past assessments."
+        }
+
+    @classmethod
+    def seed_sample_mistake(cls, db: Session, user: User) -> MistakeAnalysisResponse:
+        """
+        Seeds a realistic high-yield academic diagnostic mistake for demonstration and testing.
+        Allows immediate interactive exploration of the Metacognitive Debugger workflow.
+        """
+        now = cls._now_utc()
+        sample_q = "Which of the following conditions is required for deadlock prevention using the Banker's Algorithm?"
+        opts = [
+            "The system must maintain hold-and-wait while denying mutual exclusion.",
+            "Each process must declare its maximum resource claims in advance, and state transitions must preserve a safe sequence.",
+            "Processes are permitted to preemptively seize non-shareable resources when a cycle is detected.",
+            "Deadlock prevention requires purely statistical time-slicing without prior resource claims."
+        ]
+        u_ans = opts[0]
+        c_ans = opts[1]
+
+        rec = db.query(MistakeRecord).filter(
+            MistakeRecord.user_id == user.id,
+            MistakeRecord.question_text == sample_q
+        ).first()
+
+        if not rec:
+            rec = MistakeRecord(
+                user_id=user.id,
+                session_id=None,
+                source_type="demo",
+                source_id=None,
+                question_text=sample_q,
+                user_answer=u_ans,
+                correct_answer=c_ans,
+                options=opts,
+                topic="Operating Systems (Deadlocks & Concurrency)",
+                subtopic="Deadlock Avoidance & Banker's Algorithm",
+                difficulty="intermediate",
+                teaching_mode="INTERMEDIATE",
+                error_category=MistakeCategory.CONCEPTUAL_MISUNDERSTANDING.value,
+                misconception="Confusing Deadlock Prevention (breaking Coffman conditions) with Deadlock Avoidance (safe state algorithms like Banker's Algorithm).",
+                why_incorrect="Selecting 'hold-and-wait while denying mutual exclusion' conflates Coffman prevention strategies with avoidance protocols. Furthermore, mutual exclusion cannot simply be denied for non-shareable hardware resources like printers or mutex locks.",
+                correct_reasoning="Banker's Algorithm is a Deadlock Avoidance algorithm. It requires a priori knowledge of maximum resource claims for every process and dynamically allocates resources only if the resulting state remains in a 'safe state' with at least one viable execution sequence.",
+                prerequisite_concept="Coffman's 4 Conditions for Deadlock",
+                citations=[
+                    {
+                        "chunk_index": 1,
+                        "page_number": 42,
+                        "section_heading": "Dijkstra's Banker's Algorithm & Resource Allocation Graphs",
+                        "snippet": "A state is safe if the system can allocate resources to each process in some order and still avoid a deadlock. The algorithm requires each process to declare maximum claims."
+                    }
+                ],
+                pattern_state=PatternState.ISOLATED.value,
+                is_resolved=False,
+                created_at=now,
+                updated_at=now
+            )
+            db.add(rec)
+            db.commit()
+            db.refresh(rec)
+
+        return cls.serialize_mistake(rec)
+

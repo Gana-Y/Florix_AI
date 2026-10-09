@@ -4551,8 +4551,8 @@ async def process_text(
     text = raw_text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty. Please paste some content.")
-    if len(text) < 50:
-        raise HTTPException(status_code=400, detail="Text too short. Please provide at least 50 characters for meaningful analysis.")
+    if len(text) < 10:
+        raise HTTPException(status_code=400, detail="Text too short. Please provide at least 10 characters for meaningful analysis.")
     # Enforce subscription-based paste character limit
     check_plan_limit(current_user, "max_paste_chars", db, len(text))
 
@@ -4581,7 +4581,7 @@ async def process_text(
         clean_extracted = soup.get_text()
         clean_extracted = html_module.unescape(clean_extracted).strip()
         clean_extracted = re.sub(r"\n{3,}", "\n\n", clean_extracted).strip()
-        if len(clean_extracted) < 50:
+        if len(clean_extracted) < 10:
             raise HTTPException(status_code=400, detail="After removing HTML markup, the text content is too short. Please provide more substantive text.")
         text = clean_extracted
 

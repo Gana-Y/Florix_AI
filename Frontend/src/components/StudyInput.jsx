@@ -83,8 +83,6 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
     }
 
     setSpeakError('');
-    setSpeakTranscript('');
-    setInterimTranscript('');
     setIsSpeaking(true);
 
     try {
@@ -141,9 +139,9 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
   };
 
   const handleSpeechSubmit = async () => {
-    const text = (speakTranscript + interimTranscript).trim();
-    if (!text || text.length < 50) {
-      addToast('Text is too short. Please speak at least 50 characters for meaningful analysis.', 'warning');
+    const text = (speakTranscript + (interimTranscript ? ' ' + interimTranscript : '')).trim();
+    if (!text || text.length < 10) {
+      addToast('Text is too short. Please speak or type at least 10 characters for meaningful analysis.', 'warning');
       return;
     }
     stopSpeakRecognition();
@@ -171,6 +169,9 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
 
   useEffect(() => {
     if (activeModal === 'speak') {
+      setSpeakTranscript('');
+      setInterimTranscript('');
+      setSpeakError('');
       startSpeakRecognition();
     } else {
       stopSpeakRecognition();
@@ -321,8 +322,8 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
 
   const handlePasteOpen = async (e) => {
     e.preventDefault();
-    if (!pasteText.trim() || pasteText.length < 50) {
-      addToast('Text is too short. Please paste at least 50 characters.', 'warning');
+    if (!pasteText.trim() || pasteText.trim().length < 10) {
+      addToast('Text is too short. Please paste at least 10 characters.', 'warning');
       return;
     }
     const text = pasteText.trim();
@@ -386,7 +387,7 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
       onClick: () => setActiveModal('link'),
     },
     {
-      label: 'Paste', subLabel: `Copied Text · max ${(planLimits.max_paste_chars / 6).toLocaleString()} words`, icon: FileText,
+      label: 'Paste', subLabel: `Copied Text · max ${Math.floor(planLimits.max_paste_chars / 6).toLocaleString()} words`, icon: FileText,
       iconBg: 'bg-green-50 dark:bg-green-900/30', iconText: 'text-green-600 dark:text-green-400',
       onClick: () => setActiveModal('paste'),
     },
@@ -542,209 +543,225 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
       </motion.div>
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {activeModal && createPortal(
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/75 dark:bg-black/85 backdrop-blur-md">
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {activeModal && (
             <motion.div
-              variants={modalVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 max-w-lg w-full shadow-2xl relative"
+              key="active-modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  stopSpeakRecognition();
+                  setActiveModal(null);
+                }
+              }}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/75 dark:bg-black/85 backdrop-blur-md"
             >
-              <motion.button
-                whileHover={{ scale: 1.1, rotate: 90 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setActiveModal(null)}
-                className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 dark:hover:text-white bg-slate-100 dark:bg-zinc-900 p-2 rounded-full transition-colors"
+              <motion.div
+                key={activeModal}
+                variants={modalVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 max-w-lg w-full shadow-2xl relative"
               >
-                <X size={18} />
-              </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => {
+                    stopSpeakRecognition();
+                    setActiveModal(null);
+                  }}
+                  className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 dark:hover:text-white bg-slate-100 dark:bg-zinc-900 p-2 rounded-full transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X size={18} />
+                </motion.button>
 
-              {/* Link Modal */}
-              {activeModal === 'link' && (
-                <form onSubmit={handleLinkOpen} className="flex flex-col gap-5">
-                  <div>
-                    <div className="w-11 h-11 bg-orange-100 dark:bg-orange-900/30 text-orange-600 flex items-center justify-center rounded-xl mb-4">
-                      <LinkIcon size={22} />
+                {/* Link Modal */}
+                {activeModal === 'link' && (
+                  <form onSubmit={handleLinkOpen} className="flex flex-col gap-5">
+                    <div>
+                      <div className="w-11 h-11 bg-orange-100 dark:bg-orange-900/30 text-orange-600 flex items-center justify-center rounded-xl mb-4">
+                        <LinkIcon size={22} />
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800 dark:text-white">Paste a Link</h3>
+                      <p className="text-slate-500 dark:text-zinc-400 text-sm mt-1">YouTube, Wikipedia, or any public article.</p>
                     </div>
-                    <h3 className="text-xl font-bold text-slate-800 dark:text-white">Paste a Link</h3>
-                    <p className="text-slate-500 dark:text-zinc-400 text-sm mt-1">YouTube, Wikipedia, or any public article.</p>
-                  </div>
-                  <input
-                    type="text"
-                    inputMode="url"
-                    required
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    placeholder="https://youtube.com/watch?v=... or https://en.wikipedia.org/..."
-                    className="w-full p-4 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-zinc-200 text-sm"
-                  />
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={!linkUrl.trim() || isUploading}
-                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
-                  >
-                    {isUploading ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : 'Process Link'}
-                  </motion.button>
-                </form>
-              )}
-
-              {/* Paste Modal */}
-              {activeModal === 'paste' && (
-                <form onSubmit={handlePasteOpen} className="flex flex-col gap-5">
-                  <div>
-                    <div className="w-11 h-11 bg-green-100 dark:bg-green-900/30 text-green-600 flex items-center justify-center rounded-xl mb-4">
-                      <FileText size={22} />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-800 dark:text-white">Paste Text</h3>
-                    <p className="text-slate-500 dark:text-zinc-400 text-sm mt-1">Paste notes, essays, or any content for AI analysis.</p>
-                  </div>
-                  <div className="relative">
-                    <textarea
-                      required value={pasteText}
-                      onChange={(e) => {
-                        if (e.target.value.length <= planLimits.max_paste_chars) {
-                          setPasteText(e.target.value);
-                        } else {
-                          setPasteText(e.target.value.slice(0, planLimits.max_paste_chars));
-                          addToast(`Character limit reached (${planLimits.max_paste_chars.toLocaleString()} chars for ${userPlan.toUpperCase()} plan)`, 'warning');
-                        }
-                      }}
-                      placeholder="Paste your text here…"
-                      className="w-full p-4 pb-8 h-40 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-zinc-200 resize-none text-sm custom-scrollbar"
+                    <input
+                      type="text"
+                      inputMode="url"
+                      required
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      placeholder="https://youtube.com/watch?v=... or https://en.wikipedia.org/..."
+                      className="w-full p-4 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-zinc-200 text-sm"
                     />
-                    <div className={`absolute bottom-2 right-3 text-[10px] font-semibold ${
-                      pasteText.length > planLimits.max_paste_chars * 0.9 
-                        ? 'text-red-500' 
-                        : pasteText.length > planLimits.max_paste_chars * 0.7 
-                          ? 'text-amber-500' 
-                          : 'text-slate-400 dark:text-zinc-600'
-                    }`}>
-                      {pasteText.length.toLocaleString()} / {planLimits.max_paste_chars.toLocaleString()} chars
-                    </div>
-                  </div>
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={pasteText.length < 10}
-                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-sm"
-                  >
-                    Open Preview
-                  </motion.button>
-                </form>
-              )}
-
-
-
-              {/* Speak Modal */}
-              {activeModal === 'speak' && (
-                <div className="flex flex-col items-center gap-5 text-center">
-                  <div>
-                    <div className="w-11 h-11 bg-teal-100 dark:bg-teal-900/30 text-teal-600 flex items-center justify-center rounded-xl mb-4 mx-auto">
-                      <Mic size={22} />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-800 dark:text-white">Speak & Study</h3>
-                    <p className="text-slate-500 dark:text-zinc-400 text-sm mt-1">
-                      Speak naturally. AI will transcribe and create a session.
-                    </p>
-                  </div>
-
-                  {/* Pulsing Mic Indicator */}
-                  <div className="w-full flex items-center justify-center h-28 relative">
-                    {isSpeaking ? (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <motion.div
-                          animate={{ scale: [1, 2.2, 1], opacity: [0.4, 0, 0.4] }}
-                          transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
-                          className="w-12 h-12 bg-teal-500/20 dark:bg-teal-400/20 rounded-full absolute"
-                        />
-                        <motion.div
-                          animate={{ scale: [1, 1.6, 1], opacity: [0.6, 0, 0.6] }}
-                          transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay: 0.5 }}
-                          className="w-12 h-12 bg-teal-500/30 dark:bg-teal-400/30 rounded-full absolute"
-                        />
-                      </div>
-                    ) : null}
-
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={isSpeaking ? stopSpeakRecognition : startSpeakRecognition}
-                      className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all z-10 ${
-                        isSpeaking
-                          ? 'bg-teal-500 hover:bg-teal-600 text-white shadow-teal-500/20'
-                          : 'bg-slate-300 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-400 dark:hover:bg-zinc-700'
-                      }`}
+                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={!linkUrl.trim() || isUploading}
+                      className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-indigo-500/20"
                     >
-                      {isSpeaking ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+                      {isUploading ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : 'Process Link'}
                     </motion.button>
-                  </div>
+                  </form>
+                )}
 
-                  {speakError && (
-                    <div className="text-xs text-red-500 bg-red-50 dark:bg-red-950/20 px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-900/30 w-full text-left">
-                      {speakError}
-                    </div>
-                  )}
-
-                  {/* Real-time word-by-word transcription rendering */}
-                  <div className="w-full">
-                    <div className="w-full min-h-[120px] max-h-[200px] p-4 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-y-auto text-slate-800 dark:text-zinc-200 text-sm custom-scrollbar text-left relative focus-within:ring-2 focus-within:ring-indigo-500/30 transition-all">
-                      <div className="pb-4 select-text">
-                        {speakTranscript}
-                        <span className="text-teal-600 dark:text-teal-400 font-medium">
-                          {interimTranscript}
-                        </span>
-                        {!speakTranscript && !interimTranscript && (
-                          <span className="text-slate-400 dark:text-zinc-600">
-                            {isSpeaking
-                              ? 'Listening... start speaking now.'
-                              : 'Speech recognition paused. Click the button to resume.'}
-                          </span>
-                        )}
+                {/* Paste Modal */}
+                {activeModal === 'paste' && (
+                  <form onSubmit={handlePasteOpen} className="flex flex-col gap-5">
+                    <div>
+                      <div className="w-11 h-11 bg-green-100 dark:bg-green-900/30 text-green-600 flex items-center justify-center rounded-xl mb-4">
+                        <FileText size={22} />
                       </div>
+                      <h3 className="text-xl font-bold text-slate-800 dark:text-white">Paste Text</h3>
+                      <p className="text-slate-500 dark:text-zinc-400 text-sm mt-1">Paste notes, essays, or code for AI analysis.</p>
+                    </div>
+                    <div className="relative">
+                      <textarea
+                        required value={pasteText}
+                        onChange={(e) => {
+                          if (e.target.value.length <= planLimits.max_paste_chars) {
+                            setPasteText(e.target.value);
+                          } else {
+                            setPasteText(e.target.value.slice(0, planLimits.max_paste_chars));
+                            addToast(`Character limit reached (${planLimits.max_paste_chars.toLocaleString()} chars for ${userPlan.toUpperCase()} plan)`, 'warning');
+                          }
+                        }}
+                        placeholder="Paste your text or notes here…"
+                        className="w-full p-4 pb-8 h-40 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-zinc-200 resize-none text-sm custom-scrollbar"
+                      />
+                      <div className={`absolute bottom-2 right-3 text-[10px] font-semibold ${
+                        pasteText.length > planLimits.max_paste_chars * 0.9 
+                          ? 'text-red-500' 
+                          : pasteText.length > planLimits.max_paste_chars * 0.7 
+                            ? 'text-amber-500' 
+                            : 'text-slate-400 dark:text-zinc-600'
+                      }`}>
+                        {pasteText.length.toLocaleString()} / {planLimits.max_paste_chars.toLocaleString()} chars
+                      </div>
+                    </div>
+                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={pasteText.trim().length < 10 || isUploading}
+                      className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-sm cursor-pointer shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
+                    >
+                      {isUploading ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : 'Process Text'}
+                    </motion.button>
+                  </form>
+                )}
+
+                {/* Speak Modal */}
+                {activeModal === 'speak' && (
+                  <div className="flex flex-col items-center gap-5 text-center">
+                    <div>
+                      <div className="w-11 h-11 bg-teal-100 dark:bg-teal-900/30 text-teal-600 flex items-center justify-center rounded-xl mb-4 mx-auto">
+                        <Mic size={22} />
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800 dark:text-white">Speak & Study</h3>
+                      <p className="text-slate-500 dark:text-zinc-400 text-sm mt-1">
+                        Speak naturally. AI will transcribe your words into a grounded session.
+                      </p>
+                    </div>
+
+                    {/* Pulsing Mic Indicator */}
+                    <div className="w-full flex items-center justify-center h-28 relative">
+                      {isSpeaking ? (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <motion.div
+                            animate={{ scale: [1, 2.2, 1], opacity: [0.4, 0, 0.4] }}
+                            transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
+                            className="w-12 h-12 bg-teal-500/20 dark:bg-teal-400/20 rounded-full absolute"
+                          />
+                          <motion.div
+                            animate={{ scale: [1, 1.6, 1], opacity: [0.6, 0, 0.6] }}
+                            transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay: 0.5 }}
+                            className="w-12 h-12 bg-teal-500/30 dark:bg-teal-400/30 rounded-full absolute"
+                          />
+                        </div>
+                      ) : null}
+
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        type="button"
+                        onClick={isSpeaking ? stopSpeakRecognition : startSpeakRecognition}
+                        className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all z-10 cursor-pointer ${
+                          isSpeaking
+                            ? 'bg-teal-500 hover:bg-teal-600 text-white shadow-teal-500/20'
+                            : 'bg-slate-300 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-400 dark:hover:bg-zinc-700'
+                        }`}
+                        title={isSpeaking ? 'Pause Recording' : 'Start / Resume Recording'}
+                      >
+                        {isSpeaking ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+                      </motion.button>
+                    </div>
+
+                    {speakError && (
+                      <div className="text-xs text-red-500 bg-red-50 dark:bg-red-950/20 px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-900/30 w-full text-left">
+                        {speakError}
+                      </div>
+                    )}
+
+                    {/* Real-time word-by-word transcription with manual editing capability */}
+                    <div className="w-full relative">
+                      <textarea
+                        value={speakTranscript + (interimTranscript ? (speakTranscript ? ' ' : '') + interimTranscript : '')}
+                        onChange={(e) => {
+                          setSpeakTranscript(e.target.value);
+                          setInterimTranscript('');
+                        }}
+                        placeholder={isSpeaking ? 'Listening... start speaking now.' : 'Speech recognition paused. Click the mic button to resume, or type notes here.'}
+                        className="w-full p-4 pb-8 h-36 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl focus:ring-2 focus:ring-teal-500 outline-none text-slate-800 dark:text-zinc-200 resize-none text-sm custom-scrollbar text-left"
+                      />
                       {(() => {
-                        const wordCount = (speakTranscript + interimTranscript).trim().split(/\s+/).filter(Boolean).length;
+                        const currentWords = (speakTranscript + (interimTranscript ? ' ' + interimTranscript : '')).trim().split(/\s+/).filter(Boolean).length;
                         const limit = planLimits.max_speech_words;
                         const isUnlimited = limit === -1;
-                        const isNearLimit = !isUnlimited && wordCount > limit * 0.8;
-                        const isOverLimit = !isUnlimited && wordCount >= limit;
+                        const isNearLimit = !isUnlimited && currentWords > limit * 0.8;
+                        const isOverLimit = !isUnlimited && currentWords >= limit;
                         return (
-                          <div className={`absolute bottom-2 right-3 text-[10px] font-semibold ${
+                          <div className={`absolute bottom-3 right-4 text-[10px] font-semibold pointer-events-none ${
                             isOverLimit ? 'text-red-500' : isNearLimit ? 'text-amber-500' : 'text-slate-400 dark:text-zinc-600'
                           }`}>
-                            {wordCount}{isUnlimited ? '' : ` / ${limit}`} words
+                            {currentWords}{isUnlimited ? '' : ` / ${limit}`} words
                           </div>
                         );
                       })()}
                     </div>
-                  </div>
 
-                  <div className="flex w-full gap-3">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => {
-                        setSpeakTranscript('');
-                        setInterimTranscript('');
-                      }}
-                      disabled={!speakTranscript && !interimTranscript}
-                      className="flex-1 py-3 bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold rounded-2xl text-sm transition-colors disabled:opacity-40"
-                    >
-                      Reset
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleSpeechSubmit}
-                      disabled={isUploading || (!speakTranscript.trim() && !interimTranscript.trim())}
-                      className="flex-[2] py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 flex justify-center items-center gap-2 text-sm transition-colors shadow-md shadow-indigo-500/25"
-                    >
-                      {isUploading ? <Loader2 className="animate-spin" size={16} /> : 'Finish & Process'}
-                    </motion.button>
+                    <div className="flex w-full gap-3">
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        type="button"
+                        onClick={() => {
+                          setSpeakTranscript('');
+                          setInterimTranscript('');
+                        }}
+                        disabled={!speakTranscript && !interimTranscript}
+                        className="flex-1 py-3 bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold rounded-2xl text-sm transition-colors disabled:opacity-40 cursor-pointer"
+                      >
+                        Reset
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        type="button"
+                        onClick={handleSpeechSubmit}
+                        disabled={isUploading || (!speakTranscript.trim() && !interimTranscript.trim())}
+                        className="flex-[2] py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-2xl disabled:opacity-50 flex justify-center items-center gap-2 text-sm transition-colors shadow-md shadow-teal-500/25 cursor-pointer"
+                      >
+                        {isUploading ? <><Loader2 className="animate-spin" size={16} /> Processing...</> : 'Finish & Process'}
+                      </motion.button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </motion.div>
             </motion.div>
-          </div>,
-          document.body
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* RAG Pipeline Visualizer Modal */}
       <AnimatePresence>

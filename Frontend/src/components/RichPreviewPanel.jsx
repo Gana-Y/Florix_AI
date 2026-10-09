@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useContext } from 'react';
+import React, { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
@@ -8,7 +8,7 @@ import rehypeKatex from 'rehype-katex';
 import { preprocessLatex } from '../utils/latexHelper';
 import {
   X, Send, Loader2, Youtube, Globe, FileText,
-  ExternalLink, Sparkles, Bot, User, BookOpen
+  ExternalLink, Sparkles, Bot, User, BookOpen, RotateCcw
 } from 'lucide-react';
 import api from '../utils/api';
 import { PreferencesContext } from '../context/PreferencesContext';
@@ -77,32 +77,51 @@ const ChatPanel = ({ context, contextType, sessionId, initialQuery }) => {
     }
   }, [messages, loading]);
 
-  // Execute initial direct query on mount
+  // Execute initial direct query on mount with retry and greeting intelligence
+  const executeDirectQuery = useCallback(async (queryText, retryCount = 0) => {
+    setLoading(true);
+    const isGreeting = /^(hi|hello|hey|greetings|namaste|good\s*(morning|afternoon|evening))\b/i.test(queryText.trim());
+    const contextPrompt = isGreeting
+      ? `User is greeting Florix AI: "${queryText}". Respond warmly, concisely, and helpfully as Florix AI academic assistant, inviting them to ask any study, exam, or research question.`
+      : `User asks: "${queryText}". Answer directly, comprehensively, and educationally. Structure with clear Markdown headings, bullet points, and high-yield insights.`;
+
+    try {
+      const res = await api.post('/chat', {
+        message: queryText,
+        context_text: contextPrompt,
+      });
+      const reply = res.data?.reply || res.data?.message || 'Here is what I found for you!';
+      setMessages((prev) => [
+        ...prev.filter(m => !m.isError),
+        { role: 'assistant', content: reply }
+      ]);
+    } catch (err) {
+      if (retryCount < 1) {
+        // Automatic single retry for transient network reconnections
+        await new Promise(r => setTimeout(r, 800));
+        return executeDirectQuery(queryText, retryCount + 1);
+      }
+      const errDetail = err.response?.data?.detail || err.message || 'Network error';
+      setMessages((prev) => [
+        ...prev.filter(m => !m.isError),
+        {
+          role: 'assistant',
+          content: `⚠️ Could not complete request: ${errDetail}. Please try asking below or retry.`,
+          isError: true,
+          retryQuery: queryText
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (contextType === 'query' && initialQuery && !queryExecutedRef.current) {
       queryExecutedRef.current = true;
-      setLoading(true);
-      api.post('/chat', {
-        message: initialQuery,
-        context_text: `User asks: "${initialQuery}". Answer directly, comprehensively, and educationally. Structure with clear Markdown headings, bullet points, and high-yield insights.`,
-      })
-      .then((res) => {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: res.data.reply || res.data.message || 'Here is what I found for you!' }
-        ]);
-      })
-      .catch((err) => {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: `⚠️ Could not complete request: ${err.response?.data?.detail || err.message || 'Network error'}. Please try asking below.` }
-        ]);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      executeDirectQuery(initialQuery);
     }
-  }, [contextType, initialQuery]);
+  }, [contextType, initialQuery, executeDirectQuery]);
 
   const handleSend = async (customText) => {
     const textToSend = (customText !== undefined ? customText : input).trim();
@@ -130,12 +149,18 @@ const ChatPanel = ({ context, contextType, sessionId, initialQuery }) => {
       }
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: res.data.reply || res.data.message || 'Here is what I found!' }
+        { role: 'assistant', content: res.data?.reply || res.data?.message || 'Here is what I found!' }
       ]);
     } catch (err) {
+      const errDetail = err.response?.data?.detail || err.message || 'Network error';
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: '⚠️ Something went wrong. Please try asking again.' },
+        {
+          role: 'assistant',
+          content: `⚠️ Could not complete request: ${errDetail}. Please try asking again.`,
+          isError: true,
+          retryQuery: textToSend
+        },
       ]);
     } finally {
       setLoading(false);
@@ -168,10 +193,28 @@ const ChatPanel = ({ context, contextType, sessionId, initialQuery }) => {
                 }`}
               >
                 {msg.role === 'assistant' ? (
-                  <div className="prose prose-base dark:prose-invert max-w-none text-[15px] sm:text-[15.5px] text-slate-800 dark:text-zinc-200 leading-[1.75] break-words">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {preprocessLatex(msg.content)}
-                    </ReactMarkdown>
+                  <div>
+                    <div className="prose prose-base dark:prose-invert max-w-none text-[15px] sm:text-[15.5px] text-slate-800 dark:text-zinc-200 leading-[1.75] break-words">
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {preprocessLatex(msg.content)}
+                      </ReactMarkdown>
+                    </div>
+                    {msg.isError && msg.retryQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (contextType === 'query' && messages.length <= 2) {
+                            executeDirectQuery(msg.retryQuery);
+                          } else {
+                            handleSend(msg.retryQuery);
+                          }
+                        }}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+                      >
+                        <RotateCcw size={13} />
+                        Retry Query
+                      </button>
+                    )}
                   </div>
                 ) : (
                   msg.content

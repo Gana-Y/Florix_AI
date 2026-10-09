@@ -214,7 +214,7 @@ class MistakeAnalyzer:
         page_number: Optional[int] = None,
         teaching_mode: str = "INTERMEDIATE",
         gemini_client: Any = None,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.5-flash",
         generate_fallback_fn: Any = None,
         retriever_fn: Any = None
     ) -> Dict[str, Any]:

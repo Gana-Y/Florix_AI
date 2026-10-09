@@ -208,13 +208,14 @@ api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is not set")
 client = genai.Client(api_key=api_key)
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 MODEL_CASCADE = [
-    "gemini-2.5-flash",
-    "gemini-3.8-flash",
+    "gemini-3.5-flash",
+    "gemini-flash-lite-latest",
     "gemini-3.5-flash-lite",
-    "gemini-flash-latest",
-    "gemini-3-flash-preview"
+    "gemini-2.5-flash",
+    "gemini-3-flash-preview",
+    "gemini-flash-latest"
 ]
 _model_cooldowns: Dict[str, float] = {}
 
@@ -5426,7 +5427,7 @@ async def chat_with_document(
         pref_instr = _build_preference_instructions(request.language, request.learning_goal)
         enhanced_context = f"{scaffold}{pref_instr}\n\n{doc_header}{doc_context}"
 
-        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME, fallback_models=MODEL_CASCADE)
         grounded_res = generator.generate(
             query=request.message,
             context=enhanced_context,
@@ -5461,7 +5462,7 @@ async def chat_with_document(
     else:
         intent, mode = detect_learning_intent(request.message)
         pref_instr = _build_preference_instructions(request.language, request.learning_goal)
-        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME, fallback_models=MODEL_CASCADE)
         grounded_res = generator.generate(
             query=request.message,
             context=f"{pref_instr}\n{request.context_text or ''}".strip(),
@@ -5566,7 +5567,7 @@ async def chat_stream(
             logger.warning(f"Failed to record user chat message: {pe}")
             db.rollback()
 
-        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME, fallback_models=MODEL_CASCADE)
         return StreamingResponse(
             generator.generate_stream(
                 query=request.message,
@@ -5583,7 +5584,7 @@ async def chat_stream(
         )
     else:
         pref_instr = _build_preference_instructions(request.language, request.learning_goal)
-        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME)
+        generator = GroundedGenerator(gemini_client=client, model_name=request.model or MODEL_NAME, fallback_models=MODEL_CASCADE)
         return StreamingResponse(
             generator.generate_stream(
                 query=request.message,

@@ -1,5 +1,5 @@
 # pyrefly: ignore [missing-import]
-from sqlalchemy import create_engine, Column, Integer, Float, String, Text, DateTime, ForeignKey, JSON, Boolean, Enum as SAEnum, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, Float, String, Text, DateTime, ForeignKey, JSON, Boolean, Enum as SAEnum, UniqueConstraint, event
 # pyrefly: ignore [missing-import]
 from sqlalchemy.ext.declarative import declarative_base
 # pyrefly: ignore [missing-import]
@@ -21,8 +21,22 @@ else:
     SQLALCHEMY_DATABASE_URL = f"sqlite:///{_DB_PATH}"
 
 # ⚙️ ENGINE SETUP
-# connect_args={"check_same_thread": False} is needed for SQLite in FastAPI
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+# connect_args with timeout=30 and check_same_thread=False prevents SQLite lock contention
+_is_sqlite = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
+_connect_args = {"check_same_thread": False, "timeout": 30.0} if _is_sqlite else {}
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=_connect_args)
+
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+        finally:
+            cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

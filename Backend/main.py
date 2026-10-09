@@ -113,18 +113,11 @@ from auth import (
 )
 from google import genai
 from google.genai import types
+from google.genai import errors as genai_errors
 try:
     from google.api_core import exceptions as google_exceptions
 except ImportError:
-    try:
-        from google.genai import errors as google_exceptions
-    except ImportError:
-        class DummyGoogleExceptions:
-            ResourceExhausted = Exception
-            ServiceUnavailable = Exception
-            InternalServerError = Exception
-            NotFound = Exception
-        google_exceptions = DummyGoogleExceptions
+    google_exceptions = None
 from dotenv import load_dotenv
 from pypdf import PdfReader
 
@@ -214,7 +207,14 @@ if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is not set")
 client = genai.Client(api_key=api_key)
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
-MODEL_CASCADE = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+MODEL_CASCADE = [
+    "gemini-2.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-latest",
+    "gemini-3-flash-preview"
+]
+_model_cooldowns: Dict[str, float] = {}
 
 # ── Razorpay payment gateway ──────────────────────────────────────────────────
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
@@ -857,13 +857,35 @@ class PinChatRequest(BaseModel):
 # HELPER FUNCTIONS
 # =============================================================================
 
+def _is_not_found_error(e: Exception) -> bool:
+    """Returns True if the exception indicates the model is not found or deprecated (404)."""
+    if getattr(e, "code", None) == 404:
+        return True
+    if isinstance(e, getattr(genai_errors, "APIError", ())):
+        if getattr(e, "code", None) == 404:
+            return True
+    if google_exceptions and hasattr(google_exceptions, "NotFound"):
+        if isinstance(e, google_exceptions.NotFound):
+            return True
+    err_str = str(e).lower()
+    return "404" in err_str or "not found" in err_str or "not supported" in err_str
+
+
 def _is_quota_or_transient_error(e: Exception) -> bool:
     """Returns True if the exception is a rate limit, quota exhaustion (429), or transient server error."""
-    if isinstance(e, genai_errors.APIError):
+    code = getattr(e, "code", None)
+    if code in (429, 500, 502, 503, 504):
+        return True
+    if isinstance(e, getattr(genai_errors, "APIError", ())):
         if getattr(e, "code", None) in (429, 500, 502, 503, 504):
             return True
-    if isinstance(e, (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable, google_exceptions.InternalServerError)):
-        return True
+    if google_exceptions and hasattr(google_exceptions, "ResourceExhausted"):
+        if isinstance(e, (
+            getattr(google_exceptions, "ResourceExhausted", ()),
+            getattr(google_exceptions, "ServiceUnavailable", ()),
+            getattr(google_exceptions, "InternalServerError", ())
+        )):
+            return True
     err_str = str(e).lower()
     quota_indicators = ["429", "resource_exhausted", "quota", "rate limit", "rate_limit", "503", "unavailable", "overloaded", "server error"]
     return any(indicator in err_str for indicator in quota_indicators)
@@ -878,10 +900,17 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
     # Build unique cascade order starting with primary MODEL_NAME
+    raw_models = [MODEL_NAME] + MODEL_CASCADE
     models_to_try = []
-    for m in [MODEL_NAME] + MODEL_CASCADE:
+    for m in raw_models:
         if m and m not in models_to_try:
             models_to_try.append(m)
+
+    # Sort models so those currently on quota cooldown are tried after ready models
+    now = time.time()
+    ready_models = [m for m in models_to_try if _model_cooldowns.get(m, 0) <= now]
+    cooling_models = [m for m in models_to_try if _model_cooldowns.get(m, 0) > now]
+    models_to_try = ready_models + cooling_models
 
     MAX_PROMPT_CHARS = 150000
     if len(prompt) > MAX_PROMPT_CHARS:
@@ -912,15 +941,18 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
                 },
             )
             track_gemini_tokens(response)
-            if response and response.text:
-                return response.text
-            return "AI returned an empty response."
+            if response and response.text and response.text.strip():
+                _model_cooldowns.pop(model, None)
+                return response.text.strip()
+            logger.warning(f"⚠️ Model '{model}' returned empty text. Cascading to next model...")
+            continue
         except Exception as e:
             last_err = e
             if _is_quota_or_transient_error(e):
+                _model_cooldowns[model] = time.time() + 180
                 logger.warning(f"⚠️ Gemini model '{model}' hit rate limit/quota or transient error ({e}). Cascading to next available model...")
-            elif (isinstance(e, google_exceptions.NotFound) or
-                  (isinstance(e, genai_errors.APIError) and getattr(e, "code", None) == 404)):
+            elif _is_not_found_error(e):
+                _model_cooldowns[model] = time.time() + 3600
                 logger.warning(f"⚠️ Gemini model '{model}' not found (404). Cascading to next available model...")
             else:
                 logger.warning(f"⚠️ Gemini error on model '{model}': {e}. Cascading to next available model...")
@@ -938,10 +970,16 @@ def generate_multimodal(image_bytes: bytes, mime_type: str, instruction: str) ->
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
+    raw_models = [MODEL_NAME] + MODEL_CASCADE
     models_to_try = []
-    for m in [MODEL_NAME, "gemini-2.5-flash"] + MODEL_CASCADE:
+    for m in raw_models:
         if m and m not in models_to_try:
             models_to_try.append(m)
+
+    now = time.time()
+    ready_models = [m for m in models_to_try if _model_cooldowns.get(m, 0) <= now]
+    cooling_models = [m for m in models_to_try if _model_cooldowns.get(m, 0) > now]
+    models_to_try = ready_models + cooling_models
 
     last_err = None
     for model in models_to_try:
@@ -955,16 +993,22 @@ def generate_multimodal(image_bytes: bytes, mime_type: str, instruction: str) ->
                 config={"safety_settings": safety},
             )
             track_gemini_tokens(response)
-            if response and response.text:
-                return response.text
-            return "AI returned an empty multimodal response."
+            if response and response.text and response.text.strip():
+                _model_cooldowns.pop(model, None)
+                return response.text.strip()
+            logger.warning(f"⚠️ Vision model '{model}' returned empty response. Cascading...")
+            continue
         except Exception as e:
             last_err = e
             if _is_quota_or_transient_error(e):
+                _model_cooldowns[model] = time.time() + 180
                 logger.warning(f"⚠️ Vision model '{model}' hit quota or transient error ({e}). Cascading...")
-                continue
-            logger.error(f"❌ Multimodal exception on model '{model}': {e}")
-            break
+            elif _is_not_found_error(e):
+                _model_cooldowns[model] = time.time() + 3600
+                logger.warning(f"⚠️ Vision model '{model}' not found (404). Cascading...")
+            else:
+                logger.warning(f"⚠️ Vision exception on model '{model}': {e}. Cascading...")
+            continue
 
     logger.error(f"❌ All multimodal models in cascade failed. Last error: {last_err}")
     return "The AI vision engine is currently experiencing high demand. Please try again later."
@@ -1456,8 +1500,7 @@ def process_upload_in_background(
                             if _is_quota_or_transient_error(ae):
                                 logger.warning(f"⚠️ Audio transcription on '{model_candidate}' hit rate limit ({ae}). Cascading...")
                                 continue
-                            elif (isinstance(ae, google_exceptions.NotFound) or
-                                  (isinstance(ae, genai_errors.APIError) and getattr(ae, "code", None) == 404)):
+                            elif _is_not_found_error(ae):
                                 logger.warning(f"⚠️ Audio transcription on '{model_candidate}' returned 404. Cascading...")
                                 continue
                             else:
@@ -1546,8 +1589,7 @@ def process_upload_in_background(
                         if _is_quota_or_transient_error(ve):
                             logger.warning(f"⚠️ Video generation on '{model_candidate}' hit rate limit ({ve}). Cascading...")
                             continue
-                        elif (isinstance(ve, google_exceptions.NotFound) or
-                              (isinstance(ve, genai_errors.APIError) and getattr(ve, "code", None) == 404)):
+                        elif _is_not_found_error(ve):
                             logger.warning(f"⚠️ Video generation on '{model_candidate}' returned 404. Cascading...")
                             continue
                         else:
@@ -1874,12 +1916,15 @@ def embed_and_store_document(session_id: int, text: str, progress_id: str = None
                         contents=batch_chunks
                     )
                     break
-                except (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable, google_exceptions.InternalServerError) as e:
-                    if emb_attempt == max_emb_retries - 1:
+                except Exception as e:
+                    if _is_quota_or_transient_error(e):
+                        if emb_attempt == max_emb_retries - 1:
+                            raise e
+                        wait_time = (2 ** emb_attempt) + random.random()
+                        logger.warning(f"Embedding API errored: {e}. Retrying in {wait_time:.1f}s (attempt {emb_attempt+1}/{max_emb_retries})...")
+                        time.sleep(wait_time)
+                    else:
                         raise e
-                    wait_time = (2 ** emb_attempt) + random.random()
-                    logger.warning(f"Embedding API errored: {e}. Retrying in {wait_time:.1f}s (attempt {emb_attempt+1}/{max_emb_retries})...")
-                    time.sleep(wait_time)
 
             for emb in response.embeddings:
                 all_embeddings.append(emb.values)
@@ -6047,11 +6092,7 @@ def get_session_insights(session_id: int, db: Session = Depends(get_db), current
                 "'weak_areas' (list of strings), 'suggested_next' (list of strings). "
                 "Ensure it's a valid JSON string that can be parsed."
             )
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=f"{instruction}:\n\n{snippet}",
-            )
-            raw_text = (response.text or "").strip()
+            raw_text = generate_with_fallback(snippet, instruction)
             # Clean possible markdown wrapping
             if raw_text.startswith("```"):
                 lines = raw_text.split("\n")
@@ -6349,11 +6390,7 @@ def explain_learning_section(
     )
 
     try:
-        resp = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=instruction
-        )
-        explanation = resp.text.strip() if resp and resp.text else "Unable to generate section explanation at this time."
+        explanation = generate_with_fallback("", instruction)
     except Exception as e:
         logger.warning(f"Section explanation generation failed: {e}")
         explanation = f"In this section ({req.timestamp_str or ''}), the video covers {req.section_title or section_id}. {req.what_video_says or ''}"

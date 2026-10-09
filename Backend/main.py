@@ -6964,101 +6964,150 @@ def agent_get_user_learning_stats(user_id: int, db: Session) -> str:
     )
 
 
-def agent_generate_image(prompt: str) -> str:
-    """Generate a high-definition, verified visual representation using a robust multi-tier engine:
-    1. Canonical Wikipedia REST API for named entities, science, pop culture, characters, landmarks.
-    2. Openverse Creative Commons High-Definition Photography engine.
-    3. Wikimedia Commons File Search for authentic scientific and historical visual assets.
-    4. Curated HD Visual fallback.
-    """
-    logger.info(f"🎨 Image Engine invoked for prompt: {prompt[:120]}")
-    cleaned = prompt.strip("\"' \n\r")
-    # Clean conversational phrases to isolate the core conceptual subject
-    subject = re.sub(
-        r"(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(a|an|the)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*",
-        "",
+STOP_ADJECTIVES = {
+    'friendly', 'loyal', 'cute', 'beautiful', 'gorgeous', 'stunning', 'vibrant', 'colorful',
+    'majestic', 'magnificent', 'detailed', 'high', 'quality', 'ultra', 'hd', '4k', '8k',
+    'realistic', 'photorealistic', 'cinematic', 'warm', 'cool', 'bright', 'dark', 'lush',
+    'green', 'small', 'big', 'large', 'tiny', 'happy', 'playful', 'close-up', 'portrait',
+    'shot', 'photo', 'picture', 'image', 'illustration', 'drawing', 'render', 'artwork',
+    'classical', 'traditional', 'ornate', 'expressive', 'random', 'proper', 'nice', 'great'
+}
+FILLER_WORDS = {'a', 'an', 'the', 'and', 'or', 'of', 'for', 'with', 'in', 'on', 'at', 'by', 'during'}
+
+
+def extract_search_candidates(prompt: str, user_query: str = "") -> list:
+    candidates = []
+    cleaned = prompt.strip().replace('\n', ' ')
+    cleaned = re.sub(
+        r'(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(a|an|the)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*',
+        '',
         cleaned
     ).strip()
-    subject = re.sub(r"[?!.,;:\"]+", "", subject).strip()
-    if not subject:
-        subject = cleaned[:60]
+    cleaned = re.sub(r'[?!.,;:\"]+', '', cleaned).strip()
 
-    alt_label = re.sub(r"[\[\]\(\)]", "", subject[:70]).strip() or "Visual Illustration"
+    split_parts = re.split(r'(?i)\s+(sitting|standing|running|walking|flying|resting|looking|playing|blooming|growing|performing|eating|drinking|in|on|at|during|with|under|by|near|against)\s+', cleaned)
+    primary_segment = split_parts[0].strip() if split_parts else cleaned
+
+    words = primary_segment.split()
+    clean_words = [w for w in words if w.lower() not in STOP_ADJECTIVES and w.lower() not in FILLER_WORDS]
+    if clean_words:
+        candidates.append(" ".join(clean_words))
+
+    if user_query:
+        u_clean = re.sub(
+            r'(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(a|an|the)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*',
+            '',
+            user_query
+        ).strip()
+        u_clean = re.sub(r'[?!.,;:\"]+', '', u_clean).strip()
+        if u_clean:
+            candidates.append(u_clean)
+
+    if primary_segment and primary_segment not in candidates:
+        candidates.append(primary_segment)
+    if cleaned and cleaned not in candidates:
+        candidates.append(cleaned)
+
+    seen = set()
+    res = []
+    for c in candidates:
+        norm = c.lower().strip()
+        if norm and norm not in seen:
+            seen.add(norm)
+            res.append(c)
+    return res
+
+
+def agent_generate_image(prompt: str, user_query: str = "") -> str:
+    """Generate an authentic, high-definition visual representation matching the requested subject:
+    1. Multi-candidate keyword extraction (stripping filler prose and honoring user's direct intent).
+    2. Wikipedia Canonical Entity API (official iconic photography/graphics).
+    3. Openverse Creative Commons High-Res Engine.
+    4. Wikimedia Commons File Search.
+    5. Dynamic AI Image Synthesis via Pollinations Turbo (matching exact query keywords, never static fallback).
+    """
+    logger.info(f"🎨 Image Engine invoked for prompt: '{prompt[:100]}', user_query: '{user_query[:50]}'")
+    candidates = extract_search_candidates(prompt, user_query)
+    alt_label = candidates[0].title() if candidates else "Visual Illustration"
     headers = {"User-Agent": "FlorixAI/1.0 (Educational RAG Platform; +https://florix.ai)"}
 
     # -------------------------------------------------------------
-    # TIER 1: Wikipedia Canonical Entity API (Official Art & Photography)
+    # TIER 1: Wikipedia Canonical Entity API
     # -------------------------------------------------------------
-    for variant in [subject.title().replace(" ", "_"), subject.replace(" ", "_")]:
-        try:
-            wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(variant)}"
-            resp = requests.get(wiki_url, headers=headers, timeout=3.5)
-            if resp.status_code == 200:
-                data = resp.json()
-                if "originalimage" in data and data["originalimage"].get("source"):
-                    img_url = data["originalimage"]["source"]
-                    logger.info(f"🎨 Tier 1 match (Wikipedia original): {img_url[:90]}")
-                    return f"![{alt_label}]({img_url})"
-                elif "thumbnail" in data and data["thumbnail"].get("source"):
-                    img_url = data["thumbnail"]["source"]
-                    logger.info(f"🎨 Tier 1 match (Wikipedia thumb): {img_url[:90]}")
-                    return f"![{alt_label}]({img_url})"
-        except Exception as ex:
-            logger.debug(f"Tier 1 lookup error: {ex}")
+    for cand in candidates:
+        for variant in [cand.title().replace(" ", "_"), cand.replace(" ", "_")]:
+            try:
+                wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(variant)}"
+                resp = requests.get(wiki_url, headers=headers, timeout=2.5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if "originalimage" in data and data["originalimage"].get("source"):
+                        img_url = data["originalimage"]["source"]
+                        logger.info(f"🎨 Tier 1 match (Wikipedia original) for '{cand}': {img_url[:90]}")
+                        return f"![{data.get('title') or alt_label}]({img_url})"
+                    elif "thumbnail" in data and data["thumbnail"].get("source"):
+                        img_url = data["thumbnail"]["source"]
+                        logger.info(f"🎨 Tier 1 match (Wikipedia thumb) for '{cand}': {img_url[:90]}")
+                        return f"![{data.get('title') or alt_label}]({img_url})"
+            except Exception as ex:
+                logger.debug(f"Tier 1 lookup error for {cand}: {ex}")
 
     # -------------------------------------------------------------
     # TIER 2: Openverse Creative Commons High-Res Engine
     # -------------------------------------------------------------
-    try:
-        ov_params = {"q": subject, "page_size": 4}
-        ov_resp = requests.get("https://api.openverse.org/v1/images/", params=ov_params, headers=headers, timeout=4.0)
-        if ov_resp.status_code == 200:
-            ov_data = ov_resp.json()
-            for r in ov_data.get("results", []):
-                cand_url = r.get("url", "")
-                if cand_url and (any(cand_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]) or "staticflickr" in cand_url):
-                    title_hint = r.get("title") or alt_label
-                    logger.info(f"🎨 Tier 2 match (Openverse): {cand_url[:90]}")
-                    return f"![{title_hint[:70]}]({cand_url})"
-    except Exception as ex:
-        logger.debug(f"Tier 2 lookup error: {ex}")
+    for cand in candidates:
+        try:
+            ov_params = {"q": cand, "page_size": 3}
+            ov_resp = requests.get("https://api.openverse.org/v1/images/", params=ov_params, headers=headers, timeout=3.0)
+            if ov_resp.status_code == 200:
+                ov_data = ov_resp.json()
+                for r in ov_data.get("results", []):
+                    cand_url = r.get("url", "")
+                    if cand_url and (any(cand_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]) or "staticflickr" in cand_url):
+                        title_hint = r.get("title") or alt_label
+                        logger.info(f"🎨 Tier 2 match (Openverse) for '{cand}': {cand_url[:90]}")
+                        return f"![{title_hint[:70]}]({cand_url})"
+        except Exception as ex:
+            logger.debug(f"Tier 2 lookup error for {cand}: {ex}")
 
     # -------------------------------------------------------------
     # TIER 3: Wikimedia Commons File Search Engine
     # -------------------------------------------------------------
-    try:
-        wm_params = {
-            "action": "query",
-            "generator": "search",
-            "gsrsearch": subject,
-            "gsrnamespace": "6",
-            "gsrlimit": "4",
-            "prop": "imageinfo",
-            "iiprop": "url|mime",
-            "format": "json"
-        }
-        wm_resp = requests.get("https://commons.wikimedia.org/w/api.php", params=wm_params, headers=headers, timeout=4.0)
-        if wm_resp.status_code == 200:
-            wm_data = wm_resp.json()
-            pages = wm_data.get("query", {}).get("pages", {})
-            for pid, page in pages.items():
-                infos = page.get("imageinfo", [])
-                if infos:
-                    cand_url = infos[0].get("url", "")
-                    mime = infos[0].get("mime", "").lower()
-                    if mime.startswith("image/") and not any(mime.endswith(bad) for bad in ["djvu", "tiff", "pdf"]):
-                        logger.info(f"🎨 Tier 3 match (Wikimedia Commons): {cand_url[:90]}")
-                        return f"![{alt_label}]({cand_url})"
-    except Exception as ex:
-        logger.debug(f"Tier 3 lookup error: {ex}")
+    for cand in candidates:
+        try:
+            wm_params = {
+                "action": "query",
+                "generator": "search",
+                "gsrsearch": cand,
+                "gsrnamespace": "6",
+                "gsrlimit": "3",
+                "prop": "imageinfo",
+                "iiprop": "url|mime",
+                "format": "json"
+            }
+            wm_resp = requests.get("https://commons.wikimedia.org/w/api.php", params=wm_params, headers=headers, timeout=3.0)
+            if wm_resp.status_code == 200:
+                wm_data = wm_resp.json()
+                pages = wm_data.get("query", {}).get("pages", {})
+                for pid, page in pages.items():
+                    infos = page.get("imageinfo", [])
+                    if infos:
+                        cand_url = infos[0].get("url", "")
+                        mime = infos[0].get("mime", "").lower()
+                        if mime.startswith("image/") and not any(mime.endswith(bad) for bad in ["djvu", "tiff", "pdf"]):
+                            logger.info(f"🎨 Tier 3 match (Wikimedia Commons) for '{cand}': {cand_url[:90]}")
+                            return f"![{alt_label}]({cand_url})"
+        except Exception as ex:
+            logger.debug(f"Tier 3 lookup error for {cand}: {ex}")
 
     # -------------------------------------------------------------
-    # TIER 4: Curated Unsplash HD Visual Stream Fallback
+    # TIER 4: Dynamic AI Generation matching exact query keywords
     # -------------------------------------------------------------
-    seed = random.randint(1000, 999999)
-    unsplash_url = f"https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1080&q=80&sig={seed}"
-    logger.info("🎨 Tier 4 match: Curated HD Visual fallback")
-    return f"![{alt_label}]({unsplash_url})"
+    primary = candidates[0] if candidates else (user_query or "artwork")
+    encoded = quote(primary[:100])
+    ai_url = f"https://image.pollinations.ai/prompt/{encoded}?model=turbo"
+    logger.info(f"🎨 Tier 4 dynamic AI generation for '{primary}': {ai_url}")
+    return f"![{alt_label}]({ai_url})"
 
 
 def generate_conversation_title(message: str, reply: str = "") -> str:
@@ -7208,7 +7257,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "   - [CALL_TOOL: search_user_library(\"search_query\")] -> Search the user's uploaded study materials\n"
             "   - [CALL_TOOL: get_session_details(session_id_integer)] -> Retrieve detailed content and quiz history of a specific session\n"
             "   - [CALL_TOOL: get_user_learning_stats()] -> Retrieve user's study metrics, quiz stats, and bookmarks\n"
-            "   - [CALL_TOOL: generate_image(\"detailed visual prompt\")] -> Generate educational illustrations, photos, artwork, and cultural visuals\n\n"
+            "   - [CALL_TOOL: generate_image(\"core subject or entity, e.g. 'Golden Retriever', 'rose flower', 'Iron Man'\")] -> Generate educational illustrations, photos, artwork, and cultural visuals\n\n"
             "7. STRICT TOOL CALLING EXECUTION RULES:\n"
             "   - If you need to use a tool, emit ONLY the tool command on its own line: [CALL_TOOL: tool_name(...)].\n"
             "   - NEVER include conversational text alongside a tool call in the same turn.\n"
@@ -7238,7 +7287,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
                     res = agent_get_user_learning_stats(current_user.id, db)
                 elif tool_name == "generate_image":
                     prompt_arg = tool_args_raw.strip("\"'")
-                    res = agent_generate_image(prompt_arg)
+                    res = agent_generate_image(prompt_arg, user_query=message)
                 else:
                     res = f"Error: Tool '{tool_name}' is not recognized."
             except Exception as ex:
@@ -7268,7 +7317,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
                 topic_str = cleaned
                 break
         if topic_str:
-            img_markdown = agent_generate_image(f"{topic_str}, high quality educational visual")
+            img_markdown = agent_generate_image(f"{topic_str}, high quality educational visual", user_query=message)
             for p in canned_refusal_patterns:
                 reply = re.sub(p, "", reply, flags=re.IGNORECASE)
             reply = f"{img_markdown}\n\n" + reply.strip()

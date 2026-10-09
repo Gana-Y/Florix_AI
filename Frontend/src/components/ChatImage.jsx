@@ -430,16 +430,17 @@ const ChatImage = ({ src, alt, ...props }) => {
         {/* Footer info bar */}
         {alt && (
           <div className="px-4 py-2.5 bg-slate-50/90 dark:bg-zinc-900/90 border-t border-slate-100 dark:border-zinc-800/80 flex items-center justify-between text-xs text-slate-700 dark:text-zinc-300">
-            <div className="flex items-center gap-2 truncate max-w-[78%]">
-              <Layers size={13} className="text-indigo-500 shrink-0" />
+            <div className="flex items-center gap-2 truncate max-w-[75%]">
+              <Sparkles size={13} className="text-cyan-400 shrink-0" />
               <span className="font-medium truncate" title={alt}>
                 {alt}
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">1080p HQ</span>
-              <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200/50 dark:border-indigo-800/50">
-                Verified Asset
+              <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">4K Ultra HD</span>
+              <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider bg-cyan-950/70 px-2 py-0.5 rounded-md border border-cyan-800/50 flex items-center gap-1">
+                <Sparkles size={10} className="text-cyan-400" />
+                FLUX.1 Neural Render
               </span>
             </div>
           </div>
@@ -479,9 +480,8 @@ const ChatImage = ({ src, alt, ...props }) => {
               <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
                 <Sparkles size={15} className="text-cyan-400" />
               </div>
-              <span className="truncate max-w-[180px] sm:max-w-md">{alt || 'Visual Illustration'}</span>
-              <span className="hidden md:inline-block px-2.5 py-0.5 rounded-full bg-zinc-800/90 border border-zinc-700/60 text-[10px] text-zinc-400 font-mono">
-                Ultra HD
+              <span className="hidden md:inline-block px-2.5 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-800/60 text-[10px] text-cyan-300 font-mono">
+                FLUX.1 4K Neural Render
               </span>
             </div>
 

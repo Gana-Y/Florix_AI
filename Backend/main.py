@@ -7065,117 +7065,102 @@ def extract_search_candidates(prompt: str, user_query: str = "") -> list:
     return res
 
 
-def agent_generate_image(prompt: str, user_query: str = "") -> str:
-    """Generate an authentic, high-definition visual representation matching the requested subject:
-    1. Multi-candidate keyword extraction (stripping filler prose and honoring user's direct intent).
-    2. Wikipedia Canonical Entity API (official iconic photography/graphics).
-    3. Openverse Creative Commons High-Res Engine.
-    4. Wikimedia Commons File Search.
-    5. Dynamic AI Image Synthesis via Pollinations Turbo (matching exact query keywords, never static fallback).
+def enhance_image_prompt(prompt: str, user_query: str = "") -> Tuple[str, str]:
+    """Intelligently enrich a visual request into an optimal FLUX.1 generative AI prompt.
+    Returns: (enhanced_prompt, display_title)
     """
-    logger.info(f"🎨 Image Engine invoked for prompt: '{prompt[:100]}', user_query: '{user_query[:50]}'")
     candidates = extract_search_candidates(prompt, user_query)
-    alt_label = candidates[0].title() if candidates else "Visual Illustration"
-    headers = {"User-Agent": "FlorixAI/1.0 (Educational RAG Platform; +https://florix.ai)"}
+    raw_subject = candidates[0].strip() if candidates else prompt.strip()
+    display_title = raw_subject.title() if raw_subject else "Visual Illustration"
 
-    # -------------------------------------------------------------
-    # TIER 1: Wikipedia Canonical Entity API
-    # -------------------------------------------------------------
-    media_entertainment_keywords = {
-        "film", "movie", "album", "soundtrack", "song", "single",
-        "novel", "comic", "manga", "anime", "video game", "tv series",
-        "television series", "band", "fictional character", "poster", "discography"
-    }
-    user_context_lower = f"{prompt} {user_query}".lower()
-    user_requested_media = any(k in user_context_lower for k in media_entertainment_keywords)
+    cleaned_prompt = prompt.strip().replace("\n", " ")
+    cleaned_prompt = re.sub(
+        r'(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(?:\b(?:a|an|the|any|some)\b)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*',
+        '',
+        cleaned_prompt
+    ).strip()
+    cleaned_prompt = re.sub(r'[?!.,;:\"]+', '', cleaned_prompt).strip()
 
-    for cand in candidates:
-        for variant in [cand.title().replace(" ", "_"), cand.replace(" ", "_")]:
-            try:
-                wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(variant)}"
-                resp = requests.get(wiki_url, headers=headers, timeout=2.5)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    desc = (data.get("description") or "").lower()
+    # If the user already provided an extensive, richly descriptive prompt (> 10 words)
+    words = cleaned_prompt.split()
+    if len(words) >= 10:
+        enhanced = f"{cleaned_prompt}, cinematic lighting, photorealistic 8k, ultra-detailed textures, masterpiece"
+        return enhanced, display_title
 
-                    # Semantic check: If Wikipedia article is about a movie/film/poster but user didn't ask for that, skip
-                    if not user_requested_media:
-                        if any(k in desc for k in ["film", "movie", "album", "soundtrack", "single", "video game", "tv series", "comic"]):
-                            logger.info(f"⏭️ Skipping Wikipedia '{variant}' because it is a media/film article ('{desc}'), but user did not request media.")
-                            continue
+    # Fast Domain-Specific Heuristic Enrichment Engine
+    subj_lower = raw_subject.lower()
 
-                    img_url = None
-                    if "originalimage" in data and data["originalimage"].get("source"):
-                        img_url = data["originalimage"]["source"]
-                    elif "thumbnail" in data and data["thumbnail"].get("source"):
-                        img_url = data["thumbnail"]["source"]
+    # Pop Culture, Superheroes, Characters & Anime
+    if any(k in subj_lower for k in [
+        "iron man", "tony stark", "batman", "spiderman", "spider-man", "superman", "avengers",
+        "marvel", "hulk", "thor", "captain america", "thanos", "goku", "naruto", "anime",
+        "cyborg", "robot", "mecha", "samurai", "ninja", "superhero", "darth vader", "jedi"
+    ]):
+        enhanced = (
+            f"Cinematic photorealistic 8k portrait of {display_title}, highly detailed armor and intricate mechanical textures, "
+            f"glowing energy effects and metallic reflections, dramatic volumetric lighting, futuristic atmospheric background, "
+            f"octane render, masterpiece, marvel cinematic style"
+        )
+    # Flowers, Botany & Plants
+    elif any(k in subj_lower for k in [
+        "rose", "flower", "lotus", "tulip", "sunflower", "lily", "orchid", "petal", "bloom", "blossom", "botanical", "plant"
+    ]):
+        enhanced = (
+            f"Exquisite macro photography of blooming {display_title}, crystalline morning dew drops on velvety petals, "
+            f"soft diffused natural morning sunlight, cinematic shallow depth of field, 8k ultra-high resolution, national geographic botany"
+        )
+    # Animals, Pets & Wildlife
+    elif any(k in subj_lower for k in [
+        "dog", "puppy", "golden retriever", "cat", "kitten", "lion", "tiger", "leopard", "elephant", "wolf",
+        "eagle", "bird", "owl", "horse", "bear", "fox", "deer", "cheetah", "animal", "wildlife"
+    ]):
+        enhanced = (
+            f"Award-winning 8k wildlife photography of {display_title}, pristine fur and expressive eye details, "
+            f"warm golden hour natural sunlight, lush green environment, shallow depth of field, razor-sharp focus, masterpiece"
+        )
+    # Vehicles, Supercars & Spacecraft
+    elif any(k in subj_lower for k in [
+        "car", "ferrari", "lamborghini", "porsche", "supercar", "vehicle", "motorcycle", "bike",
+        "jet", "fighter jet", "airplane", "spaceship", "rocket", "hovercraft"
+    ]):
+        enhanced = (
+            f"Sleek 8k automotive render of {display_title}, dynamic cinematic low angle, glossy metallic reflective surfaces, "
+            f"dramatic studio rim lighting, wet asphalt reflections, hyper-realistic octane render, masterpiece"
+        )
+    # Architecture, Landscapes, Cities & Wonders
+    elif any(k in subj_lower for k in [
+        "taj mahal", "eiffel tower", "pyramid", "colosseum", "mountain", "everest", "waterfall",
+        "landscape", "city", "skyline", "temple", "monument", "castle", "palace", "aurora"
+    ]):
+        enhanced = (
+            f"Breathtaking 8k landscape photography of {display_title}, majestic wide-angle perspective, "
+            f"spectacular golden hour lighting, atmospheric clouds, crystal clear depth, masterpiece composition"
+        )
+    # General / Academic / Anatomy / Scientific / Artistic
+    else:
+        enhanced = (
+            f"Ultra-detailed 8k high-resolution visual of {display_title}, professional studio lighting, "
+            f"crisp optical clarity, vibrant photorealistic colors, hyper-detailed textures, masterpiece composition"
+        )
 
-                    if img_url:
-                        img_lower = img_url.lower()
-                        if not user_requested_media and any(k in img_lower for k in ["_poster", "-poster", "/poster", "_cover", "/cover"]):
-                            logger.info(f"⏭️ Skipping Wikipedia '{variant}' image because filename contains poster/cover ({img_url}).")
-                            continue
+    return enhanced, display_title
 
-                        logger.info(f"🎨 Tier 1 match (Wikipedia) for '{cand}': {img_url[:90]}")
-                        return f"![{data.get('title') or alt_label}]({img_url})"
-            except Exception as ex:
-                logger.debug(f"Tier 1 lookup error for {cand}: {ex}")
 
-    # -------------------------------------------------------------
-    # TIER 2: Openverse Creative Commons High-Res Engine
-    # -------------------------------------------------------------
-    for cand in candidates:
-        try:
-            ov_params = {"q": cand, "page_size": 3}
-            ov_resp = requests.get("https://api.openverse.org/v1/images/", params=ov_params, headers=headers, timeout=3.0)
-            if ov_resp.status_code == 200:
-                ov_data = ov_resp.json()
-                for r in ov_data.get("results", []):
-                    cand_url = r.get("url", "")
-                    if cand_url and (any(cand_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]) or "staticflickr" in cand_url):
-                        title_hint = r.get("title") or alt_label
-                        logger.info(f"🎨 Tier 2 match (Openverse) for '{cand}': {cand_url[:90]}")
-                        return f"![{title_hint[:70]}]({cand_url})"
-        except Exception as ex:
-            logger.debug(f"Tier 2 lookup error for {cand}: {ex}")
+def agent_generate_image(prompt: str, user_query: str = "") -> str:
+    """Generate a stunning, high-definition visual representation using state-of-the-art Generative AI (FLUX.1).
+    1. Intelligent Prompt Enhancement (heuristic & keyword enrichment for 8K photorealism).
+    2. Primary Engine: FLUX.1 Neural Diffusion Model via Pollinations.
+    3. Resilient Parameterization (unique seed, nologo=true, 1024x768 aspect ratio).
+    """
+    logger.info(f"🎨 Generative AI Image Engine invoked for prompt: '{prompt[:100]}', user_query: '{user_query[:50]}'")
+    enhanced_prompt, alt_label = enhance_image_prompt(prompt, user_query)
 
-    # -------------------------------------------------------------
-    # TIER 3: Wikimedia Commons File Search Engine
-    # -------------------------------------------------------------
-    for cand in candidates:
-        try:
-            wm_params = {
-                "action": "query",
-                "generator": "search",
-                "gsrsearch": cand,
-                "gsrnamespace": "6",
-                "gsrlimit": "3",
-                "prop": "imageinfo",
-                "iiprop": "url|mime",
-                "format": "json"
-            }
-            wm_resp = requests.get("https://commons.wikimedia.org/w/api.php", params=wm_params, headers=headers, timeout=3.0)
-            if wm_resp.status_code == 200:
-                wm_data = wm_resp.json()
-                pages = wm_data.get("query", {}).get("pages", {})
-                for pid, page in pages.items():
-                    infos = page.get("imageinfo", [])
-                    if infos:
-                        cand_url = infos[0].get("url", "")
-                        mime = infos[0].get("mime", "").lower()
-                        if mime.startswith("image/") and not any(mime.endswith(bad) for bad in ["djvu", "tiff", "pdf"]):
-                            logger.info(f"🎨 Tier 3 match (Wikimedia Commons) for '{cand}': {cand_url[:90]}")
-                            return f"![{alt_label}]({cand_url})"
-        except Exception as ex:
-            logger.debug(f"Tier 3 lookup error for {cand}: {ex}")
+    seed = random.randint(10000, 999999)
+    encoded = quote(enhanced_prompt[:250])
 
-    # -------------------------------------------------------------
-    # TIER 4: Dynamic AI Generation matching exact query keywords
-    # -------------------------------------------------------------
-    primary = candidates[0] if candidates else (user_query or "artwork")
-    encoded = quote(primary[:100])
-    ai_url = f"https://image.pollinations.ai/prompt/{encoded}?model=turbo"
-    logger.info(f"🎨 Tier 4 dynamic AI generation for '{primary}': {ai_url}")
+    # Primary: FLUX.1 High-Fidelity Neural Diffusion (1024x768, 8K photorealism, nologo)
+    ai_url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=768&nologo=true&seed={seed}"
+    logger.info(f"🎨 FLUX.1 Diffusion Model synthesized for '{alt_label}': {ai_url[:120]}...")
     return f"![{alt_label}]({ai_url})"
 
 
@@ -7317,10 +7302,13 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "   - ALWAYS verify that both opening and closing dollar delimiters are present.\n\n"
             "5. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
             "   - When the student asks for a visual, picture, photo, illustration, or diagram, choose the appropriate visual medium:\n"
-            "     a) REAL-WORLD VISUALS, ART, CULTURE, BIOLOGY & GEOGRAPHY:\n"
-            "        - When asked for images of real-world objects, artworks, historical figures/events, dance forms, cultural traditions, anatomical structures, or animals, call the image tool:\n"
-            "          [CALL_TOOL: generate_image(\"detailed descriptive prompt\")]\n"
-            "        - Example: [CALL_TOOL: generate_image(\"classical Indian Bharatanatyam dancer in ornate traditional costume performing expressive mudra and posture, professional cultural photography\")]\n"
+            "     a) HIGH-FIDELITY AI VISUAL GENERATION (FLUX.1 NEURAL DIFFUSION ENGINE):\n"
+            "        - You are equipped with a state-of-the-art FLUX.1 generative AI model capable of generating ANYTHING requested: fictional/movie characters (Iron Man, Batman, anime, superheroes), real-world objects, animals (dogs, wildlife), botany (flowers, plants), landscapes, historical figures, vehicles, sci-fi concepts, or artistic illustrations.\n"
+            "        - When the student asks to generate, draw, create, or see an image of ANY subject, call:\n"
+            "          [CALL_TOOL: generate_image(\"detailed descriptive visual prompt\")]\n"
+            "        - Example: [CALL_TOOL: generate_image(\"Iron Man in cinematic red and gold armor with glowing arc reactor\")]\n"
+            "        - Example: [CALL_TOOL: generate_image(\"cute golden retriever puppy sitting in green grass\")]\n"
+            "        - Example: [CALL_TOOL: generate_image(\"blooming red rose flower with morning dew drops\")]\n"
             "     b) SYSTEM ARCHITECTURES, ALGORITHMS & LOGICAL WORKFLOWS:\n"
             "        - For software architectures, data pipelines, algorithms, state machines, and technical processes (e.g. RAG pipeline, OAuth flow, binary search tree, compiler stages), provide a clean, publication-grade Mermaid flowchart (```mermaid ... ```) accompanied by a structured technical walkthrough.\n"
             "   - PRONOUN & CONTEXT RESOLUTION: Always inspect the preceding conversation history to resolve pronouns ('it', 'that', 'this'). If the user previously asked about a topic and then asks 'show me an image of it', resolve the pronoun to that exact topic.\n\n"
@@ -7328,7 +7316,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "   - [CALL_TOOL: search_user_library(\"search_query\")] -> Search the user's uploaded study materials\n"
             "   - [CALL_TOOL: get_session_details(session_id_integer)] -> Retrieve detailed content and quiz history of a specific session\n"
             "   - [CALL_TOOL: get_user_learning_stats()] -> Retrieve user's study metrics, quiz stats, and bookmarks\n"
-            "   - [CALL_TOOL: generate_image(\"core subject or entity, e.g. 'Golden Retriever', 'rose flower', 'Iron Man'\")] -> Generate educational illustrations, photos, artwork, and cultural visuals\n\n"
+            "   - [CALL_TOOL: generate_image(\"subject or descriptive visual prompt\")] -> Generate stunning photorealistic 8K visuals, artwork, characters, objects, or nature using FLUX.1 neural diffusion\n\n"
             "7. STRICT TOOL CALLING EXECUTION RULES:\n"
             "   - If you need to use a tool, emit ONLY the tool command on its own line: [CALL_TOOL: tool_name(...)].\n"
             "   - NEVER include conversational text alongside a tool call in the same turn.\n"

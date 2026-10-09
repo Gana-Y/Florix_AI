@@ -226,15 +226,20 @@ const AdminPanel = () => {
       {/* Header */}
       <motion.div variants={itemVariants} className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-extrabold text-slate-800 dark:text-white flex items-center gap-3">
-            <Shield className="text-indigo-500" size={28} />
-            {activeView === 'payments' 
-              ? 'Admin Payment Verification' 
-              : activeView === 'users' 
-              ? 'Registered Users & Locations' 
-              : 'User Feedback & Bug Reports'}
-          </h2>
-          <p className="text-slate-500 dark:text-zinc-400">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-3xl font-extrabold text-slate-800 dark:text-white flex items-center gap-3">
+              <Shield className="text-indigo-500" size={28} />
+              {activeView === 'payments' 
+                ? 'Admin Payment Verification' 
+                : activeView === 'users' 
+                ? 'Registered Users & Locations' 
+                : 'User Feedback & Bug Reports'}
+            </h2>
+            <span className="text-xs px-2.5 py-1 rounded-full font-mono bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-bold">
+              Database Source: {import.meta.env.VITE_API_URL ? 'Cloud (Render)' : 'Local (SQLite localhost:8000)'}
+            </span>
+          </div>
+          <p className="text-slate-500 dark:text-zinc-400 mt-1">
             {activeView === 'payments' 
               ? 'Verify manual mobile payments (UPI, GPay, PhonePe, Paytm UTR reference codes).'
               : activeView === 'users'

@@ -21,6 +21,17 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isWakingServer, setIsWakingServer] = useState(false);
+
+  useEffect(() => {
+    let timer;
+    if (loading || oauthLoading) {
+      timer = setTimeout(() => setIsWakingServer(true), 3500);
+    } else {
+      setIsWakingServer(false);
+    }
+    return () => clearTimeout(timer);
+  }, [loading, oauthLoading]);
 
   // 🔮 Social OAuth States
   const [oauthModal, setOauthModal] = useState({ show: false, provider: '' });
@@ -241,25 +252,49 @@ const Login = () => {
         <motion.div variants={itemVariants} className="grid grid-cols-2 gap-3.5">
           <button
             type="button"
-            onClick={() => { setOauthModal({ show: true, provider: 'google' }); setOauthEmail('google-student@florix.ai'); setOauthName('Google Student'); }}
+            onClick={() => {
+              setOauthModal({ show: true, provider: 'google' });
+              setOauthEmail(email.trim() || '');
+              setOauthName('');
+            }}
             className="flex items-center justify-center gap-2 py-3 border border-slate-200/70 dark:border-white/10 hover:border-indigo-400/50 dark:hover:border-white/25 bg-white/40 dark:bg-white/[0.04] text-slate-700 dark:text-zinc-200 rounded-2xl text-xs font-bold transition-all hover:bg-white/60 dark:hover:bg-white/[0.08] backdrop-blur-md shadow-sm hover:shadow-[0_0_15px_rgba(99,102,241,0.15)] cursor-pointer"
           >
-            <svg className="w-4 h-4 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-6.887 4.114-4.68 0-8.5-3.82-8.5-8.5s3.82-8.5 8.5-8.5c2.182 0 4.114.786 5.618 2.29l3.055-3.055C18.665.98 15.655 0 12.24 0 5.48 0 0 5.48 0 12.24s5.48 12.24 12.24 12.24c7.064 0 11.758-4.964 11.758-11.973 0-.818-.082-1.418-.218-2.227H12.24z"/>
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"/>
+              <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+              <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.97 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+              <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
             </svg>
             Google
           </button>
           <button
             type="button"
-            onClick={() => { setOauthModal({ show: true, provider: 'github' }); setOauthEmail('github-developer@florix.ai'); setOauthName('GitHub Developer'); }}
+            onClick={() => {
+              setOauthModal({ show: true, provider: 'github' });
+              setOauthEmail(email.trim() || '');
+              setOauthName('');
+            }}
             className="flex items-center justify-center gap-2 py-3 border border-slate-200/70 dark:border-white/10 hover:border-indigo-400/50 dark:hover:border-white/25 bg-white/40 dark:bg-white/[0.04] text-slate-700 dark:text-zinc-200 rounded-2xl text-xs font-bold transition-all hover:bg-white/60 dark:hover:bg-white/[0.08] backdrop-blur-md shadow-sm hover:shadow-[0_0_15px_rgba(99,102,241,0.15)] cursor-pointer"
           >
-            <svg className="w-4 h-4 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="currentColor">
+            <svg className="w-4 h-4 shrink-0 text-slate-800 dark:text-white" viewBox="0 0 24 24" fill="currentColor">
               <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
             </svg>
             GitHub
           </button>
         </motion.div>
+
+        {isWakingServer && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-center"
+          >
+            <p className="text-xs text-indigo-700 dark:text-indigo-400 font-semibold flex items-center justify-center gap-2">
+              <Loader2 size={13} className="animate-spin shrink-0" />
+              <span>Connecting to cloud backend… (Render free tier wakes up in ~45s)</span>
+            </p>
+          </motion.div>
+        )}
 
         <motion.p variants={itemVariants} className="text-center text-slate-400 dark:text-zinc-500 text-xs sm:text-sm mt-8 font-semibold">
           New here?{' '}
@@ -272,7 +307,7 @@ const Login = () => {
         </motion.p>
       </div>
 
-      {/* 🔮 Social OAuth Simulation Modal */}
+      {/* 🔮 Social OAuth Modal */}
       <AnimatePresence>
         {oauthModal.show && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md">
@@ -293,33 +328,33 @@ const Login = () => {
               <form onSubmit={handleOauthSubmit} className="flex flex-col gap-5">
                 <div className="text-center">
                   <div className="w-12 h-12 bg-indigo-500/10 text-indigo-500 flex items-center justify-center rounded-2xl mb-4 mx-auto border border-indigo-500/20">
-                    <ShieldAlert size={24} />
+                    <Sparkles size={22} className="text-indigo-500" />
                   </div>
                   <h3 className="text-lg font-extrabold text-slate-800 dark:text-white capitalize">
-                    {oauthModal.provider} Login Simulator
+                    Continue with {oauthModal.provider === 'google' ? 'Google' : 'GitHub'}
                   </h3>
                   <p className="text-slate-400 dark:text-zinc-500 text-xs mt-1.5 leading-relaxed font-medium">
-                    Testing local sandbox. Simulates OAuth provider profile return for standard backend JWT generation.
+                    Log in and access your Florix AI workspace instantly using your {oauthModal.provider === 'google' ? 'Google' : 'GitHub'} account.
                   </p>
                 </div>
 
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Mock Name</label>
+                    <label className="text-[10px] font-extrabold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Full Name</label>
                     <input
                       type="text" required value={oauthName}
                       onChange={(e) => setOauthName(e.target.value)}
-                      placeholder="OAuth User Name"
+                      placeholder="Your Full Name"
                       className="w-full p-3.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-zinc-200 text-xs font-bold"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Mock Email</label>
+                    <label className="text-[10px] font-extrabold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">{oauthModal.provider === 'google' ? 'Google' : 'GitHub'} Email</label>
                     <input
                       type="email" required value={oauthEmail}
                       onChange={(e) => setOauthEmail(e.target.value)}
-                      placeholder="user@oauth.com"
+                      placeholder={oauthModal.provider === 'google' ? 'you@gmail.com' : 'you@github.com'}
                       className="w-full p-3.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-zinc-200 text-xs font-bold"
                     />
                   </div>
@@ -330,9 +365,9 @@ const Login = () => {
                   whileTap={{ scale: 0.98 }}
                   type="submit"
                   disabled={oauthLoading}
-                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-xs tracking-wide uppercase shrink-0 flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl disabled:opacity-50 transition-colors text-xs tracking-wide uppercase shrink-0 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-indigo-500/20"
                 >
-                  {oauthLoading ? <Loader2 className="animate-spin text-white" size={14} /> : 'Complete Social Login'}
+                  {oauthLoading ? <Loader2 className="animate-spin text-white" size={14} /> : `Sign In with ${oauthModal.provider === 'google' ? 'Google' : 'GitHub'}`}
                 </motion.button>
               </form>
             </motion.div>

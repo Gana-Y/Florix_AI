@@ -11,8 +11,15 @@ let _hasPrewarmed = false;
 export const prewarmBackend = () => {
   if (_hasPrewarmed) return;
   _hasPrewarmed = true;
-  api.get('/health', { timeout: 15000 }).catch(() => {});
+  api.get('/health', { timeout: 45000 }).catch(() => {
+    setTimeout(() => {
+      api.get('/health', { timeout: 45000 }).catch(() => {});
+    }, 5000);
+  });
 };
+
+// Immediate pre-warm on client bundle boot
+prewarmBackend();
 
 /** Decode JWT payload safely with Base64URL and UTF-8 support */
 const decodeToken = (token) => {

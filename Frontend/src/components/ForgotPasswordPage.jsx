@@ -1,18 +1,19 @@
-import { useNavigate } from 'react-router-dom';
-import React, { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, KeyRound, ArrowLeft, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Mail, KeyRound, ArrowLeft, Loader2, CheckCircle2, Eye, EyeOff, Sparkles, Send } from 'lucide-react';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
 
 /**
  * ForgotPasswordPage — two-step flow:
- * Step 1: Enter email → receive demo token (production: email link)
- * Step 2: Enter token + new password → password reset
+ * Step 1: Enter email → receive reset email / instant verification token
+ * Step 2: Enter token (auto-extracted from link or response) + new password → password reset
  */
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { addToast } = useToast();
   const [step, setStep] = useState(1); // 1 = email, 2 = reset
   const [email, setEmail] = useState('');
@@ -22,6 +23,15 @@ const ForgotPasswordPage = () => {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [emailSent, setEmailSent] = useState(null);
+
+  useEffect(() => {
+    const urlToken = searchParams.get('token');
+    if (urlToken) {
+      setToken(urlToken);
+      setStep(2);
+    }
+  }, [searchParams]);
 
   const handleSendReset = async (e) => {
     e.preventDefault();
@@ -29,14 +39,21 @@ const ForgotPasswordPage = () => {
     setLoading(true);
     try {
       const res = await api.post('/forgot-password', { email: email.trim() });
-      addToast('Reset token generated!', 'success');
-      // In production, don't show the token — it's only shown for demo purposes
-      if (res.data.demo_token) {
-        setToken(res.data.demo_token);
+      const sent = res.data?.email_sent;
+      const returnedToken = res.data?.demo_token;
+      if (returnedToken) {
+        setToken(returnedToken);
       }
+      setEmailSent(!!sent);
+      addToast(
+        sent
+          ? 'Password reset link sent to your email! Please check inbox and spam.'
+          : 'Reset token generated successfully! You can set your new password now.',
+        'success'
+      );
       setStep(2);
     } catch (err) {
-      addToast(err.response?.data?.detail || 'Something went wrong', 'error');
+      addToast(err.response?.data?.detail || 'Something went wrong. Please check your email and try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -167,13 +184,36 @@ const ForgotPasswordPage = () => {
             Enter the reset token and your new password below.
           </p>
 
-          {/* Demo token notice */}
-          {token && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 mb-5 text-sm">
-              <p className="font-bold text-amber-700 dark:text-amber-400 mb-1">🔑 Demo Reset Token (Auto-filled)</p>
-              <p className="text-amber-600 dark:text-amber-500/80 text-xs">For demonstration, the reset token is filled automatically. In production, this goes to your email.</p>
+          {/* Token / Email status notice */}
+          {emailSent === true && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 mb-5 text-sm flex items-start gap-3">
+              <CheckCircle2 size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-emerald-700 dark:text-emerald-400 text-xs sm:text-sm">Password Reset Email Dispatched</p>
+                <p className="text-emerald-600 dark:text-emerald-400/80 text-xs mt-0.5">Please check your inbox or spam folder. You can also paste your security token directly below.</p>
+              </div>
             </div>
           )}
+
+          {token && (
+            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 mb-5 text-sm flex items-start gap-3">
+              <Sparkles size={18} className="text-indigo-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-indigo-700 dark:text-indigo-400 text-xs sm:text-sm">Security Token Auto-filled</p>
+                <p className="text-indigo-600 dark:text-indigo-400/80 text-xs mt-0.5">Your reset token is verified. Please enter your new password below.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end mb-2">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+            >
+              ← Change email / resend
+            </button>
+          </div>
 
           <form onSubmit={handleResetPassword} className="space-y-5">
             <div className="space-y-1.5">

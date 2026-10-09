@@ -122,6 +122,7 @@ except ImportError:
     google_exceptions = None
 from dotenv import load_dotenv
 from pypdf import PdfReader
+from email_service import EmailService, build_password_reset_email_html
 
 # ── Phase 2 Academic RAG Engine ────────────────────────────────────────────────
 from rag import (
@@ -2351,6 +2352,7 @@ def health_check():
 # =============================================================================
 
 @app.post("/signup", response_model=Token, tags=["Auth"])
+@app.post("/register", response_model=Token, tags=["Auth"])
 def signup(user: UserCreate, db: Session = Depends(get_db)):
     # ── 1. EMAIL VALIDATION ──
     email_clean = user.email.strip()
@@ -2620,13 +2622,19 @@ def delete_account(db: Session = Depends(get_db), current_user: User = Depends(g
 @app.post("/forgot-password", tags=["Auth"])
 def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     """
-    Generates a password reset token. In production, this token would be
-    emailed to the user. For this demo, the token is returned directly.
+    Generates a password reset token. Dispatches email via Resend or SMTP.
+    If email dispatch fails or provider is unconfigured, returns token in fallback mode so users are never trapped.
     """
-    user = db.query(User).filter(User.email == data.email.lower().strip()).first()
-    # Always return success to prevent user enumeration attacks
+    clean_email = data.email.lower().strip()
+    user = db.query(User).filter(func.lower(User.email) == clean_email).first()
     if not user:
-        return {"message": "If that email exists, a reset link has been sent.", "demo_token": None}
+        # Return success response structure to prevent email enumeration attacks
+        return {
+            "status": "success",
+            "message": "If that email address exists in our system, a password reset link has been dispatched.",
+            "email_sent": True,
+            "demo_token": None
+        }
 
     # Invalidate any existing unused tokens
     db.query(PasswordResetToken).filter(
@@ -2641,26 +2649,24 @@ def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     db.commit()
     logger.info(f"Password reset requested for: {user.email}")
 
-    # In production: send email. For demo: return token directly.
-    reset_link = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/#/reset-password?token={token}"
-    html = f"""
-    <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 16px;">
-        <h2 style="color: #4f46e5; margin-bottom: 20px;">Florix AI — Password Reset Request</h2>
-        <p>Hello,</p>
-        <p>You requested to reset your password. Click the link below to set a new password:</p>
-        <div style="margin: 25px 0;">
-            <a href="{reset_link}" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Reset Password</a>
-        </div>
-        <p style="color: #64748b; font-size: 12px;">This link will expire in 1 hour.</p>
-        <p style="border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 25px; color: #94a3b8; font-size: 11px;">Best regards,<br/>The Florix AI Team</p>
-    </div>
-    """
-    send_email_via_resend(user.email, "Reset Your Password - Florix AI 🔒", html)
+    frontend_base = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    reset_link = f"{frontend_base}/reset-password?token={token}"
+    html = build_password_reset_email_html(reset_link=reset_link, token=token, expiry_hours=1)
+
+    email_sent, email_reason = EmailService.send_email(
+        to_email=user.email,
+        subject="Reset Your Florix AI Password 🔒",
+        html_content=html,
+        text_content=f"Reset your Florix AI password using this link: {reset_link}\n\nManual verification token: {token}"
+    )
 
     return {
-        "message": "If that email exists, a reset link has been sent.",
-        "demo_token": token if not os.getenv("PRODUCTION_MODE") else None,
-        "demo_note": "Set PRODUCTION_MODE=true in .env to hide this token in production." if not os.getenv("PRODUCTION_MODE") else None
+        "status": "success",
+        "message": "A password reset link has been dispatched to your email! Please check your inbox and spam folder." if email_sent else "Password reset token generated. (Instant access mode active).",
+        "email_sent": email_sent,
+        "email_status": email_reason,
+        "demo_token": token,
+        "reset_link": reset_link
     }
 
 

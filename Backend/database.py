@@ -16,7 +16,11 @@ _raw_db_url = os.getenv("DATABASE_URL")
 if _raw_db_url and _raw_db_url.startswith("sqlite:///") and ("./florix.db" in _raw_db_url or _raw_db_url.endswith("/florix.db") or _raw_db_url == "sqlite:///florix.db"):
     SQLALCHEMY_DATABASE_URL = f"sqlite:///{_DB_PATH}"
 elif _raw_db_url:
-    SQLALCHEMY_DATABASE_URL = _raw_db_url
+    # Render and Heroku provide postgres:// which SQLAlchemy 1.4+ requires as postgresql://
+    if _raw_db_url.startswith("postgres://"):
+        SQLALCHEMY_DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql://", 1)
+    else:
+        SQLALCHEMY_DATABASE_URL = _raw_db_url
 else:
     SQLALCHEMY_DATABASE_URL = f"sqlite:///{_DB_PATH}"
 
@@ -24,7 +28,11 @@ else:
 # connect_args with timeout=30 and check_same_thread=False prevents SQLite lock contention
 _is_sqlite = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
 _connect_args = {"check_same_thread": False, "timeout": 30.0} if _is_sqlite else {}
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=_connect_args)
+_engine_kwargs = {"connect_args": _connect_args}
+if not _is_sqlite:
+    _engine_kwargs["pool_pre_ping"] = True
+    _engine_kwargs["pool_recycle"] = 300
+engine = create_engine(SQLALCHEMY_DATABASE_URL, **_engine_kwargs)
 
 if _is_sqlite:
     @event.listens_for(engine, "connect")

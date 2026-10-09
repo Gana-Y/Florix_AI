@@ -7,9 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion';
  * Enterprise-grade floating tooltip engine.
  * Solves:
  * 1. Screen clipping: Mathematically clamped within [12px, window.innerWidth - width - 12px].
- *    Never cut off at screen boundaries, even at the extreme right corner (e.g. moon toggle).
+ *    Never cut off at screen boundaries, even at the extreme right corner (e.g. moon/sun toggle).
  * 2. Exact pointer alignment: Dynamic caret arrow offset tracks the exact center of the target element.
- * 3. Typography & contrast: High-contrast ultra-dark backdrop, crisp 12px semi-bold white text, anti-aliased.
+ * 3. Light & Dark Mode perfection:
+ *    - Light Mode: Porcelain white badge, deep slate-800 text, matching white caret arrow.
+ *    - Dark Mode: Midnight zinc badge, luminous zinc-100 text, matching dark caret arrow.
+ *    - Zero color mismatch between caret and pill container.
  * 4. Universal title interception: Captures and suppresses native OS/browser tooltips everywhere.
  * 5. Warm-hover physics: Instant transitions between adjacent interactive controls with 0ms lag.
  */
@@ -267,30 +270,30 @@ export default function GlobalTooltip() {
           }}
           className="pointer-events-none select-none"
         >
-          {/* Tooltip Content Container */}
+          {/* Tooltip Content Container — Adaptive Theme Styling */}
           <div
-            className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[12px] font-semibold tracking-normal text-white bg-slate-950/98 dark:bg-black/95 border border-slate-700/80 dark:border-zinc-700/80 shadow-[0_12px_28px_rgba(0,0,0,0.65),0_0_0_1px_rgba(255,255,255,0.08)] backdrop-blur-xl antialiased ${
+            className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[12px] font-semibold tracking-normal text-slate-800 dark:text-zinc-100 bg-white/95 dark:bg-zinc-900/95 border border-slate-200/90 dark:border-zinc-700/80 shadow-[0_10px_25px_-4px_rgba(15,23,42,0.12),0_4px_6px_-2px_rgba(15,23,42,0.06)] dark:shadow-[0_12px_28px_rgba(0,0,0,0.65)] ring-1 ring-slate-900/5 dark:ring-white/10 backdrop-blur-xl antialiased ${
               tooltipState.isMultiline ? 'max-w-[280px] text-center leading-snug whitespace-normal' : 'whitespace-nowrap'
             }`}
           >
-            {/* Tooltip Text */}
+            {/* Tooltip Text: Deep slate-800 in light mode, luminous zinc-100 in dark mode */}
             <span className="drop-shadow-sm">{tooltipState.text}</span>
 
             {/* Optional Keyboard Shortcut */}
             {tooltipState.shortcut && (
-              <kbd className="px-1.5 py-0.5 text-[9px] font-mono font-bold rounded-md bg-white/15 text-zinc-200 border border-white/10 shadow-inner">
+              <kbd className="px-1.5 py-0.5 text-[9px] font-mono font-bold rounded-md bg-slate-100 dark:bg-white/15 text-slate-600 dark:text-zinc-200 border border-slate-200 dark:border-white/10 shadow-inner">
                 {tooltipState.shortcut}
               </kbd>
             )}
 
-            {/* Micro Caret Arrow: Points directly and precisely at target element center */}
+            {/* Micro Caret Arrow: Matches container fill & border in both Light and Dark mode */}
             <div
               ref={arrowRef}
               style={{ left: `${tooltipState.arrowLeft}px` }}
-              className={`absolute -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-slate-950 dark:bg-black ${
+              className={`absolute -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-white dark:bg-zinc-900 ${
                 tooltipState.placement === 'bottom'
-                  ? '-top-[5px] border-t border-l border-slate-700/80 dark:border-zinc-700/80'
-                  : '-bottom-[5px] border-b border-r border-slate-700/80 dark:border-zinc-700/80'
+                  ? '-top-[5px] border-t border-l border-slate-200/90 dark:border-zinc-700/80'
+                  : '-bottom-[5px] border-b border-r border-slate-200/90 dark:border-zinc-700/80'
               }`}
             />
           </div>

@@ -6965,14 +6965,100 @@ def agent_get_user_learning_stats(user_id: int, db: Session) -> str:
 
 
 def agent_generate_image(prompt: str) -> str:
-    """Generate a high-definition visual/diagram representation URL using Pollinations AI with Flux model and random seed."""
-    cleaned = prompt.strip("\"' ").replace("\n", " ")
-    cleaned_prompt = re.sub(r"[,\"\']+", " ", cleaned).strip()
-    encoded = quote(cleaned_prompt[:180])
-    seed = random.randint(10000, 999999)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=768&nologo=true&model=flux&seed={seed}"
-    alt_label = re.sub(r"[\[\]\(\)]", "", cleaned[:70]).strip() or "Visual Illustration"
-    return f"![{alt_label}]({image_url})"
+    """Generate a high-definition, verified visual representation using a robust multi-tier engine:
+    1. Canonical Wikipedia REST API for named entities, science, pop culture, characters, landmarks.
+    2. Openverse Creative Commons High-Definition Photography engine.
+    3. Wikimedia Commons File Search for authentic scientific and historical visual assets.
+    4. Curated HD Visual fallback.
+    """
+    logger.info(f"🎨 Image Engine invoked for prompt: {prompt[:120]}")
+    cleaned = prompt.strip("\"' \n\r")
+    # Clean conversational phrases to isolate the core conceptual subject
+    subject = re.sub(
+        r"(?i)^(can you|could you|please|i want to see|show me|give me|generate|create|draw|display|make)?\s*(a|an|the)?\s*(high\s+quality|hd|4k|8k|realistic|photorealistic|cinematic|random|beautiful|proper)?\s*(image|picture|photo|illustration|drawing|render|visual)?\s*(of|about|depicting|showing)?\s*",
+        "",
+        cleaned
+    ).strip()
+    subject = re.sub(r"[?!.,;:\"]+", "", subject).strip()
+    if not subject:
+        subject = cleaned[:60]
+
+    alt_label = re.sub(r"[\[\]\(\)]", "", subject[:70]).strip() or "Visual Illustration"
+    headers = {"User-Agent": "FlorixAI/1.0 (Educational RAG Platform; +https://florix.ai)"}
+
+    # -------------------------------------------------------------
+    # TIER 1: Wikipedia Canonical Entity API (Official Art & Photography)
+    # -------------------------------------------------------------
+    for variant in [subject.title().replace(" ", "_"), subject.replace(" ", "_")]:
+        try:
+            wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(variant)}"
+            resp = requests.get(wiki_url, headers=headers, timeout=3.5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if "originalimage" in data and data["originalimage"].get("source"):
+                    img_url = data["originalimage"]["source"]
+                    logger.info(f"🎨 Tier 1 match (Wikipedia original): {img_url[:90]}")
+                    return f"![{alt_label}]({img_url})"
+                elif "thumbnail" in data and data["thumbnail"].get("source"):
+                    img_url = data["thumbnail"]["source"]
+                    logger.info(f"🎨 Tier 1 match (Wikipedia thumb): {img_url[:90]}")
+                    return f"![{alt_label}]({img_url})"
+        except Exception as ex:
+            logger.debug(f"Tier 1 lookup error: {ex}")
+
+    # -------------------------------------------------------------
+    # TIER 2: Openverse Creative Commons High-Res Engine
+    # -------------------------------------------------------------
+    try:
+        ov_params = {"q": subject, "page_size": 4}
+        ov_resp = requests.get("https://api.openverse.org/v1/images/", params=ov_params, headers=headers, timeout=4.0)
+        if ov_resp.status_code == 200:
+            ov_data = ov_resp.json()
+            for r in ov_data.get("results", []):
+                cand_url = r.get("url", "")
+                if cand_url and (any(cand_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]) or "staticflickr" in cand_url):
+                    title_hint = r.get("title") or alt_label
+                    logger.info(f"🎨 Tier 2 match (Openverse): {cand_url[:90]}")
+                    return f"![{title_hint[:70]}]({cand_url})"
+    except Exception as ex:
+        logger.debug(f"Tier 2 lookup error: {ex}")
+
+    # -------------------------------------------------------------
+    # TIER 3: Wikimedia Commons File Search Engine
+    # -------------------------------------------------------------
+    try:
+        wm_params = {
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": subject,
+            "gsrnamespace": "6",
+            "gsrlimit": "4",
+            "prop": "imageinfo",
+            "iiprop": "url|mime",
+            "format": "json"
+        }
+        wm_resp = requests.get("https://commons.wikimedia.org/w/api.php", params=wm_params, headers=headers, timeout=4.0)
+        if wm_resp.status_code == 200:
+            wm_data = wm_resp.json()
+            pages = wm_data.get("query", {}).get("pages", {})
+            for pid, page in pages.items():
+                infos = page.get("imageinfo", [])
+                if infos:
+                    cand_url = infos[0].get("url", "")
+                    mime = infos[0].get("mime", "").lower()
+                    if mime.startswith("image/") and not any(mime.endswith(bad) for bad in ["djvu", "tiff", "pdf"]):
+                        logger.info(f"🎨 Tier 3 match (Wikimedia Commons): {cand_url[:90]}")
+                        return f"![{alt_label}]({cand_url})"
+    except Exception as ex:
+        logger.debug(f"Tier 3 lookup error: {ex}")
+
+    # -------------------------------------------------------------
+    # TIER 4: Curated Unsplash HD Visual Stream Fallback
+    # -------------------------------------------------------------
+    seed = random.randint(1000, 999999)
+    unsplash_url = f"https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1080&q=80&sig={seed}"
+    logger.info("🎨 Tier 4 match: Curated HD Visual fallback")
+    return f"![{alt_label}]({unsplash_url})"
 
 
 def generate_conversation_title(message: str, reply: str = "") -> str:

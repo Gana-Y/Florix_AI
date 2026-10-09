@@ -511,3 +511,56 @@ body::-webkit-scrollbar {
 .token.italic {
   font-style: italic;
 }
+
+/* ==============================================
+   AI Image Generative Canvas & Laser Animations
+   ============================================== */
+@keyframes laserSweep {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes pulseAurora {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes shimmerGlow {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-laser-sweep {
+  animation: laserSweep 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-pulse-aurora {
+  animation: pulseAurora 3.5s ease-in-out infinite;
+}
+
+.animate-shimmer-glow {
+  background-size: 200% 100%;
+  animation: shimmerGlow 2.5s infinite linear;
+}

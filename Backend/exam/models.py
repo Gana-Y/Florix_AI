@@ -1,7 +1,7 @@
 """Exam / Mock Exam Engine models and schemas."""
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
 
@@ -27,13 +27,13 @@ class ExamResponse(BaseModel):
     exam_mode: str
     difficulty: str
     duration_minutes: int
-    passing_percentage: int
+    passing_percentage: Union[int, float]
     total_questions: int
     topics: List[str]
     created_at: str
     updated_at: str
     attempts_count: int = 0
-    best_score: Optional[int] = None
+    best_score: Optional[Union[int, float]] = None
 
 
 class ExamQuestionSanitizedResponse(BaseModel):
@@ -112,7 +112,7 @@ class ExamAttemptReviewResponse(BaseModel):
     completed_at: Optional[str] = None
     score: int
     total_questions: int
-    percentage: int
+    percentage: Union[int, float]
     passed: bool
     time_taken_seconds: int
     topic_scores: Dict[str, Any]

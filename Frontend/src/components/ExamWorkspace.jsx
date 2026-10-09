@@ -79,17 +79,23 @@ export default function ExamWorkspace({ user, onOpenSession }) {
   // Metacognitive Debugger state
   const [showMistakeModal, setShowMistakeModal] = useState(false);
   const [selectedMistakeQuestion, setSelectedMistakeQuestion] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
   // Fetch all user exams
   const fetchExams = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const res = await api.get('/exams');
       setExams(res.data || []);
     } catch (err) {
       if (err.response?.status === 401) return;
       console.warn('Failed to load exams:', err);
-      addToast('Failed to load exams', 'error');
+      const errorMsg = !err.response
+        ? 'Could not connect to backend server. Please verify your connection.'
+        : (err.response?.data?.detail || 'Failed to load exams');
+      setLoadError(errorMsg);
+      addToast(errorMsg.length < 60 ? errorMsg : 'Failed to load exams', 'error');
     } finally {
       setLoading(false);
     }
@@ -100,13 +106,13 @@ export default function ExamWorkspace({ user, onOpenSession }) {
     try {
       const res = await api.get('/library');
       setSessions(res.data || []);
-      if (res.data?.length > 0 && !selectedSessionId) {
-        setSelectedSessionId(res.data[0].id);
+      if (res.data?.length > 0) {
+        setSelectedSessionId((prev) => prev || res.data[0].id);
       }
     } catch (err) {
       console.warn('Failed to load sessions:', err);
     }
-  }, [selectedSessionId]);
+  }, []);
 
   useEffect(() => {
     fetchExams();
@@ -459,6 +465,24 @@ export default function ExamWorkspace({ user, onOpenSession }) {
         {loading ? (
           <div className="flex items-center justify-center py-24 text-slate-400 dark:text-zinc-500">
             <Clock className="animate-spin mr-3" size={24} /> Loading exam bank...
+          </div>
+        ) : loadError && exams.length === 0 ? (
+          <div className="bg-white/80 dark:bg-zinc-900/80 border border-rose-200/60 dark:border-rose-900/40 rounded-3xl p-12 text-center space-y-4 shadow-sm">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+              <AlertCircle size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">
+              Unable to Load Exams
+            </h3>
+            <p className="text-sm text-slate-500 dark:text-zinc-400 max-w-md mx-auto">
+              {loadError}
+            </p>
+            <button
+              onClick={fetchExams}
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md transition-all cursor-pointer"
+            >
+              <RotateCcw size={15} /> Retry Connection
+            </button>
           </div>
         ) : exams.length === 0 ? (
           <div className="bg-white/80 dark:bg-zinc-900/80 border border-dashed border-slate-300 dark:border-zinc-800 rounded-3xl p-12 text-center space-y-4">

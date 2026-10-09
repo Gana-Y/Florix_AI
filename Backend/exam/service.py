@@ -74,9 +74,24 @@ class ExamService:
     def serialize_exam(cls, exam: Exam) -> ExamResponse:
         session_title = exam.session.ai_title or exam.session.filename if exam.session else None
         best_score = None
-        completed_attempts = [a for a in exam.attempts if a.status in ["submitted", "timed_out", "graded"]]
+        completed_attempts = [a for a in (exam.attempts or []) if a.status in ["submitted", "timed_out", "graded"]]
         if completed_attempts:
-            best_score = max(a.percentage for a in completed_attempts)
+            valid_scores = [a.percentage for a in completed_attempts if a.percentage is not None]
+            best_score = round(max(valid_scores), 1) if valid_scores else None
+
+        topics_val = []
+        if isinstance(exam.topics, list):
+            topics_val = exam.topics
+        elif isinstance(exam.topics, str):
+            try:
+                import json
+                parsed = json.loads(exam.topics)
+                if isinstance(parsed, list):
+                    topics_val = parsed
+                else:
+                    topics_val = [exam.topics] if exam.topics else []
+            except Exception:
+                topics_val = [exam.topics] if exam.topics else []
 
         return ExamResponse(
             id=exam.id,
@@ -90,10 +105,10 @@ class ExamService:
             duration_minutes=exam.duration_minutes,
             passing_percentage=exam.passing_percentage,
             total_questions=exam.total_questions,
-            topics=exam.topics or [],
+            topics=topics_val,
             created_at=exam.created_at.isoformat() if exam.created_at else "",
             updated_at=exam.updated_at.isoformat() if exam.updated_at else "",
-            attempts_count=len(exam.attempts),
+            attempts_count=len(exam.attempts) if exam.attempts else 0,
             best_score=best_score,
         )
 

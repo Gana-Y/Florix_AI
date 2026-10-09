@@ -610,7 +610,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
                   );
                 })()}
               </div>
-              <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">Powered by Gemini 2.5 Flash</p>
+              <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">Powered by Gemini 3 Flash</p>
             </div>
           </div>
 

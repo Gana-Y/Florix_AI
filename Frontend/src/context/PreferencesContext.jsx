@@ -16,7 +16,7 @@ const DEFAULT_PREFS = {
   autoSaveNotes: true,
   showWordCount: true,
   // Advanced AI engineering settings
-  aiModel: 'gemini-2.5-flash',
+  aiModel: 'gemini-3-flash-preview',
   aiTemperature: 0.7,
   voiceProfile: 'female-us',
   voiceRate: 1.0,

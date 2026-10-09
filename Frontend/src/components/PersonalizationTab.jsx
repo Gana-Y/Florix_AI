@@ -205,8 +205,8 @@ const PersonalizationTab = () => {
       <Section icon={Bot} title="AI Large Language Model (LLM)">
         <div className="flex gap-3 flex-wrap">
           {[
-            { key: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash ⚡', desc: 'Default production model. Fast summaries, flashcards, & real-time study guide creation.' },
-            { key: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro 🧠',   desc: 'Deep analytical model. Best for high-complexity math, science proofs, and programming sessions.' },
+            { key: 'gemini-3-flash-preview', label: 'Gemini 3 Flash ⚡ (Frontier)', desc: 'Next-generation Gemini 3 reasoning engine. Enhanced logic, agentic speed, & complex analysis.' },
+            { key: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash 🛡️ (Stable)', desc: 'High-speed production standard. Fast summaries, flashcards, & real-time study guide creation.' },
             { key: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro 📚',   desc: 'Legacy multi-million context model. Excels at analyzing massive textbooks and extensive articles.' },
           ].map((opt) => (
             <motion.button

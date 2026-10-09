@@ -212,8 +212,8 @@ api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is not set")
 client = genai.Client(api_key=api_key)
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-MODEL_CASCADE = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash"]
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+MODEL_CASCADE = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
 # ── Razorpay payment gateway ──────────────────────────────────────────────────
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
@@ -935,7 +935,7 @@ def generate_multimodal(image_bytes: bytes, mime_type: str, instruction: str) ->
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
     ]
     models_to_try = []
-    for m in ["gemini-2.5-flash", MODEL_NAME] + MODEL_CASCADE:
+    for m in [MODEL_NAME, "gemini-2.5-flash"] + MODEL_CASCADE:
         if m and m not in models_to_try:
             models_to_try.append(m)
 
@@ -1109,7 +1109,7 @@ def fetch_youtube_transcript_gemini(canonical_url: str) -> Optional[List[dict]]:
         "Return ONLY the valid JSON array without markdown backticks or explanation."
     )
 
-    models_to_try = ["gemini-3.5-flash-lite", "gemini-2.5-flash", MODEL_NAME]
+    models_to_try = [MODEL_NAME, "gemini-3-flash-preview", "gemini-2.5-flash"]
     seen = set()
     unique_models = [m for m in models_to_try if m and not (m in seen or seen.add(m))]
 

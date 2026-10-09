@@ -905,7 +905,10 @@ def generate_with_fallback(prompt: str, instruction: str = "Summarize this text 
             response = client.models.generate_content(
                 model=model,
                 contents=contents,
-                config={"safety_settings": safety},
+                config={
+                    "safety_settings": safety,
+                    "max_output_tokens": 8192
+                },
             )
             track_gemini_tokens(response)
             if response and response.text:
@@ -2673,10 +2676,10 @@ def upgrade_subscription(
     Direct subscription upgrade. Restricted to administrators or development mode.
     Regular users must use /payments/verify-razorpay-payment.
     """
-    if not getattr(current_user, "is_admin", False) and os.getenv("ENVIRONMENT") == "production":
+    if not getattr(current_user, "is_admin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Direct plan upgrades are disabled in production. Please complete checkout via Razorpay."
+            detail="Direct plan upgrades are restricted to administrators. Please submit payment reference via UPI for activation."
         )
 
     if data.plan not in ("pro", "premium"):
@@ -2787,8 +2790,12 @@ async def verify_razorpay_payment(
         raise HTTPException(status_code=400, detail="Invalid plan chosen.")
 
     is_sandbox = data.razorpay_order_id.startswith("order_sandbox_") or data.razorpay_signature == "sandbox_sig"
-    if is_sandbox and os.getenv("ENVIRONMENT") == "production":
-        raise HTTPException(status_code=403, detail="Sandbox payment verification is disabled in production.")
+    if is_sandbox:
+        if not getattr(current_user, "is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sandbox self-upgrade is restricted to administrators. Please submit payment reference via UPI for activation."
+            )
 
     if not is_sandbox:
         if not RAZORPAY_ENABLED:
@@ -3091,6 +3098,158 @@ def get_admin_users(
         }
         for u in users
     ]
+
+
+class AdminPlanUpdateRequest(BaseModel):
+    plan: str  # free | pro | premium
+    days: int = 30
+
+class AdminRoleUpdateRequest(BaseModel):
+    is_admin: bool
+
+@app.delete("/admin/users/{user_id}", tags=["Admin"])
+def delete_admin_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a user account and cascade clean all associated data (Admin only)."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="Unauthorized access. Admin only.")
+
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own active administrator account.")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    deleted_email = target.email
+    db.delete(target)
+    db.commit()
+
+    log_activity(db, current_user.id, "User Deleted", f"Deleted user {deleted_email} (ID: {user_id})")
+    db.commit()
+    return {"status": "success", "message": f"User {deleted_email} deleted successfully."}
+
+
+@app.patch("/admin/users/{user_id}/plan", tags=["Admin"])
+def update_user_plan_by_admin(
+    user_id: int,
+    data: AdminPlanUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update or revoke a user's subscription tier (Admin only)."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="Unauthorized access. Admin only.")
+
+    if data.plan not in ("free", "pro", "premium"):
+        raise HTTPException(status_code=400, detail="Invalid plan. Choose 'free', 'pro', or 'premium'.")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    old_plan = target.plan
+    target.plan = data.plan
+    if data.plan == "free":
+        target.plan_expires_at = None
+    else:
+        target.plan_expires_at = datetime.utcnow() + timedelta(days=data.days)
+
+    db.commit()
+    db.refresh(target)
+
+    log_activity(db, current_user.id, "Admin Changed Plan", f"Changed {target.email} from {old_plan.upper()} to {data.plan.upper()}")
+    log_activity(db, target.id, "Plan Updated by Admin", f"Your subscription plan was updated to {data.plan.upper()} by administrator.")
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Updated {target.email} to {data.plan.upper()}",
+        "user": {
+            "id": target.id,
+            "email": target.email,
+            "plan": target.plan,
+            "plan_expires_at": target.plan_expires_at.isoformat() if target.plan_expires_at else None
+        }
+    }
+
+
+@app.patch("/admin/users/{user_id}/role", tags=["Admin"])
+def update_user_role_by_admin(
+    user_id: int,
+    data: AdminRoleUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Grant or revoke administrator role for a user (Admin only)."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="Unauthorized access. Admin only.")
+
+    if user_id == current_user.id and not data.is_admin:
+        raise HTTPException(status_code=400, detail="Cannot revoke your own administrator privileges.")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    target.is_admin = data.is_admin
+    db.commit()
+
+    action_label = "Granted Admin" if data.is_admin else "Revoked Admin"
+    log_activity(db, current_user.id, action_label, f"{action_label} for {target.email}")
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Successfully {'granted' if data.is_admin else 'revoked'} administrator rights for {target.email}",
+        "is_admin": target.is_admin
+    }
+
+
+@app.post("/admin/users/cleanup-test-accounts", tags=["Admin"])
+def cleanup_test_accounts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Purge automated test accounts and mock data, preserving legitimate accounts (Admin only)."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="Unauthorized access. Admin only.")
+
+    protected_emails = [current_user.email.lower(), "ganesh1@gmail.com", "natasha@gmail.com"]
+
+    all_users = db.query(User).filter(~func.lower(User.email).in_(protected_emails)).all()
+    
+    test_users_to_delete = []
+    for u in all_users:
+        em = u.email.lower()
+        nm = (u.name or "").lower()
+        if (
+            "test" in em or "audit" in em or "playwright" in em or 
+            "demo" in em or "example.com" in em or "florix.test" in em or
+            "student_a" in em or "student_b" in em or "phase4" in em or
+            "tester" in nm or "audit" in nm
+        ):
+            test_users_to_delete.append(u)
+
+    count = len(test_users_to_delete)
+    deleted_emails = [u.email for u in test_users_to_delete]
+    for u in test_users_to_delete:
+        db.delete(u)
+    db.commit()
+
+    log_activity(db, current_user.id, "Purged Test Accounts", f"Cleaned up {count} test user accounts")
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Successfully purged {count} test user accounts.",
+        "deleted_count": count,
+        "deleted_emails": deleted_emails
+    }
+
 
 
 @app.get("/admin/payments", tags=["Admin"])
@@ -3661,6 +3820,41 @@ def ensure_session_space(db: Session, user_id: int, project_id: Optional[int], t
     return new_space.id
 
 
+def extract_docx_and_doc_text(file_path: str, raw_bytes: bytes) -> str:
+    """Extract clean text from Word documents (.docx or .doc)."""
+    # 1. Try modern .docx (ZIP + XML)
+    try:
+        import zipfile
+        import xml.etree.ElementTree as ET
+        with zipfile.ZipFile(file_path) as z:
+            xml_content = z.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            paragraphs = []
+            for p in tree.iterfind('.//w:p', ns):
+                texts = [node.text for node in p.iterfind('.//w:t', ns) if node.text]
+                if texts:
+                    paragraphs.append("".join(texts))
+            if paragraphs:
+                return "\n\n".join(paragraphs)
+    except Exception:
+        pass
+
+    # 2. Try plain string extraction for legacy binary .doc
+    try:
+        clean_text = raw_bytes.decode("utf-8", errors="ignore")
+        lines = [line.strip() for line in clean_text.splitlines() if len(line.strip()) > 3]
+        if len(lines) > 5:
+            return "\n".join(lines)
+    except Exception:
+        pass
+
+    # 3. Fallback: regex search for printable chunks
+    chunks = re.findall(rb"[\x20-\x7E\t\n\r]{4,}", raw_bytes)
+    decoded = [c.decode("latin1", errors="ignore").strip() for c in chunks if len(c.strip()) > 3]
+    return "\n\n".join(decoded)
+
+
 @app.post("/upload", tags=["Content"])
 async def upload_file(
     background_tasks: BackgroundTasks,
@@ -3674,10 +3868,13 @@ async def upload_file(
 
     filename_lower = file.filename.lower()
     is_pdf = filename_lower.endswith(".pdf")
+    is_docx = filename_lower.endswith(".docx")
+    is_doc = filename_lower.endswith(".doc")
+    is_txt = filename_lower.endswith(".txt") or filename_lower.endswith(".md")
     is_image = any(filename_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp"))
 
-    if not is_pdf and not is_image:
-        raise HTTPException(status_code=400, detail="Only PDF and Image files (PNG, JPG, JPEG, WEBP) are supported.")
+    if not is_pdf and not is_docx and not is_doc and not is_txt and not is_image:
+        raise HTTPException(status_code=400, detail="Supported files: PDF, Word (.docx, .doc), Text (.txt, .md), and Images (PNG, JPG, JPEG, WEBP).")
 
     contents = await file.read()
     if len(contents) == 0:
@@ -3724,6 +3921,9 @@ async def upload_file(
     with open(file_path, "wb") as f:
         f.write(contents)
 
+    pages_data = []
+    page_count = 1
+
     if is_pdf:
         try:
             try:
@@ -3732,22 +3932,21 @@ async def upload_file(
                 if reader.is_encrypted:
                     try:
                         res = reader.decrypt("")
-                        # In pypdf, 0 or PasswordResult.NOT_DECRYPTED means decryption with empty password failed
                         if not res:
                             raise HTTPException(status_code=422, detail="This PDF is password-protected. Please upload an unprotected PDF or remove the password first.")
                     except HTTPException:
                         raise
                     except Exception:
                         raise HTTPException(status_code=422, detail="This PDF is password-protected. Please upload an unprotected PDF or remove the password first.")
-                pages_data = []
                 for idx, page in enumerate(reader.pages, start=1):
                     raw_page_text = page.extract_text() or ""
                     clean_page_text = raw_page_text.replace("\x00", "").strip()
                     if clean_page_text:
                         pages_data.append((idx, clean_page_text))
                 text = "\n\n".join(f"[Page {p[0]}]\n{p[1]}" for p in pages_data)
+                page_count = len(reader.pages)
             except HTTPException:
-                raise  # Re-raise our own HTTP exceptions
+                raise
             except Exception as e:
                 error_msg = str(e).lower()
                 if "password" in error_msg or "encrypted" in error_msg or "decrypt" in error_msg:
@@ -3761,7 +3960,7 @@ async def upload_file(
                 raise HTTPException(status_code=422, detail="PDF appears to be empty or is a scanned image-only PDF. Text extraction found no readable content. Try uploading it as an image instead.")
 
             title = file.filename.replace(".pdf", "").replace("_", " ").replace("-", " ").title()
-            update_pipeline_progress(progress_id, 2, "Content parsing", f"Parsed PDF successfully. Extracted {len(reader.pages)} pages ({len(text)} characters).", "done")
+            update_pipeline_progress(progress_id, 2, "Content parsing", f"Parsed PDF successfully. Extracted {page_count} pages ({len(text)} characters).", "done")
             display_title = title
         finally:
             try:
@@ -3770,6 +3969,44 @@ async def upload_file(
             except Exception as cleanup_err:
                 logger.warning(f"Failed to cleanup PDF {file_path}: {cleanup_err}")
         source_type = "pdf"
+        session_content = text
+    elif is_docx or is_doc:
+        try:
+            text = extract_docx_and_doc_text(file_path, contents)
+            if not text.strip():
+                raise HTTPException(status_code=422, detail="Word document appears to be empty or unreadable.")
+            ext = os.path.splitext(filename_lower)[1]
+            title = file.filename.replace(ext, "").replace("_", " ").replace("-", " ").title()
+            display_title = title
+            pages_data = [(1, text)]
+            page_count = 1
+            update_pipeline_progress(progress_id, 2, "Content parsing", f"Extracted Word document successfully ({len(text)} characters).", "done")
+        finally:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to cleanup doc {file_path}: {cleanup_err}")
+        source_type = "doc"
+        session_content = text
+    elif is_txt:
+        try:
+            text = contents.decode("utf-8", errors="ignore").strip()
+            if not text:
+                raise HTTPException(status_code=422, detail="Text file is empty.")
+            ext = os.path.splitext(filename_lower)[1]
+            title = file.filename.replace(ext, "").replace("_", " ").replace("-", " ").title()
+            display_title = title
+            pages_data = [(1, text)]
+            page_count = 1
+            update_pipeline_progress(progress_id, 2, "Content parsing", f"Extracted text file successfully ({len(text)} characters).", "done")
+        finally:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to cleanup txt {file_path}: {cleanup_err}")
+        source_type = "text"
         session_content = text
     else:
         # Determine image mime type
@@ -3797,21 +4034,21 @@ async def upload_file(
         timeline=initial_timeline,
         project_id=assigned_space_id,
         processing_status=ProcessingStatus.UPLOADED,
-        page_count=len(reader.pages) if is_pdf else 1,
+        page_count=page_count,
         char_count=len(session_content),
-        doc_metadata={"pages": pages_data, "page_count": len(reader.pages)} if is_pdf else {}
+        doc_metadata={"pages": pages_data, "page_count": page_count}
     )
     db.add(new_session)
-    log_activity(db, current_user.id, f"Uploaded {'PDF' if is_pdf else 'Screenshot'}", f"Processed: {display_title}")
+    log_activity(db, current_user.id, f"Uploaded {source_type.upper()}", f"Processed: {display_title}")
     db.commit()
     db.refresh(new_session)
 
     # Launch background tasks
-    if is_pdf:
+    if is_pdf or is_docx or is_doc or is_txt:
         background_tasks.add_task(
             process_upload_in_background,
             session_id=new_session.id,
-            source_type="pdf",
+            source_type=source_type,
             text_content=session_content,
             progress_id=progress_id
         )
@@ -5004,8 +5241,36 @@ async def chat_with_document(
             if last_user_q and (len(request.message) < 25 or bool(words & trigger_terms)):
                 retrieval_query = f"{last_user_q} {request.message}".strip()
 
-        # 🔍 Perform Semantic Hybrid RAG Search with strict user isolation
-        chunks = retrieve_relevant_chunks(session.id, retrieval_query, db, top_k=5, user_id=current_user.id)
+        # Check for document-wide question bank / list-all intent
+        combined_q_lower = f"{request.message} {retrieval_query}".lower()
+        is_doc_wide_query = any(phrase in combined_q_lower for phrase in [
+            "all question", "list question", "all the question", "every question",
+            "question bank", "what are the question", "show questions", "give me questions",
+            "all topics", "whole document", "entire document", "full summary", "everything in"
+        ])
+
+        if is_doc_wide_query:
+            # Retrieve comprehensive chunks across the entire document
+            all_chunks = db.query(DocumentChunk).filter(
+                DocumentChunk.session_id == session.id
+            ).order_by(DocumentChunk.chunk_index.asc()).limit(25).all()
+            if all_chunks:
+                chunks = [{
+                    "chunk_index": c.chunk_index,
+                    "text_content": c.text_content,
+                    "score": 1.0,
+                    "page_number": getattr(c, "page_number", 1) or 1,
+                    "section_heading": getattr(c, "section_heading", "") or "",
+                    "content_type": getattr(c, "content_type", "text") or "text",
+                    "source_type": session.source_type or "text",
+                    "metadata": getattr(c, "chunk_metadata", {}) or {},
+                    "document_title": session.filename
+                } for c in all_chunks]
+            else:
+                chunks = retrieve_relevant_chunks(session.id, retrieval_query, db, top_k=10, user_id=current_user.id)
+        else:
+            chunks = retrieve_relevant_chunks(session.id, retrieval_query, db, top_k=6, user_id=current_user.id)
+
         if chunks:
             source_candidates = [
                 RetrievalCandidate(
@@ -5026,13 +5291,18 @@ async def chat_with_document(
             doc_context, citations = ContextBuilder.build_context(source_candidates)
             logger.info(f"✅ Hybrid RAG Context built from {len(chunks)} relevant chunks with {len(citations)} citations.")
         else:
-            doc_context = session.content[:15000] if session.content else ""
+            doc_context = session.content[:20000] if session.content else ""
             citations = []
             logger.info("⚠️ Falling back to sliced full document context.")
 
+        # Document Orientation Header
+        doc_header = f"ACTIVE UPLOADED DOCUMENT: \"{session.filename}\"\n"
+        if session.summary and session.summary != "Processing...":
+            doc_header += f"DOCUMENT OVERVIEW:\n{session.summary[:600]}\n\n"
+
         intent, mode = detect_learning_intent(request.message)
         scaffold = TeachingEngine.get_scaffolding_instruction(mode, intent)
-        enhanced_context = f"{scaffold}\n\n{doc_context}"
+        enhanced_context = f"{scaffold}\n\n{doc_header}{doc_context}"
 
         generator = GroundedGenerator(gemini_client=client, model_name=MODEL_NAME)
         grounded_res = generator.generate(
@@ -6688,12 +6958,13 @@ def agent_get_user_learning_stats(user_id: int, db: Session) -> str:
 
 
 def agent_generate_image(prompt: str) -> str:
-    """Generate an educational visual/diagram representation URL using Pollinations AI."""
+    """Generate a high-definition visual/diagram representation URL using Pollinations AI with Flux model and random seed."""
     cleaned = prompt.strip("\"' ").replace("\n", " ")
     cleaned_prompt = re.sub(r"[,\"\']+", " ", cleaned).strip()
-    encoded = quote(cleaned_prompt[:140])
-    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=680&height=400&nologo=true"
-    alt_label = re.sub(r"[\[\]\(\)]", "", cleaned[:60]).strip() or "Educational Visual"
+    encoded = quote(cleaned_prompt[:180])
+    seed = random.randint(10000, 999999)
+    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=768&nologo=true&model=flux&seed={seed}"
+    alt_label = re.sub(r"[\[\]\(\)]", "", cleaned[:70]).strip() or "Visual Illustration"
     return f"![{alt_label}]({image_url})"
 
 
@@ -6808,12 +7079,19 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "   - LIVE / REAL-TIME SENSOR DATA (e.g., live current weather outside right now, live sports scores):\n"
             "     - You do not possess live real-time GPS or live weather station feeds for hyper-local current atmospheric conditions.\n"
             "     - If asked about current local weather (e.g. 'what's the weather today', 'monsoon updates'): Explain the general weather or seasonal climate patterns warmly and informatively (e.g., explaining monsoon timing, regional seasonal behavior, typical conditions), and kindly suggest checking a local weather service or app (like AccuWeather or weather.com) for live minute-by-minute radar.\n\n"
-            "3. MATHEMATICAL & CODE FORMULATIONS:\n"
+            "3. COMPREHENSIVE STUDY NOTES & PROGRAMMING MENTORSHIP (CHATGPT & CLAUDE STANDARD):\n"
+            "   - When the student asks to learn a programming language (Python, C++, Java, JS), master a concept, or asks for 'comprehensive notes', 'explain longer', 'study plan', or 'teach from scratch':\n"
+            "     * DELIVER THOROUGH, RICH, EXHAUSTIVE STUDY NOTES: Do NOT produce tiny, superficial responses or artificially gatekeep content (NEVER say 'when you are ready we will unlock Phase 2'). Give the full, high-yield, beautifully structured notes immediately!\n"
+            "     * COMPLETE RUNNABLE CODE FILES: Always provide full, copy-ready, runnable code blocks with language identifiers (```python, ```javascript, ```cpp, etc.), detailed line-by-line comments, practical use cases, and realistic console outputs.\n"
+            "     * EXPLAIN LIKE AN ELITE MENTOR: Combine world-class technical precision with warm, encouraging, engaging human empathy. Use clear markdown headers, bulleted conceptual breakdowns, mental models, and real-world analogies.\n"
+            "   - VAST GENERAL KNOWLEDGE:\n"
+            "     * You possess deep general knowledge across all domains of science, engineering, philosophy, arts, culture, and life. You are not a narrow textbook indexer. You think, reason, and converse with high human-like intelligence across any topic.\n\n"
+            "4. MATHEMATICAL & CODE FORMULATIONS:\n"
             "   - Always format all mathematical equations in standard LaTeX syntax.\n"
             "   - Wrap inline mathematical variables and symbols in single dollar signs: e.g. `$f: X \\to Y$` or `$L$` or `$\\theta$`.\n"
             "   - Wrap block display equations on their own line in double dollar signs: e.g. `$$\\frac{1}{N} \\sum_{i=1}^{N} L(y_i, f(x_i))$$`.\n"
             "   - ALWAYS verify that both opening and closing dollar signs are present.\n\n"
-            "4. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
+            "5. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
             "   - When the student asks for a visual, picture, photo, illustration, or diagram, choose the appropriate visual medium:\n"
             "     a) REAL-WORLD VISUALS, ART, CULTURE, BIOLOGY & GEOGRAPHY:\n"
             "        - When asked for images of real-world objects, artworks, historical figures/events, dance forms, cultural traditions, anatomical structures, or animals, call the image tool:\n"
@@ -6822,12 +7100,12 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "     b) SYSTEM ARCHITECTURES, ALGORITHMS & LOGICAL WORKFLOWS:\n"
             "        - For software architectures, data pipelines, algorithms, state machines, and technical processes (e.g. RAG pipeline, OAuth flow, binary search tree, compiler stages), provide a clean, publication-grade Mermaid flowchart (```mermaid ... ```) accompanied by a structured technical walkthrough.\n"
             "   - PRONOUN & CONTEXT RESOLUTION: Always inspect the preceding conversation history to resolve pronouns ('it', 'that', 'this'). If the user previously asked about a topic and then asks 'show me an image of it', resolve the pronoun to that exact topic.\n\n"
-            "4. AVAILABLE TOOLS:\n"
+            "6. AVAILABLE TOOLS:\n"
             "   - [CALL_TOOL: search_user_library(\"search_query\")] -> Search the user's uploaded study materials\n"
             "   - [CALL_TOOL: get_session_details(session_id_integer)] -> Retrieve detailed content and quiz history of a specific session\n"
             "   - [CALL_TOOL: get_user_learning_stats()] -> Retrieve user's study metrics, quiz stats, and bookmarks\n"
             "   - [CALL_TOOL: generate_image(\"detailed visual prompt\")] -> Generate educational illustrations, photos, artwork, and cultural visuals\n\n"
-            "5. STRICT TOOL CALLING EXECUTION RULES:\n"
+            "7. STRICT TOOL CALLING EXECUTION RULES:\n"
             "   - If you need to use a tool, emit ONLY the tool command on its own line: [CALL_TOOL: tool_name(...)].\n"
             "   - NEVER include conversational text alongside a tool call in the same turn.\n"
             "   - When you receive the tool results, write your final response naturally to the student.\n"

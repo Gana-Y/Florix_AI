@@ -117,6 +117,13 @@ const PricingTab = () => {
   const [showSandboxConfirm, setShowSandboxConfirm] = useState(false);
   const [sandboxPlanId, setSandboxPlanId] = useState(null);
 
+  // Manual UPI payment states for non-admins when gateway is in sandbox/offline
+  const [showUpiModal, setShowUpiModal] = useState(false);
+  const [upiPlanId, setUpiPlanId] = useState(null);
+  const [upiMethod, setUpiMethod] = useState('UPI');
+  const [upiTransactionId, setUpiTransactionId] = useState('');
+  const [upiSubmitting, setUpiSubmitting] = useState(false);
+
   useEffect(() => {
     fetchSubscription();
   }, []);
@@ -145,9 +152,15 @@ const PricingTab = () => {
       const res = await api.post('/payments/create-razorpay-order', { plan: planId });
       
       if (res.data?.sandbox) {
-        // Show simulated payment dialog for Sandbox Mode
-        setSandboxPlanId(planId);
-        setShowSandboxConfirm(true);
+        if (user?.is_admin) {
+          // Administrators can simulate upgrades for testing
+          setSandboxPlanId(planId);
+          setShowSandboxConfirm(true);
+        } else {
+          // Regular users must submit UPI payment reference for Admin Verification
+          setUpiPlanId(planId);
+          setShowUpiModal(true);
+        }
       } else {
         const loaded = await loadRazorpay();
         if (!loaded) {
@@ -238,6 +251,33 @@ const PricingTab = () => {
     setSandboxPlanId(null);
   };
 
+  const handleUpiSubmit = async (e) => {
+    e.preventDefault();
+    if (!upiPlanId || !upiTransactionId.trim()) return;
+
+    const cleanedTx = upiTransactionId.trim().replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9]{8,18}$/.test(cleanedTx)) {
+      addToast('Invalid UTR / Transaction ID. Must be an 8-18 character alphanumeric code with no spaces.', 'error');
+      return;
+    }
+
+    setUpiSubmitting(true);
+    try {
+      await api.post('/subscription/submit_payment', {
+        plan: upiPlanId,
+        payment_method: upiMethod,
+        transaction_id: cleanedTx
+      });
+      addToast('🎉 Payment reference submitted! Administrator will verify your UTR and activate your plan.', 'success');
+      setShowUpiModal(false);
+      setUpiTransactionId('');
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to submit payment reference.', 'error');
+    } finally {
+      setUpiSubmitting(false);
+    }
+  };
+
   const handleCancel = async () => {
     setCancelling(true);
     try {
@@ -283,20 +323,28 @@ const PricingTab = () => {
         </p>
       </motion.div>
 
-      {/* Sandbox Mode Active Warning */}
+      {/* Sandbox / UPI Mode Notice */}
       {!loading && subscription?.razorpay_enabled === false && (
         <motion.div
           variants={itemVariants}
-          className="bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-3xl p-5 flex items-center justify-between gap-4 shadow-sm"
+          className={`${
+            user?.is_admin
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
+              : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-700 dark:text-indigo-300'
+          } border rounded-3xl p-5 flex items-center justify-between gap-4 shadow-sm`}
         >
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center shrink-0">
-              <Shield size={22} className="text-amber-500" />
+            <div className={`w-12 h-12 ${user?.is_admin ? 'bg-amber-500/10 text-amber-500' : 'bg-indigo-500/10 text-indigo-500'} rounded-2xl flex items-center justify-center shrink-0`}>
+              <Shield size={22} />
             </div>
             <div>
-              <p className="font-extrabold text-base">🛠️ Razorpay Sandbox Mode Active</p>
+              <p className="font-extrabold text-base">
+                {user?.is_admin ? "🛠️ Administrator Sandbox Simulator Active" : "📱 UPI & Manual Payment Verification Active"}
+              </p>
               <p className="text-sm text-slate-500 dark:text-zinc-400 mt-0.5">
-                Razorpay credentials are not set up. Upgrading is completely **free**! Click any plan below to open the Sandbox Simulator and instantly upgrade.
+                {user?.is_admin
+                  ? "Razorpay live keys are not configured. As Administrator, you can test plan upgrades via the Sandbox Simulator."
+                  : "Direct gateway checkout is currently offline. Choose any plan below to submit your payment UTR reference code for Administrator verification & activation."}
               </p>
             </div>
           </div>
@@ -504,17 +552,124 @@ const PricingTab = () => {
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={handleSandboxSuccess}
-                  className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   Simulate Success Pay
                 </motion.button>
                 <button
                   onClick={handleSandboxCancel}
-                  className="w-full py-3.5 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                  className="w-full py-3.5 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
                 >
                   Cancel Simulation
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Manual UPI Payment Modal */}
+      <AnimatePresence>
+        {showUpiModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl p-7 max-w-md w-full shadow-2xl border border-slate-200 dark:border-zinc-800 relative"
+            >
+              <button
+                onClick={() => setShowUpiModal(false)}
+                className="absolute top-5 right-5 p-2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+
+              <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <CreditCard size={24} className="text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <h3 className="text-xl font-extrabold text-center text-slate-800 dark:text-white mb-1">
+                Upgrade to {upiPlanId?.toUpperCase()} Plan
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 text-center mb-5">
+                Pay via UPI and submit your transaction UTR reference code for Administrator verification.
+              </p>
+
+              {/* Payment Details Box */}
+              <div className="bg-slate-50 dark:bg-zinc-950/60 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-4 mb-5 text-xs space-y-2">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200/60 dark:border-zinc-800/80">
+                  <span className="text-slate-400 dark:text-zinc-500">Plan Amount:</span>
+                  <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-sm">
+                    {upiPlanId === 'pro' ? '₹799 / month' : '₹1,599 / month'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 dark:text-zinc-500">Official UPI ID:</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-zinc-200 bg-white dark:bg-zinc-900 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-800">
+                    {subscription?.payment_details?.upi_id || 'florix.ai@upi'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400 dark:text-zinc-500">Official Mobile:</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-zinc-200">
+                    {subscription?.payment_details?.mobile || '+91 99887 76655'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleUpiSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase font-black tracking-wider text-slate-400 dark:text-zinc-500 mb-1.5">
+                    Payment App
+                  </label>
+                  <select
+                    value={upiMethod}
+                    onChange={(e) => setUpiMethod(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500"
+                  >
+                    <option value="GPay">Google Pay (GPay)</option>
+                    <option value="PhonePe">PhonePe</option>
+                    <option value="Paytm">Paytm</option>
+                    <option value="UPI">BHIM / Other UPI</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-black tracking-wider text-slate-400 dark:text-zinc-500 mb-1.5">
+                    Transaction ID / UTR Number
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 427819034512"
+                    value={upiTransactionId}
+                    onChange={(e) => setUpiTransactionId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
+                    Enter the 8-18 digit reference number found in your payment app receipt.
+                  </p>
+                </div>
+
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowUpiModal(false)}
+                    className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold text-xs hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <motion.button
+                    whileTap={{ scale: 0.98 }}
+                    type="submit"
+                    disabled={upiSubmitting || !upiTransactionId.trim()}
+                    className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {upiSubmitting ? <Loader2 size={14} className="animate-spin" /> : 'Submit for Verification'}
+                  </motion.button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

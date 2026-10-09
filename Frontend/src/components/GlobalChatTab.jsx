@@ -17,6 +17,7 @@ import { PreferencesContext } from '../context/PreferencesContext';
 import { useToast } from '../context/ToastContext';
 import MermaidDiagram from './MermaidDiagram';
 import ChatImage from './ChatImage';
+import CodeBlock from './CodeBlock';
 
 class ChatErrorBoundary extends Component {
   constructor(props) {
@@ -84,6 +85,7 @@ const tutorMarkdownComponents = {
   blockquote: ({ node, ...props }) => (
     <blockquote className="border-l-2 border-indigo-500 pl-3 py-1.5 my-2.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-r-lg text-xs italic text-slate-600 dark:text-zinc-400" {...props} />
   ),
+  pre: ({ children }) => <>{children}</>,
   code: ({ node, inline, className, children, ...props }) => {
     const match = /language-(\w+)/.exec(className || '');
     if (!inline && match && match[1] === 'mermaid') {
@@ -96,10 +98,12 @@ const tutorMarkdownComponents = {
         </code>
       );
     }
+    const lang = match ? match[1] : 'text';
     return (
-      <pre className="p-3 rounded-xl bg-slate-900 text-slate-100 text-xs font-mono overflow-x-auto my-2.5 border border-slate-800 custom-scrollbar">
-        <code {...props}>{children}</code>
-      </pre>
+      <CodeBlock
+        code={String(children)}
+        language={lang}
+      />
     );
   },
   img: ({ node, ...props }) => (

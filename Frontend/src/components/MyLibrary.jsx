@@ -53,8 +53,8 @@ const MyLibrary = ({ onSelectFile }) => {
 
         <label className="cursor-pointer flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-none">
           {isUploading ? <Loader2 className="animate-spin" size={20}/> : <Plus size={20} />}
-          {isUploading ? "Processing AI..." : "Upload PDF / Image"}
-          <input type="file" className="hidden" onChange={handleUpload} accept=".pdf,image/*" disabled={isUploading}/>
+          {isUploading ? "Processing AI..." : "Upload Document / Image"}
+          <input type="file" className="hidden" onChange={handleUpload} accept=".pdf,.docx,.doc,.txt,.md,image/*" disabled={isUploading}/>
         </label>
       </div>
 

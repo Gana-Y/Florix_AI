@@ -477,7 +477,7 @@ const StudyInput = ({ onStartStudy, onBack, isDarkMode, toggleTheme, activeSpace
       </div>
 
       {/* ── Action Grid ─────────────────────────────────────────────────────── */}
-      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,image/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm" />
+      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.docx,.doc,.txt,.md,image/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm" />
       <input type="file" ref={videoInputRef} className="hidden" onChange={handleVideoUpload} accept=".mp4,.mov,.avi,.mkv,.webm" />
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-8">
         {actionButtons.map((btn, i) => (

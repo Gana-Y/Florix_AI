@@ -16,14 +16,14 @@ const itemVariants = {
 
 const AdminPanel = () => {
   const { addToast } = useToast();
-  const { refreshUser } = useContext(AuthContext);
+  const { user: currentAuthUser, refreshUser } = useContext(AuthContext);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [feedbacks, setFeedbacks] = useState([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
-  const [activeView, setActiveView] = useState('payments'); // 'payments' | 'users' | 'feedback'
+  const [activeView, setActiveView] = useState('users'); // 'users' | 'payments' | 'feedback'
   const [selectedUserHash, setSelectedUserHash] = useState(null); // for displaying bcrypt password verification
   const [actioningId, setActioningId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -110,6 +110,59 @@ const AdminPanel = () => {
       addToast(err.response?.data?.detail || 'Action failed', 'error');
     } finally {
       setActioningId(null);
+    }
+  };
+
+  const handleDeleteUser = async (userId, userName, userEmail) => {
+    if (userId === currentAuthUser?.id) {
+      addToast('Cannot delete your own active administrator account.', 'error');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to permanently delete user "${userName}" (${userEmail})?\nAll their study sessions, quizzes, chats, and records will be purged.`)) return;
+    try {
+      await api.delete(`/admin/users/${userId}`);
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      addToast(`User ${userEmail} deleted successfully.`, 'success');
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to delete user', 'error');
+    }
+  };
+
+  const handleUpdateUserPlan = async (userId, userEmail, newPlan) => {
+    try {
+      await api.patch(`/admin/users/${userId}/plan`, { plan: newPlan, days: 30 });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, plan: newPlan } : u));
+      addToast(`Updated ${userEmail} plan to ${newPlan.toUpperCase()}`, 'success');
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to update user plan', 'error');
+    }
+  };
+
+  const handleToggleAdminRole = async (userId, userEmail, currentIsAdmin) => {
+    if (userId === currentAuthUser?.id && currentIsAdmin) {
+      addToast('Cannot revoke your own administrator privileges.', 'error');
+      return;
+    }
+    const nextState = !currentIsAdmin;
+    const actionText = nextState ? 'grant Administrator rights to' : 'revoke Administrator rights from';
+    if (!window.confirm(`Are you sure you want to ${actionText} ${userEmail}?`)) return;
+    try {
+      await api.patch(`/admin/users/${userId}/role`, { is_admin: nextState });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_admin: nextState } : u));
+      addToast(`Admin status ${nextState ? 'granted to' : 'revoked from'} ${userEmail}`, 'success');
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Failed to toggle admin status', 'error');
+    }
+  };
+
+  const handleCleanupTestAccounts = async () => {
+    if (!window.confirm("Are you sure you want to purge all automated test and auditor accounts?\nThis will permanently clean fake accounts while keeping legitimate users.")) return;
+    try {
+      const res = await api.post('/admin/users/cleanup-test-accounts');
+      addToast(res.data?.message || 'Purged test accounts', 'success');
+      await fetchUsers();
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Cleanup failed', 'error');
     }
   };
 
@@ -463,6 +516,23 @@ const AdminPanel = () => {
               Registered Accounts
             </h3>
 
+            {/* Database Environment Banner & Cleanup Action */}
+            <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span>
+                  <strong>Workspace Database:</strong> Local SQLite (<code>Backend/florix.db</code>) &bull; {users.length} registered accounts
+                </span>
+              </div>
+              <button
+                onClick={handleCleanupTestAccounts}
+                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 text-xs shrink-0 cursor-pointer"
+                title="Purge all automated test and auditor accounts"
+              >
+                <Trash2 size={13} /> Clean Up Test Accounts
+              </button>
+            </div>
+
             {/* 🔍 Search Bar */}
             <div className="relative mb-5">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
@@ -524,6 +594,11 @@ const AdminPanel = () => {
                             }`}>
                               {u.plan}
                             </span>
+                            {u.is_admin && (
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 border bg-purple-100 dark:bg-purple-500/10 border-purple-300/30 text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                                <Shield size={10} /> Admin
+                              </span>
+                            )}
                           </div>
 
                           {/* Country and Signup details */}
@@ -565,6 +640,51 @@ const AdminPanel = () => {
                             ) : (
                               <p className="text-slate-400 dark:text-zinc-500 italic mt-0.5">Quick setup onboarding not completed yet.</p>
                             )}
+                          </div>
+                        </div>
+
+                        {/* Right: Management Actions (Change Plan, Admin Toggle, Delete) */}
+                        <div className="flex flex-wrap md:flex-col items-start md:items-end gap-2.5 shrink-0 w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-zinc-800">
+                          {/* Plan Dropdown */}
+                          <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 shadow-sm">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500">Plan:</span>
+                            <select
+                              value={u.plan || 'free'}
+                              onChange={(e) => handleUpdateUserPlan(u.id, u.email, e.target.value)}
+                              className="bg-transparent text-xs font-black text-slate-800 dark:text-white outline-none cursor-pointer capitalize"
+                            >
+                              <option value="free" className="text-slate-800 bg-white dark:bg-zinc-900 dark:text-white">Free</option>
+                              <option value="pro" className="text-indigo-600 bg-white dark:bg-zinc-900 dark:text-indigo-400">Pro</option>
+                              <option value="premium" className="text-amber-600 bg-white dark:bg-zinc-900 dark:text-amber-400">Premium</option>
+                            </select>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {/* Admin Role Toggle */}
+                            <button
+                              onClick={() => handleToggleAdminRole(u.id, u.email, u.is_admin)}
+                              disabled={u.id === currentAuthUser?.id}
+                              className={`text-xs px-3 py-1.5 rounded-xl font-bold border transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                u.is_admin
+                                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20'
+                                  : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-purple-400'
+                              }`}
+                              title={u.id === currentAuthUser?.id ? "Cannot change your own role" : (u.is_admin ? "Click to revoke administrator role" : "Click to grant administrator role")}
+                            >
+                              <Shield size={12} />
+                              {u.is_admin ? 'Admin' : 'Make Admin'}
+                            </button>
+
+                            {/* Delete User Button */}
+                            <button
+                              onClick={() => handleDeleteUser(u.id, u.name, u.email)}
+                              disabled={u.id === currentAuthUser?.id}
+                              className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all flex items-center gap-1 text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={u.id === currentAuthUser?.id ? "Cannot delete your own administrator account" : "Delete user and all associated study data"}
+                            >
+                              <Trash2 size={13} />
+                              <span>Delete</span>
+                            </button>
                           </div>
                         </div>
                       </motion.div>

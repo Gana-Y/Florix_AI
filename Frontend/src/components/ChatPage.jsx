@@ -14,6 +14,7 @@ import { preprocessLatex } from '../utils/latexHelper';
 import { extractBestTranscript, combineSpokenWithBase, configureSpeechRecognition, AUDIO_CAPTURE_CONSTRAINTS } from '../utils/speechCorrection';
 import { PreferencesContext } from '../context/PreferencesContext';
 import { useToast } from '../context/ToastContext';
+import CodeBlock from './CodeBlock';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const formatDateGroup = (isoString) => {
@@ -75,15 +76,27 @@ const ChatMessageBubble = React.memo(({ msg }) => {
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
             components={{
+              pre({ children }) {
+                return <>{children}</>;
+              },
               code({ node, inline, className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
                 if (!inline && match && match[1] === 'mermaid') {
                   return <MermaidDiagram code={String(children).replace(/\n$/, '')} />;
                 }
+                if (inline) {
+                  return (
+                    <code className="px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-mono border border-indigo-200/50 dark:border-indigo-800/50" {...props}>
+                      {children}
+                    </code>
+                  );
+                }
+                const lang = match ? match[1] : 'text';
                 return (
-                  <code className={className} {...props}>
-                    {children}
-                  </code>
+                  <CodeBlock
+                    code={String(children)}
+                    language={lang}
+                  />
                 );
               },
               img({ node, ...props }) {

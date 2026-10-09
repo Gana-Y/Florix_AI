@@ -12,7 +12,13 @@ import os
 # Canonical path ensures database resolves correctly regardless of current working directory
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DB_PATH = os.path.join(_BASE_DIR, "florix.db").replace("\\", "/")
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{_DB_PATH}"
+_raw_db_url = os.getenv("DATABASE_URL")
+if _raw_db_url and _raw_db_url.startswith("sqlite:///") and ("./florix.db" in _raw_db_url or _raw_db_url.endswith("/florix.db") or _raw_db_url == "sqlite:///florix.db"):
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{_DB_PATH}"
+elif _raw_db_url:
+    SQLALCHEMY_DATABASE_URL = _raw_db_url
+else:
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{_DB_PATH}"
 
 # ⚙️ ENGINE SETUP
 # connect_args={"check_same_thread": False} is needed for SQLite in FastAPI
@@ -64,6 +70,7 @@ class User(Base):
     exam_attempts = relationship("ExamAttempt", back_populates="user", cascade="all, delete-orphan")
     mistakes = relationship("MistakeRecord", back_populates="user", cascade="all, delete-orphan")
     viva_sessions = relationship("VivaSession", back_populates="user", cascade="all, delete-orphan")
+    payment_submissions = relationship("PaymentSubmission", back_populates="user", cascade="all, delete-orphan")
 
 class StudySession(Base):
     __tablename__ = "study_sessions"
@@ -220,7 +227,7 @@ class PaymentSubmission(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    user = relationship("User")
+    user = relationship("User", back_populates="payment_submissions")
 
 class FlashcardProgress(Base):
     """Tracks SM-2 spaced repetition state per flashcard per user."""

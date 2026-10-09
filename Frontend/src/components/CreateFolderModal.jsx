@@ -12,7 +12,8 @@ import {
   FOLDER_COLORS,
   getFolderColorConfig,
   renderFolderIcon,
-  getSmartFolderThemeForTitle
+  getSmartFolderThemeForTitle,
+  EMOJI_TO_VECTOR_MAP
 } from '../utils/folderIcons';
 
 const QUICK_SUGGESTIONS = [
@@ -132,11 +133,13 @@ export default function CreateFolderModal({
     setUserModifiedIcon(true);
   };
 
-  // When user types custom emoji
+  // When user types custom emoji or icon symbol
   const handleCustomEmojiChange = (emojiVal) => {
     setCustomEmojiInput(emojiVal);
-    if (emojiVal.trim()) {
-      setSelectedIcon(emojiVal.trim());
+    const trimmed = (emojiVal || '').trim();
+    if (trimmed) {
+      const vectorMapped = EMOJI_TO_VECTOR_MAP[trimmed] || trimmed;
+      setSelectedIcon(vectorMapped);
       setUserModifiedIcon(true);
     }
   };

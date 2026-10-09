@@ -13,6 +13,7 @@ import {
   requestNotificationPermission,
   showBrowserNotification
 } from '../utils/browserNotifications';
+import CelestialBellToggle from './CelestialBellToggle';
 
 export default function NotificationCenter({ onOpenSession, currentSessionId = null }) {
   const { addToast } = useToast();
@@ -440,28 +441,16 @@ export default function NotificationCenter({ onOpenSession, currentSessionId = n
 
   return (
     <div className="relative inline-block z-50" ref={containerRef}>
-      {/* Bell Trigger Button */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.94 }}
+      {/* ── Cinematic Celestial Animated Bell Trigger ── */}
+      <CelestialBellToggle
+        isOpen={isOpen}
         onClick={() => {
           setIsOpen(!isOpen);
           if (!isOpen) fetchNotifications();
         }}
-        className="relative w-10 h-10 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md text-slate-600 dark:text-zinc-300 shadow-md border border-slate-200/50 dark:border-zinc-800/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center shrink-0 cursor-pointer"
-        aria-label="Revision Reminders & Notifications"
-        title="Revision Reminders & Notifications"
-      >
-        <Bell size={17} className={counts.due > 0 ? 'text-indigo-600 dark:text-indigo-400 animate-pulse' : ''} />
-        {counts.due > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[10px] font-extrabold text-white shadow-sm ring-2 ring-white dark:ring-zinc-900">
-            {counts.due > 9 ? '9+' : counts.due}
-          </span>
-        )}
-        {counts.due === 0 && counts.unread > 0 && (
-          <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-indigo-500 ring-2 ring-white dark:ring-zinc-900" />
-        )}
-      </motion.button>
+        counts={counts}
+        size="md"
+      />
 
       {/* Main Notification Dropdown Popover */}
       <AnimatePresence>

@@ -5,7 +5,7 @@ import {
   MessageSquare, X, UserCircle, Bookmark, TrendingUp, CreditCard, Shield, Activity,
   Pin, Trash2, Edit3, Flame, Folder, FolderPlus, Tag, Check, MoreVertical,
   MessageSquarePlus, ArrowUpDown, CornerDownRight, Plus, Zap, Crown, Award, LogOut,
-  CalendarCheck, Mic
+  CalendarCheck, Mic, FileText, Globe, Video, Headphones, FileCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
@@ -13,6 +13,26 @@ import { useToast } from '../context/ToastContext';
 import CreateFolderModal from './CreateFolderModal';
 import ProfileModal from './ProfileModal';
 import { renderFolderIcon, getFolderColorConfig } from '../utils/folderIcons';
+
+const renderMaterialFileIcon = (filename = '') => {
+  const lower = (filename || '').toLowerCase();
+  if (lower.endsWith('.pdf')) {
+    return <FileText size={11} className="text-rose-500 shrink-0" />;
+  }
+  if (lower.includes('youtube') || lower.endsWith('.mp4') || lower.endsWith('.mkv')) {
+    return <Video size={11} className="text-amber-500 shrink-0" />;
+  }
+  if (lower.includes('wikipedia') || lower.startsWith('http://') || lower.startsWith('https://')) {
+    return <Globe size={11} className="text-sky-500 shrink-0" />;
+  }
+  if (lower.endsWith('.py') || lower.endsWith('.js') || lower.endsWith('.ts') || lower.endsWith('.java') || lower.endsWith('.cpp')) {
+    return <FileCode size={11} className="text-indigo-500 shrink-0" />;
+  }
+  if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.m4a')) {
+    return <Headphones size={11} className="text-purple-500 shrink-0" />;
+  }
+  return <FileText size={11} className="text-indigo-500 shrink-0" />;
+};
 
 const PLAN_COLORS = {
   free:    'bg-slate-200 dark:bg-zinc-700 text-slate-500 dark:text-zinc-400',
@@ -626,14 +646,18 @@ const Sidebar = ({
                             >
                               <ChevronRight size={11} className={`transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                             </button>
-                            {/* Custom Colored Glowing Icon Badge */}
+                            {/* Production-Grade Vector Badge */}
                             <div
-                              className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${colorCfg.badge || 'bg-indigo-500 text-white'}`}
-                              style={colorCfg.customBadgeStyle || {}}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-all duration-200 border ${
+                                isSelected
+                                  ? `${colorCfg.bg} ${colorCfg.border} ${colorCfg.text} shadow-sm shadow-indigo-500/20`
+                                  : 'bg-slate-100/90 dark:bg-zinc-800/80 border-slate-200/70 dark:border-zinc-700/60 text-slate-600 dark:text-zinc-300 group-hover:border-indigo-500/40 group-hover:text-indigo-500'
+                              }`}
+                              style={colorCfg.customStyle || {}}
                             >
-                              {renderFolderIcon(sp.icon, { size: 12 })}
+                              {renderFolderIcon(sp.icon, { size: 13, isOpen: isExpanded })}
                             </div>
-                            <span className="text-xs truncate">{sp.name}</span>
+                            <span className="text-xs truncate font-medium">{sp.name}</span>
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
@@ -688,7 +712,7 @@ const Sidebar = ({
                                 title={sess.filename}
                               >
                                 <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                                  <BookOpen size={10} className="text-indigo-500 shrink-0" />
+                                  {renderMaterialFileIcon(sess.filename)}
                                   <span className="truncate">{sess.filename}</span>
                                 </div>
                               </div>

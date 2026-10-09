@@ -3577,6 +3577,27 @@ def delete_feedback(
 # PROJECTS / FOLDERS (Claude & ChatGPT Style Organization)
 # =============================================================================
 
+def normalize_vector_icon(raw_icon: str) -> str:
+    """Normalize any system emoji or legacy icon to crisp vector component names."""
+    if not raw_icon:
+        return "Folder"
+    EMOJI_TO_VECTOR = {
+        "📚": "BookOpen", "📖": "BookOpen", "📕": "BookOpen", "📗": "BookOpen", "📘": "BookOpen",
+        "🌐": "Globe", "🌍": "Globe", "🌎": "Globe", "🌏": "Globe",
+        "▶️": "Play", "▶": "Play",
+        "🎬": "Video", "🎥": "Video", "📹": "Video",
+        "📁": "Folder", "📂": "FolderOpen", "🗂️": "Folder", "🗂": "Folder",
+        "🖼️": "Image", "🖼": "Image",
+        "🎙️": "Mic", "🎙": "Mic", "🎧": "Headphones",
+        "📝": "FileText", "📄": "FileText", "📑": "FileText",
+        "💻": "Terminal", "🖥️": "Terminal",
+        "🔬": "Microscope", "🧠": "Brain", "⚡": "Zap", "🎯": "Target",
+        "💡": "Lightbulb", "🎓": "GraduationCap", "🔥": "Flame", "🚀": "Rocket",
+        "⚖️": "Scale", "⚖": "Scale", "🎨": "Palette", "🧪": "FlaskConical",
+        "📊": "BarChart3", "📈": "TrendingUp", "🩺": "Stethoscope", "🏛️": "Landmark", "🏛": "Landmark",
+    }
+    return EMOJI_TO_VECTOR.get(raw_icon, raw_icon)
+
 @app.get("/projects", tags=["Projects"])
 def get_user_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """List all projects/spaces for current user with subchats, documents, and counts."""
@@ -3601,7 +3622,7 @@ def get_user_projects(db: Session = Depends(get_db), current_user: User = Depend
             "id": p.id,
             "name": p.name,
             "color": p.color,
-            "icon": p.icon or "📁",
+            "icon": normalize_vector_icon(p.icon),
             "is_pinned": p.is_pinned,
             "description": p.description,
             "session_count": session_count,
@@ -3679,7 +3700,7 @@ def get_project_details(
         "id": p.id,
         "name": p.name,
         "color": p.color,
-        "icon": p.icon or "📁",
+        "icon": normalize_vector_icon(p.icon),
         "is_pinned": p.is_pinned,
         "description": p.description,
         "session_count": len(sessions),
@@ -3898,15 +3919,15 @@ def ensure_session_space(db: Session, user_id: int, project_id: Optional[int], t
             return existing_space.id
 
     icon_map = {
-        "pdf": "📚",
-        "video": "🎬",
-        "audio": "🎙️",
-        "youtube": "▶️",
-        "web": "🌐",
-        "text": "📝",
-        "image": "🖼️"
+        "pdf": "BookOpen",
+        "video": "Video",
+        "audio": "Mic",
+        "youtube": "Play",
+        "web": "Globe",
+        "text": "FileText",
+        "image": "Image"
     }
-    space_icon = icon_map.get(source_type.lower(), "📁")
+    space_icon = icon_map.get(source_type.lower(), "Folder")
 
     # Clean display title to form a concise, beautiful Space name
     clean_title = re.sub(r'^(Video:\s*|Audio:\s*|YouTube:\s*)', '', title, flags=re.IGNORECASE).strip()

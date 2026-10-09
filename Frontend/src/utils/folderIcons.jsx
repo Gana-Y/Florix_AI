@@ -4,7 +4,8 @@ import {
   FlaskConical, Microscope, Calculator, Stethoscope, Scale, Palette, Globe,
   Landmark, Music, Compass, Code, Terminal, Database, Cpu, Binary,
   Layers, GitBranch, Archive, Shield, Boxes, Wrench, FileText,
-  Sparkles, Flame, Rocket, Target, Zap, Trophy, Lightbulb, Bookmark, Briefcase
+  Sparkles, Flame, Rocket, Target, Zap, Trophy, Lightbulb, Bookmark, Briefcase,
+  Video, Play, Headphones, Mic, Image, Dna, BarChart3, TrendingUp, FileCode
 } from 'lucide-react';
 
 export const FOLDER_ICON_MAP = {
@@ -12,7 +13,8 @@ export const FOLDER_ICON_MAP = {
   FlaskConical, Microscope, Calculator, Stethoscope, Scale, Palette, Globe,
   Landmark, Music, Compass, Code, Terminal, Database, Cpu, Binary,
   Layers, GitBranch, Archive, Shield, Boxes, Wrench, FileText,
-  Sparkles, Flame, Rocket, Target, Zap, Trophy, Lightbulb, Bookmark, Briefcase
+  Sparkles, Flame, Rocket, Target, Zap, Trophy, Lightbulb, Bookmark, Briefcase,
+  Video, Play, Headphones, Mic, Image, Dna, BarChart3, TrendingUp, FileCode
 };
 
 export const ICON_CATEGORIES = [
@@ -22,7 +24,16 @@ export const ICON_CATEGORIES = [
     icons: [
       'GraduationCap', 'BookOpen', 'Brain', 'Atom', 'FlaskConical',
       'Microscope', 'Calculator', 'Stethoscope', 'Scale', 'Palette',
-      'Globe', 'Landmark', 'Music', 'Compass'
+      'Globe', 'Landmark', 'Music', 'Compass', 'Dna'
+    ]
+  },
+  {
+    id: 'media',
+    label: 'Documents & Media',
+    icons: [
+      'Folder', 'FolderOpen', 'FolderPlus', 'FileText', 'BookOpen',
+      'Globe', 'Play', 'Video', 'Headphones', 'Mic',
+      'Image', 'Archive', 'Sparkles'
     ]
   },
   {
@@ -30,24 +41,16 @@ export const ICON_CATEGORIES = [
     label: 'Tech & Code',
     icons: [
       'Code', 'Terminal', 'Database', 'Cpu', 'Binary',
-      'Layers', 'GitBranch', 'Shield', 'Boxes', 'Wrench'
+      'Layers', 'GitBranch', 'Shield', 'Boxes', 'Wrench',
+      'FileCode'
     ]
   },
   {
     id: 'productivity',
     label: 'Productivity & Goals',
     icons: [
-      'Folder', 'FolderPlus', 'FileText', 'Sparkles', 'Flame',
-      'Rocket', 'Target', 'Zap', 'Trophy', 'Lightbulb',
-      'Bookmark', 'Briefcase', 'Archive'
-    ]
-  },
-  {
-    id: 'emojis',
-    label: 'Popular Emojis',
-    icons: [
-      '📁', '📚', '💻', '🔬', '🧠', '⚡', '🎯', '📝', '💡', '🎓',
-      '🔥', '🚀', '⚖️', '🎨', '🧪', '📊', '🩺', '🏛️', '🧬', '📈'
+      'Target', 'Zap', 'Trophy', 'Lightbulb', 'Bookmark',
+      'Briefcase', 'Flame', 'Rocket', 'BarChart3', 'TrendingUp'
     ]
   }
 ];
@@ -198,17 +201,114 @@ export const getFolderColorConfig = (colorKeyOrHex) => {
   return FOLDER_COLORS[0];
 };
 
-export const renderFolderIcon = (iconKey, { size = 16, className = '', style = {} } = {}) => {
+// Comprehensive normalization mapping: maps any system emoji to crisp vector Lucide components
+export const EMOJI_TO_VECTOR_MAP = {
+  // Folders & Systems
+  '📁': 'Folder',
+  '📂': 'FolderOpen',
+  '🗂️': 'Folder',
+  '🗂': 'Folder',
+  '📦': 'Boxes',
+  // Documents & Academics
+  '📚': 'BookOpen',
+  '📖': 'BookOpen',
+  '📕': 'BookOpen',
+  '📗': 'BookOpen',
+  '📘': 'BookOpen',
+  '📙': 'BookOpen',
+  '📝': 'FileText',
+  '📄': 'FileText',
+  '📃': 'FileText',
+  '📑': 'FileText',
+  '🎓': 'GraduationCap',
+  '🏛️': 'Landmark',
+  '🏛': 'Landmark',
+  // Web & Geography
+  '🌐': 'Globe',
+  '🌍': 'Globe',
+  '🌎': 'Globe',
+  '🌏': 'Globe',
+  '🗺️': 'Compass',
+  '🗺': 'Compass',
+  // Media & Video / Audio
+  '▶️': 'Play',
+  '▶': 'Play',
+  '🎬': 'Video',
+  '🎥': 'Video',
+  '📹': 'Video',
+  '🎙️': 'Mic',
+  '🎙': 'Mic',
+  '🎧': 'Headphones',
+  '🎵': 'Music',
+  '🎶': 'Music',
+  // Images
+  '🖼️': 'Image',
+  '🖼': 'Image',
+  '📷': 'Image',
+  '📸': 'Image',
+  // Tech & Science
+  '💻': 'Terminal',
+  '🖥️': 'Terminal',
+  '🖥': 'Terminal',
+  '🔬': 'Microscope',
+  '🧠': 'Brain',
+  '⚡': 'Zap',
+  '🎯': 'Target',
+  '💡': 'Lightbulb',
+  '🔥': 'Flame',
+  '🚀': 'Rocket',
+  '⚖️': 'Scale',
+  '⚖': 'Scale',
+  '🎨': 'Palette',
+  '🧪': 'FlaskConical',
+  '📊': 'BarChart3',
+  '📈': 'TrendingUp',
+  '🩺': 'Stethoscope',
+  '🧬': 'Dna',
+  '🏆': 'Trophy',
+  '✨': 'Sparkles',
+  '🔧': 'Wrench',
+  '🛡️': 'Shield',
+  '🛡': 'Shield',
+};
+
+export const renderFolderIcon = (
+  iconKey,
+  { size = 16, className = '', style = {}, isOpen = false } = {}
+) => {
   if (!iconKey) {
-    return <Folder size={size} className={className} style={style} />;
+    return (
+      <Folder
+        size={size}
+        className={className}
+        style={style}
+        strokeWidth={1.8}
+      />
+    );
   }
 
-  const LucideComponent = FOLDER_ICON_MAP[iconKey];
+  // 1. Check if it's an emoji that should be normalized to vector
+  let resolvedKey = EMOJI_TO_VECTOR_MAP[iconKey] || iconKey;
+
+  // 2. Dynamic open folder state
+  if (isOpen && (resolvedKey === 'Folder' || resolvedKey === '📁')) {
+    resolvedKey = 'FolderOpen';
+  }
+
+  // 3. Render Lucide component
+  const LucideComponent = FOLDER_ICON_MAP[resolvedKey];
   if (LucideComponent) {
-    return <LucideComponent size={size} className={className} style={style} />;
+    return (
+      <LucideComponent
+        size={size}
+        className={className}
+        style={style}
+        strokeWidth={1.8}
+      />
+    );
   }
 
-  // Otherwise render as emoji or text
+  // 4. Otherwise fallback to text/custom string
   return (
     <span
       className={`inline-flex items-center justify-center select-none ${className}`}

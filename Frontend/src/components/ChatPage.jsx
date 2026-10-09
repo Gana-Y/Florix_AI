@@ -48,6 +48,7 @@ const SUGGESTED_PROMPTS = [
 
 import MermaidDiagram from './MermaidDiagram';
 import ChatImage from './ChatImage';
+import InteractiveBotAvatar from './InteractiveBotAvatar';
 
 // ── Memoized Message Bubble (Eliminates Markdown AST Re-parsing Jank) ───────────
 const ChatMessageBubble = React.memo(({ msg }) => {
@@ -59,9 +60,7 @@ const ChatMessageBubble = React.memo(({ msg }) => {
       className={`flex items-end gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
     >
       {msg.role === 'assistant' && (
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0 shadow-md">
-          <Bot size={15} className="text-white" />
-        </div>
+        <InteractiveBotAvatar size={32} />
       )}
 
       <div className={`max-w-[85%] md:max-w-[78%] rounded-3xl shadow-sm px-5 py-4 ${
@@ -717,9 +716,12 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
           </button>
 
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-md">
-              <Bot size={16} className="text-white" />
-            </div>
+            <InteractiveBotAvatar
+              size={34}
+              isTyping={Boolean(input?.trim())}
+              isLoading={isLoading}
+              className="rounded-xl"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <p className="text-sm font-bold text-slate-800 dark:text-white leading-none">
@@ -773,8 +775,12 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
               className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto"
             >
-              <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mb-5 shadow-xl shadow-indigo-500/30">
-                <Bot size={32} className="text-white" />
+              <div className="mb-5 shadow-xl shadow-indigo-500/30 rounded-2xl overflow-hidden">
+                <InteractiveBotAvatar
+                  size={64}
+                  isTyping={Boolean(input?.trim())}
+                  isLoading={isLoading}
+                />
               </div>
               <h2 className="text-2xl font-extrabold text-slate-800 dark:text-white mb-2">
                 How can I help you?
@@ -810,9 +816,7 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
           {/* Typing indicator */}
           {isLoading && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-end gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0 shadow-md">
-                <Bot size={15} className="text-white" />
-              </div>
+              <InteractiveBotAvatar size={32} isLoading={true} />
               <div className="bg-white dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded-3xl rounded-bl-md px-5 py-4 flex gap-1.5 items-center shadow-sm">
                 {[0, 0.2, 0.4].map((d, i) => (
                   <motion.div key={i} animate={{ scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1, delay: d }} className="w-2 h-2 bg-indigo-500 rounded-full" />
@@ -826,6 +830,23 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
         {/* Input Area */}
         <div className="shrink-0 p-4 md:p-5 border-t border-slate-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-xl">
           <div className="max-w-4xl mx-auto">
+            {/* Live Interactive Typing Companion Pill */}
+            <AnimatePresence>
+              {Boolean(input?.trim()) && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex items-center gap-2 mb-2 px-3 py-1 w-fit rounded-full bg-indigo-50/90 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/60 shadow-sm"
+                >
+                  <InteractiveBotAvatar size={18} isTyping={true} />
+                  <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                    Florix is watching & ready to assist...
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <form
               onSubmit={(e) => { e.preventDefault(); handleSend(); }}
               className="relative flex items-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-lg focus-within:ring-4 focus-within:ring-indigo-500/15 focus-within:border-indigo-500 transition-all"

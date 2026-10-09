@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /**
@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
  * Features:
  * - Orbital sunrise: Dawn flare, golden solar core, rotating radiating beams, and warm corona glow.
  * - Luminous moon: Silver-crescent ascent, crater accents, night aura, and twinkling stars.
+ * - Celestial Frost Globe (Option A): Drifting micro-snow crystals with hover flurry physics.
  * - Smooth physical spring transitions, hover scaling, and atmospheric glassmorphism.
  */
 export default function CelestialThemeToggle({
@@ -16,6 +17,8 @@ export default function CelestialThemeToggle({
   className = '',
   size = 'md',
 }) {
+  const [isHovered, setIsHovered] = useState(false);
+
   const sizeClasses = {
     sm: 'w-8 h-8',
     md: 'w-10 h-10',
@@ -32,6 +35,8 @@ export default function CelestialThemeToggle({
     <motion.button
       type="button"
       onClick={toggleTheme}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       whileHover={{ scale: 1.08 }}
       whileTap={{ scale: 0.92 }}
       transition={{ type: 'spring', damping: 15, stiffness: 350 }}
@@ -48,10 +53,14 @@ export default function CelestialThemeToggle({
         className="absolute inset-0 pointer-events-none rounded-full"
         animate={{
           background: isDarkMode
-            ? 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.25) 0%, rgba(15, 23, 42, 0) 70%)'
+            ? isHovered
+              ? 'radial-gradient(circle at 50% 50%, rgba(165, 180, 252, 0.35) 0%, rgba(99, 102, 241, 0.15) 50%, rgba(15, 23, 42, 0) 75%)'
+              : 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.25) 0%, rgba(15, 23, 42, 0) 70%)'
+            : isHovered
+            ? 'radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.45) 0%, rgba(254, 243, 199, 0) 70%)'
             : 'radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.35) 0%, rgba(254, 243, 199, 0) 70%)',
         }}
-        transition={{ duration: 0.6 }}
+        transition={{ duration: 0.5 }}
       />
 
       {/* ── Celestial Bodies Animation Container ───────────────────────────────── */}
@@ -111,6 +120,165 @@ export default function CelestialThemeToggle({
                 repeat: Infinity,
                 delay: 1.1,
                 ease: 'easeInOut',
+              }}
+            />
+
+            {/* ── ❄️ Celestial Frost & Micro Snow Crystals (Option A) ───────────── */}
+            {/* Snow Crystal 1: Dendritic 6-Point Snowflake (Upper Left) */}
+            <motion.div
+              className="absolute pointer-events-none"
+              style={{ top: '16%', left: '18%' }}
+              animate={
+                isHovered
+                  ? {
+                      y: [-12, 16],
+                      x: [-2, 3, -1],
+                      rotate: [0, 180, 360],
+                      opacity: [0, 0.95, 0.95, 0.4, 0],
+                      scale: [0.8, 1.15, 0.8],
+                    }
+                  : {
+                      y: [-8, 12],
+                      x: [-1.5, 2, -1],
+                      rotate: [0, 120, 240, 360],
+                      opacity: [0, 0.85, 0.9, 0.3, 0],
+                      scale: [0.85, 1.05, 0.85],
+                    }
+              }
+              transition={{
+                duration: isHovered ? 2.2 : 4.4,
+                repeat: Infinity,
+                ease: 'linear',
+              }}
+            >
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 14 14"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="drop-shadow-[0_0_3px_rgba(255,255,255,0.9)]"
+              >
+                <line x1="7" y1="1" x2="7" y2="13" stroke="#FFFFFF" strokeWidth="0.9" strokeLinecap="round" />
+                <line x1="1.8" y1="4" x2="12.2" y2="10" stroke="#FFFFFF" strokeWidth="0.9" strokeLinecap="round" />
+                <line x1="1.8" y1="10" x2="12.2" y2="4" stroke="#FFFFFF" strokeWidth="0.9" strokeLinecap="round" />
+                <path d="M5.5 2.5L7 4L8.5 2.5" stroke="#E0F2FE" strokeWidth="0.75" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5.5 11.5L7 10L8.5 11.5" stroke="#E0F2FE" strokeWidth="0.75" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="7" cy="7" r="1.1" fill="#FFFFFF" />
+              </svg>
+            </motion.div>
+
+            {/* Snow Crystal 2: 4-Point Stella Diamond Frost (Upper Right) */}
+            <motion.div
+              className="absolute pointer-events-none"
+              style={{ top: '22%', right: '16%' }}
+              animate={
+                isHovered
+                  ? {
+                      y: [-10, 16],
+                      x: [2, -2.5, 1],
+                      rotate: [0, -180, -360],
+                      opacity: [0, 0.95, 1, 0.35, 0],
+                      scale: [0.8, 1.25, 0.8],
+                    }
+                  : {
+                      y: [-7, 11],
+                      x: [1.5, -1.5, 1],
+                      rotate: [0, -90, -180, -270, -360],
+                      opacity: [0, 0.8, 0.9, 0.25, 0],
+                      scale: [0.85, 1.1, 0.85],
+                    }
+              }
+              transition={{
+                duration: isHovered ? 2.6 : 5.0,
+                repeat: Infinity,
+                delay: 1.1,
+                ease: 'linear',
+              }}
+            >
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 12 12"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="drop-shadow-[0_0_4px_rgba(224,242,254,0.95)]"
+              >
+                <path
+                  d="M6 0L7.4 4.6L12 6L7.4 7.4L6 12L4.6 7.4L0 6L4.6 4.6Z"
+                  fill="#FFFFFF"
+                />
+                <circle cx="6" cy="6" r="1.2" fill="#BAE6FD" />
+              </svg>
+            </motion.div>
+
+            {/* Snow Crystal 3: Hexagonal Prism Micro-Ice Flake (Lower Left) */}
+            <motion.div
+              className="absolute pointer-events-none"
+              style={{ bottom: '18%', left: '26%' }}
+              animate={
+                isHovered
+                  ? {
+                      y: [-8, 14],
+                      x: [1, -2, 2],
+                      rotate: [0, 180, 360],
+                      opacity: [0, 0.85, 0.95, 0.2, 0],
+                      scale: [0.75, 1.2, 0.75],
+                    }
+                  : {
+                      y: [-5, 10],
+                      x: [0.8, -1.5, 1.2],
+                      rotate: [0, 120, 240, 360],
+                      opacity: [0, 0.7, 0.85, 0.15, 0],
+                      scale: [0.8, 1.05, 0.8],
+                    }
+              }
+              transition={{
+                duration: isHovered ? 2.1 : 4.1,
+                repeat: Infinity,
+                delay: 2.2,
+                ease: 'linear',
+              }}
+            >
+              <svg
+                width="7"
+                height="7"
+                viewBox="0 0 10 10"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="drop-shadow-[0_0_3px_rgba(255,255,255,0.85)]"
+              >
+                <line x1="5" y1="1" x2="5" y2="9" stroke="#FFFFFF" strokeWidth="0.8" strokeLinecap="round" />
+                <line x1="1.5" y1="3" x2="8.5" y2="7" stroke="#FFFFFF" strokeWidth="0.8" strokeLinecap="round" />
+                <line x1="1.5" y1="7" x2="8.5" y2="3" stroke="#FFFFFF" strokeWidth="0.8" strokeLinecap="round" />
+                <circle cx="5" cy="5" r="0.8" fill="#E0F2FE" />
+              </svg>
+            </motion.div>
+
+            {/* Snow Crystal 4: Delicate Glacial Stardust Particle (Center Right) */}
+            <motion.span
+              className="absolute w-1 h-1 bg-white rounded-full shadow-[0_0_4px_#ffffff] pointer-events-none"
+              style={{ top: '48%', right: '22%' }}
+              animate={
+                isHovered
+                  ? {
+                      y: [-6, 12],
+                      x: [-1, 2, -1],
+                      opacity: [0, 0.9, 1, 0.2, 0],
+                      scale: [0.6, 1.3, 0.6],
+                    }
+                  : {
+                      y: [-4, 8],
+                      x: [-0.8, 1.5, -0.8],
+                      opacity: [0, 0.7, 0.85, 0.1, 0],
+                      scale: [0.7, 1.1, 0.7],
+                    }
+              }
+              transition={{
+                duration: isHovered ? 1.9 : 3.6,
+                repeat: Infinity,
+                delay: 0.5,
+                ease: 'linear',
               }}
             />
 

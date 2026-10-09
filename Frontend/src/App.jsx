@@ -10,6 +10,7 @@ import OnboardingFlow from './components/OnboardingFlow';
 import ForgotPasswordPage from './components/ForgotPasswordPage';
 import InteractiveBackground from './components/InteractiveBackground';
 import SharedStudySessionPage from './pages/SharedStudySessionPage';
+import GlobalTooltip from './components/GlobalTooltip';
 import { AuthContext } from './context/AuthContext';
 import { PreferencesProvider } from './context/PreferencesContext';
 import { useToast } from './context/ToastContext';
@@ -354,6 +355,9 @@ function AppInner() {
             </>
           )}
         </Routes>
+
+        {/* ── Enterprise Global Floating Tooltip Engine ── */}
+        <GlobalTooltip />
     </div>
   );
 }

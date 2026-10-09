@@ -41,7 +41,8 @@ export default function CelestialThemeToggle({
       whileTap={{ scale: 0.92 }}
       transition={{ type: 'spring', damping: 15, stiffness: 350 }}
       aria-label={isDarkMode ? 'Switch to Sunrise (Light Mode)' : 'Switch to Moonlight (Dark Mode)'}
-      title={isDarkMode ? 'Switch to Sunrise (Light Mode)' : 'Switch to Moonlight (Dark Mode)'}
+      data-tooltip={isDarkMode ? 'Switch to Sunrise (Light Mode)' : 'Switch to Moonlight (Dark Mode)'}
+      data-tooltip-pos="bottom"
       className={`relative ${sizeClasses} rounded-full overflow-hidden flex items-center justify-center cursor-pointer select-none border transition-colors duration-500 backdrop-blur-xl ${
         isDarkMode
           ? 'bg-gradient-to-br from-indigo-950/90 via-slate-900/90 to-zinc-950/90 border-indigo-500/30 text-indigo-200 shadow-md shadow-indigo-950/50 hover:border-indigo-400/50 hover:shadow-indigo-500/20'

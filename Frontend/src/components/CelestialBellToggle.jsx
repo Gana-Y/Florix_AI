@@ -79,7 +79,8 @@ export default function CelestialBellToggle({
       whileTap={{ scale: 0.92 }}
       transition={{ type: 'spring', damping: 15, stiffness: 350 }}
       aria-label="Revision Reminders & Notifications"
-      title={hasDueAlert ? `${counts.due} Revision Alerts Due!` : 'Revision Reminders & Notifications'}
+      data-tooltip={hasDueAlert ? `${counts.due} Revision Alerts Due!` : 'Revision Reminders & Notifications'}
+      data-tooltip-pos="bottom"
       className={`relative ${sizeClasses} rounded-full overflow-hidden flex items-center justify-center cursor-pointer select-none border transition-all duration-300 backdrop-blur-xl ${
         isDark
           ? isOpen

@@ -40,6 +40,16 @@ const VIVA_MODES = {
 
 const TEACHING_MODES = ['INTERMEDIATE', 'BEGINNER', 'ADVANCED', 'EXPERT'];
 
+// Safely parse ISO strings as UTC millisecond timestamps
+const parseUtcDate = (dateStr) => {
+  if (!dateStr) return null;
+  const normalized = (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(dateStr))
+    ? `${dateStr}Z`
+    : dateStr;
+  const time = new Date(normalized).getTime();
+  return Number.isNaN(time) ? null : time;
+};
+
 export default function VivaWorkspace({ user, onOpenSession, initialSessionId = null }) {
   const { addToast } = useToast();
 
@@ -71,6 +81,11 @@ export default function VivaWorkspace({ user, onOpenSession, initialSessionId = 
   const timerRef = useRef(null);
   const recognitionRef = useRef(null);
   const baseAnswerRef = useRef('');
+  const activeVivaRef = useRef(activeViva);
+
+  useEffect(() => {
+    activeVivaRef.current = activeViva;
+  }, [activeViva]);
 
   // Results State
   const [resultsData, setResultsData] = useState(null);
@@ -201,6 +216,27 @@ export default function VivaWorkspace({ user, onOpenSession, initialSessionId = 
     }
   };
 
+  const handleTimeExpired = useCallback(async () => {
+    addToast('Viva time limit expired! Evaluating completed turns...', 'warning');
+    const viva = activeVivaRef.current;
+    if (!viva) return;
+    try {
+      await api.post(`/viva/${viva.id}/end`);
+      const res = await api.get(`/viva/${viva.id}/results`);
+      setResultsData(res.data);
+      setView('results');
+    } catch (e) {
+      console.warn('Failed to load expired viva results:', e);
+      try {
+        const res = await api.get(`/viva/${viva.id}/results`);
+        setResultsData(res.data);
+        setView('results');
+      } catch (fallbackErr) {
+        console.warn('Fallback result load failed:', fallbackErr);
+      }
+    }
+  }, [addToast]);
+
   // Timer countdown management
   useEffect(() => {
     if (view !== 'exam_room' || !activeViva || activeViva.status !== 'IN_PROGRESS') {
@@ -208,37 +244,41 @@ export default function VivaWorkspace({ user, onOpenSession, initialSessionId = 
       return;
     }
 
-    if (activeViva.expires_at) {
-      const updateTimer = () => {
-        const expTime = new Date(activeViva.expires_at).getTime();
-        const now = Date.now();
-        const diff = Math.max(0, Math.floor((expTime - now) / 1000));
-        setRemainingSeconds(diff);
+    // Determine initial remaining seconds authority
+    let initialSecs = null;
+    if (activeViva.remaining_seconds != null) {
+      initialSecs = activeViva.remaining_seconds;
+    } else if (activeViva.expires_at) {
+      const expTime = parseUtcDate(activeViva.expires_at);
+      if (expTime) {
+        initialSecs = Math.max(0, Math.floor((expTime - Date.now()) / 1000));
+      }
+    }
 
-        if (diff <= 0) {
+    if (initialSecs !== null) {
+      setRemainingSeconds(initialSecs);
+      if (initialSecs <= 0) {
+        clearInterval(timerRef.current);
+        handleTimeExpired();
+        return;
+      }
+    }
+
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setRemainingSeconds((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
           clearInterval(timerRef.current);
           handleTimeExpired();
+          return 0;
         }
-      };
-
-      updateTimer();
-      timerRef.current = setInterval(updateTimer, 1000);
-    }
+        return prev - 1;
+      });
+    }, 1000);
 
     return () => clearInterval(timerRef.current);
-  }, [view, activeViva]);
-
-  const handleTimeExpired = async () => {
-    addToast('Viva time limit expired! Evaluating completed turns...', 'warning');
-    if (!activeViva) return;
-    try {
-      const res = await api.get(`/viva/${activeViva.id}/results`);
-      setResultsData(res.data);
-      setView('results');
-    } catch (e) {
-      console.warn('Failed to load expired viva results:', e);
-    }
-  };
+  }, [view, activeViva?.id, activeViva?.status, handleTimeExpired]);
 
   // Create new viva session
   const handleCreateViva = async (e) => {
@@ -278,6 +318,14 @@ export default function VivaWorkspace({ user, onOpenSession, initialSessionId = 
     try {
       const res = await api.post(`/viva/${vivaId}/start`);
       setActiveViva(res.data);
+      if (res.data.remaining_seconds != null) {
+        setRemainingSeconds(res.data.remaining_seconds);
+      } else if (res.data.expires_at) {
+        const expTime = parseUtcDate(res.data.expires_at);
+        if (expTime) {
+          setRemainingSeconds(Math.max(0, Math.floor((expTime - Date.now()) / 1000)));
+        }
+      }
       setCurrentTurnFeedback(null);
       setUserAnswer('');
       baseAnswerRef.current = '';
@@ -294,6 +342,9 @@ export default function VivaWorkspace({ user, onOpenSession, initialSessionId = 
     try {
       const res = await api.post(`/viva/${activeViva.id}/pause`);
       setActiveViva(res.data);
+      if (res.data.remaining_seconds != null) {
+        setRemainingSeconds(res.data.remaining_seconds);
+      }
       addToast('Viva paused.', 'info');
     } catch (err) {
       addToast('Failed to pause viva', 'error');
@@ -306,6 +357,14 @@ export default function VivaWorkspace({ user, onOpenSession, initialSessionId = 
     try {
       const res = await api.post(`/viva/${activeViva.id}/resume`);
       setActiveViva(res.data);
+      if (res.data.remaining_seconds != null) {
+        setRemainingSeconds(res.data.remaining_seconds);
+      } else if (res.data.expires_at) {
+        const expTime = parseUtcDate(res.data.expires_at);
+        if (expTime) {
+          setRemainingSeconds(Math.max(0, Math.floor((expTime - Date.now()) / 1000)));
+        }
+      }
       addToast('Viva resumed.', 'success');
     } catch (err) {
       addToast('Failed to resume viva', 'error');
@@ -409,6 +468,9 @@ export default function VivaWorkspace({ user, onOpenSession, initialSessionId = 
         // Show turn feedback card and update session state
         setCurrentTurnFeedback(res.data.turn);
         setActiveViva(res.data.session);
+        if (res.data.session?.remaining_seconds != null) {
+          setRemainingSeconds(res.data.session.remaining_seconds);
+        }
         setUserAnswer('');
         baseAnswerRef.current = '';
         addToast('Response evaluated by academic examiner.', 'info');

@@ -107,6 +107,7 @@ class VivaSessionResponse(BaseModel):
     total_questions: int
     current_question_index: int
     time_limit_minutes: Optional[int] = None
+    remaining_seconds: Optional[int] = None
     started_at: Optional[str] = None
     expires_at: Optional[str] = None
     completed_at: Optional[str] = None

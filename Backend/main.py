@@ -8546,7 +8546,7 @@ def create_viva_session(
         req=req,
         gemini_client=client,
         model_name=MODEL_NAME,
-        generate_fallback_fn=None
+        generate_fallback_fn=generate_with_fallback
     )
     log_activity(
         db,
@@ -8624,7 +8624,7 @@ def submit_viva_answer(
         req=req,
         gemini_client=client,
         model_name=MODEL_NAME,
-        generate_fallback_fn=None
+        generate_fallback_fn=generate_with_fallback
     )
     log_activity(
         db,

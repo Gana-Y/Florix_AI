@@ -168,6 +168,10 @@ class VivaService:
                 viva.expires_at = now + timedelta(minutes=viva.time_limit_minutes)
         elif viva.status == VivaStatus.PAUSED.value:
             viva.status = VivaStatus.IN_PROGRESS.value
+            if viva.expires_at and viva.updated_at:
+                pause_duration = now - viva.updated_at
+                if pause_duration.total_seconds() > 0:
+                    viva.expires_at = viva.expires_at + pause_duration
 
         db.commit()
         db.refresh(viva)
@@ -350,6 +354,7 @@ class VivaService:
         viva = cls.get_viva_or_404(db, user.id, viva_id)
         if viva.status == VivaStatus.IN_PROGRESS.value:
             viva.status = VivaStatus.PAUSED.value
+            viva.updated_at = cls._now_utc()
             db.commit()
             db.refresh(viva)
         return cls.serialize_session(viva)
@@ -534,12 +539,25 @@ class VivaService:
 
     @classmethod
     def serialize_session(cls, v: VivaSession) -> VivaSessionResponse:
+        now = cls._now_utc()
         qs = [cls._serialize_question(q) for q in (v.questions or [])]
         ts = [cls._serialize_turn(t) for t in (v.turns or [])]
 
         cur_q = None
         if v.current_question_index < len(qs):
             cur_q = qs[v.current_question_index]
+
+        rem_seconds = None
+        if v.expires_at and v.status == VivaStatus.IN_PROGRESS.value:
+            rem_seconds = max(0, int((v.expires_at - now).total_seconds()))
+        elif v.status == VivaStatus.PAUSED.value and v.expires_at and v.updated_at:
+            rem_seconds = max(0, int((v.expires_at - v.updated_at).total_seconds()))
+        elif v.time_limit_minutes and v.status in [VivaStatus.CREATED.value, VivaStatus.PAUSED.value]:
+            rem_seconds = v.time_limit_minutes * 60
+
+        expires_str = v.expires_at.strftime("%Y-%m-%dT%H:%M:%SZ") if v.expires_at else None
+        started_str = v.started_at.strftime("%Y-%m-%dT%H:%M:%SZ") if v.started_at else None
+        completed_str = v.completed_at.strftime("%Y-%m-%dT%H:%M:%SZ") if v.completed_at else None
 
         return VivaSessionResponse(
             id=v.id,
@@ -553,9 +571,10 @@ class VivaService:
             total_questions=v.total_questions,
             current_question_index=v.current_question_index,
             time_limit_minutes=v.time_limit_minutes,
-            started_at=v.started_at.isoformat() if v.started_at else None,
-            expires_at=v.expires_at.isoformat() if v.expires_at else None,
-            completed_at=v.completed_at.isoformat() if v.completed_at else None,
+            remaining_seconds=rem_seconds,
+            started_at=started_str,
+            expires_at=expires_str,
+            completed_at=completed_str,
             overall_score=v.overall_score,
             current_question=cur_q,
             questions=qs,

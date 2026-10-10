@@ -63,26 +63,26 @@ const ChatImage = ({ src, alt, ...props }) => {
     }
 
     const list = [];
-    // Tier 1: Direct primary neural render
-    list.push(seeded);
-
-    // Tier 2: Instant SDXL Turbo direct render (0.7s lightning fast generation)
-    if (seeded.includes('model=flux')) {
-      list.push(seeded.replace('model=flux', 'model=turbo'));
-    }
-
-    // Tier 3: Resilient backend proxy (bypasses browser CORS & Cloudflare 403 blocks)
+    // Tier 1: Resilient backend proxy (bypasses browser CORS & 403 blocks, strips watermark, instant cache)
     list.push(getProxyUrl(seeded));
 
-    // Tier 4: Backend proxy with SDXL Turbo
+    // Tier 2: Backend proxy with SDXL Turbo (ultra-fast 0.7s fallback)
     if (seeded.includes('model=flux')) {
       list.push(getProxyUrl(seeded.replace('model=flux', 'model=turbo')));
     }
 
+    // Tier 3: Direct primary neural render
+    list.push(seeded);
+
+    // Tier 4: Direct SDXL Turbo
+    if (seeded.includes('model=flux')) {
+      list.push(seeded.replace('model=flux', 'model=turbo'));
+    }
+
     // Tier 5: Default engine fallback
     const defaultUrl = seeded.replace(/([?&])model=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
-    list.push(defaultUrl);
     list.push(getProxyUrl(defaultUrl));
+    list.push(defaultUrl);
 
     return list;
   }, [src, retryCount]);

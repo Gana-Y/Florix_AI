@@ -7331,8 +7331,8 @@ def agent_generate_image(prompt: str, user_query: str = "") -> str:
     seed = random.randint(10000, 999999)
     encoded = quote(enhanced_prompt[:250])
 
-    # Primary: FLUX.1 High-Fidelity Neural Diffusion (1024x768, 8K photorealism, nologo)
-    ai_url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=768&nologo=true&seed={seed}"
+    # Primary: FLUX.1 High-Fidelity Neural Diffusion (1024x768, 8K photorealism)
+    ai_url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=768&seed={seed}"
     logger.info(f"🎨 FLUX.1 Diffusion Model synthesized for '{alt_label}': {ai_url[:120]}...")
     return f"![{alt_label}]({ai_url})"
 
@@ -7831,10 +7831,25 @@ def proxy_ai_image(url: str = Query(..., description="Target image URL to proxy 
             logger.info(f"🎨 Image proxy attempting candidate {idx+1}/{len(candidates)}: {candidate_url[:90]}")
             resp = requests.get(candidate_url, headers=headers, timeout=timeout_sec)
             if resp.status_code == 200 and len(resp.content) > 1024:
+                final_content = resp.content
                 content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0]
-                _cache_image(cache_key, resp.content, content_type)
+                try:
+                    import io
+                    from PIL import Image
+                    pil_img = Image.open(io.BytesIO(resp.content))
+                    w, h = pil_img.size
+                    # Cleanly crop bottom 34px to strip any third-party watermark banner
+                    if h > 120 and w > 120:
+                        cropped = pil_img.crop((0, 0, w, h - 34))
+                        out_buf = io.BytesIO()
+                        cropped.save(out_buf, format=pil_img.format or "JPEG", quality=95)
+                        final_content = out_buf.getvalue()
+                except Exception as clean_err:
+                    logger.debug(f"Watermark strip skipped: {clean_err}")
+
+                _cache_image(cache_key, final_content, content_type)
                 return Response(
-                    content=resp.content,
+                    content=final_content,
                     media_type=content_type,
                     headers={
                         "Cache-Control": "public, max-age=604800, immutable",

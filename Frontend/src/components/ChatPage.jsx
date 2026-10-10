@@ -52,6 +52,7 @@ const SUGGESTED_PROMPTS = [
 
 import MermaidDiagram from './MermaidDiagram';
 import ChatImage from './ChatImage';
+import ChatVideo from './ChatVideo';
 import InteractiveBotAvatar from './InteractiveBotAvatar';
 
 // ── Memoized Message Bubble (Eliminates Markdown AST Re-parsing Jank) ───────────
@@ -314,6 +315,11 @@ const ChatMessageBubble = React.memo(({ msg, isSpeaking, onToggleSpeak, onPrevie
                 );
               },
               img({ node, ...props }) {
+                const isVideo = (props.alt && props.alt.toLowerCase().startsWith('video:')) ||
+                                (props.src && (props.src.endsWith('.mp4') || props.src.endsWith('.webm') || props.src.endsWith('.ogv')));
+                if (isVideo) {
+                  return <ChatVideo {...props} />;
+                }
                 return <ChatImage {...props} />;
               },
               table({ node, ...props }) {

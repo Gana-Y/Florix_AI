@@ -18,6 +18,7 @@ import { speakText, stopSpeaking, LANGUAGE_LOCALE_MAP } from '../utils/tts';
 import { useToast } from '../context/ToastContext';
 import MermaidDiagram from './MermaidDiagram';
 import ChatImage from './ChatImage';
+import ChatVideo from './ChatVideo';
 import CodeBlock from './CodeBlock';
 
 class ChatErrorBoundary extends Component {
@@ -107,9 +108,14 @@ const tutorMarkdownComponents = {
       />
     );
   },
-  img: ({ node, ...props }) => (
-    <ChatImage {...props} />
-  ),
+  img: ({ node, ...props }) => {
+    const isVideo = (props.alt && props.alt.toLowerCase().startsWith('video:')) ||
+                    (props.src && (props.src.endsWith('.mp4') || props.src.endsWith('.webm') || props.src.endsWith('.ogv')));
+    if (isVideo) {
+      return <ChatVideo {...props} />;
+    }
+    return <ChatImage {...props} />;
+  },
   table: ({ node, ...props }) => (
     <div className="overflow-x-auto my-4 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm">
       <table className="w-full text-[14px] text-left border-collapse" {...props} />

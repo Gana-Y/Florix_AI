@@ -29,7 +29,7 @@ import chromadb
 import razorpay
 
 import base64
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request, BackgroundTasks, Query
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request, BackgroundTasks, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -7243,6 +7243,7 @@ def enhance_image_prompt(prompt: str, user_query: str = "") -> Tuple[str, str]:
     """
     candidates = extract_search_candidates(prompt, user_query)
     raw_subject = candidates[0].strip() if candidates else prompt.strip()
+    raw_subject = re.sub(r'(?i)\b(while|with|and|in|on|at|of|for|to|from|by)\s*$', '', raw_subject).strip()
     display_title = raw_subject.title() if raw_subject else "Visual Illustration"
 
     cleaned_prompt = prompt.strip().replace("\n", " ")
@@ -7772,6 +7773,94 @@ def get_user_chat_count(db: Session = Depends(get_db), current_user: User = Depe
         "remaining": remaining
     }
 
+# ── In-Memory LRU Cache for AI Generated / Proxied Visuals ────────────────────
+_IMAGE_CACHE: Dict[str, Tuple[bytes, str, float]] = {}  # key -> (data, mime_type, timestamp)
+_MAX_IMAGE_CACHE_ENTRIES = 120
+
+def _cache_image(key: str, data: bytes, mime_type: str = "image/jpeg"):
+    if len(_IMAGE_CACHE) > _MAX_IMAGE_CACHE_ENTRIES:
+        oldest_key = min(_IMAGE_CACHE.keys(), key=lambda k: _IMAGE_CACHE[k][2])
+        _IMAGE_CACHE.pop(oldest_key, None)
+    _IMAGE_CACHE[key] = (data, mime_type, time.time())
+
+def _get_cached_image(key: str) -> Optional[Tuple[bytes, str]]:
+    entry = _IMAGE_CACHE.get(key)
+    if entry:
+        return entry[0], entry[1]
+    return None
+
+@app.get("/api/image/proxy", tags=["Visual Learning"])
+def proxy_ai_image(url: str = Query(..., description="Target image URL to proxy with multi-tier model fallback")):
+    """Resilient multi-tier image proxy for client browsers.
+    1. Eliminates client-side CORS and Cloudflare Origin (403) blocking.
+    2. Automatic multi-model fallback cascade:
+       - Tier 1: Original URL (e.g. FLUX.1)
+       - Tier 2: Instant SDXL Turbo fallback (0.7s)
+       - Tier 3: Default Pollinations engine
+    3. Caches successful image payloads in-memory with immutable cache headers.
+    """
+    clean_url = url.strip()
+    cache_key = hashlib.sha256(clean_url.encode("utf-8")).hexdigest()
+    cached = _get_cached_image(cache_key)
+    if cached:
+        data, mime = cached
+        return Response(
+            content=data,
+            media_type=mime,
+            headers={
+                "Cache-Control": "public, max-age=604800, immutable",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    }
+
+    candidates = [clean_url]
+    if "model=flux" in clean_url:
+        candidates.append(clean_url.replace("model=flux", "model=turbo"))
+        candidates.append(re.sub(r"[?&]model=flux", "", clean_url))
+    elif "model=turbo" in clean_url:
+        candidates.append(re.sub(r"[?&]model=turbo", "", clean_url))
+
+    for idx, candidate_url in enumerate(candidates):
+        timeout_sec = 7 if idx == 0 and len(candidates) > 1 else 10
+        try:
+            logger.info(f"🎨 Image proxy attempting candidate {idx+1}/{len(candidates)}: {candidate_url[:90]}")
+            resp = requests.get(candidate_url, headers=headers, timeout=timeout_sec)
+            if resp.status_code == 200 and len(resp.content) > 1024:
+                content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0]
+                _cache_image(cache_key, resp.content, content_type)
+                return Response(
+                    content=resp.content,
+                    media_type=content_type,
+                    headers={
+                        "Cache-Control": "public, max-age=604800, immutable",
+                        "Access-Control-Allow-Origin": "*",
+                    }
+                )
+        except Exception as e:
+            logger.warning(f"Image proxy candidate {idx+1} failed ({type(e).__name__}): {e}")
+            continue
+
+    fallback_svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">'
+        f'<rect width="100%" height="100%" fill="#0f172a"/>'
+        f'<circle cx="400" cy="270" r="80" fill="#6366f1" opacity="0.25"/>'
+        f'<text x="400" y="275" font-family="sans-serif" font-size="28" fill="#e2e8f0" text-anchor="middle" font-weight="bold">AI Visual Render</text>'
+        f'<text x="400" y="325" font-family="sans-serif" font-size="16" fill="#94a3b8" text-anchor="middle">Neural Diffusion Engine</text>'
+        f'</svg>'
+    )
+    return Response(
+        content=fallback_svg.encode("utf-8"),
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "public, max-age=60",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
 
 
 # =============================================================================

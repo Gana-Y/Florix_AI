@@ -15,8 +15,11 @@ import {
   Wand2,
   ZoomIn,
   ZoomOut,
-  RotateCcw
+  RotateCcw,
+  Zap
 } from 'lucide-react';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 const GENERATION_STAGES = [
   'Analyzing visual prompt & composition...',
@@ -25,16 +28,21 @@ const GENERATION_STAGES = [
   'Calibrating photorealistic colors & resolution...'
 ];
 
+const getProxyUrl = (targetUrl) => {
+  if (!targetUrl) return '';
+  return `${API_BASE}/api/image/proxy?url=${encodeURIComponent(targetUrl)}`;
+};
+
 const ChatImage = ({ src, alt, ...props }) => {
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [candidateIndex, setCandidateIndex] = useState(0);
   const [stageIndex, setStageIndex] = useState(0);
-  const [progress, setProgress] = useState(12);
+  const [progress, setProgress] = useState(15);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const autoRetryCountRef = useRef(0);
 
   // Zoom & Pan state for interactive fullscreen inspection
   const [zoom, setZoom] = useState(1);
@@ -42,17 +50,45 @@ const ChatImage = ({ src, alt, ...props }) => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
 
-  // Compute active image URL with seed rotation on retry
-  const activeSrc = useMemo(() => {
-    if (!src) return '';
-    if (retryCount === 0) return src;
+  // Generate multi-tier fallback cascade of image candidate URLs
+  const candidates = useMemo(() => {
+    if (!src) return [];
     const newSeed = Math.floor(10000 + Math.random() * 900000);
-    if (src.includes('seed=')) {
-      return src.replace(/seed=\d+/, `seed=${newSeed}`);
+    let seeded = src;
+    if (seeded.includes('seed=')) {
+      seeded = seeded.replace(/seed=\d+/, `seed=${newSeed}`);
+    } else {
+      const sep = seeded.includes('?') ? '&' : '?';
+      seeded = `${seeded}${sep}seed=${newSeed}`;
     }
-    const sep = src.includes('?') ? '&' : '?';
-    return `${src}${sep}seed=${newSeed}&_retry=${retryCount}`;
+
+    const list = [];
+    // Tier 1: Direct primary neural render
+    list.push(seeded);
+
+    // Tier 2: Instant SDXL Turbo direct render (0.7s lightning fast generation)
+    if (seeded.includes('model=flux')) {
+      list.push(seeded.replace('model=flux', 'model=turbo'));
+    }
+
+    // Tier 3: Resilient backend proxy (bypasses browser CORS & Cloudflare 403 blocks)
+    list.push(getProxyUrl(seeded));
+
+    // Tier 4: Backend proxy with SDXL Turbo
+    if (seeded.includes('model=flux')) {
+      list.push(getProxyUrl(seeded.replace('model=flux', 'model=turbo')));
+    }
+
+    // Tier 5: Default engine fallback
+    const defaultUrl = seeded.replace(/([?&])model=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
+    list.push(defaultUrl);
+    list.push(getProxyUrl(defaultUrl));
+
+    return list;
   }, [src, retryCount]);
+
+  const activeSrc = candidates[candidateIndex] || src || '';
+  const isTurboActive = activeSrc.includes('model=turbo');
 
   // Stage transition & progress animation during generation
   useEffect(() => {
@@ -61,7 +97,7 @@ const ChatImage = ({ src, alt, ...props }) => {
       return;
     }
 
-    setProgress(15);
+    setProgress(20);
     setStageIndex(0);
 
     const progressTimer = setInterval(() => {
@@ -70,27 +106,28 @@ const ChatImage = ({ src, alt, ...props }) => {
         const increment = Math.max(1, Math.floor((95 - prev) * 0.15));
         return Math.min(94, prev + increment);
       });
-    }, 350);
+    }, 300);
 
     const stageTimer = setInterval(() => {
       setStageIndex((prev) => (prev + 1) % GENERATION_STAGES.length);
-    }, 1800);
+    }, 1600);
 
     return () => {
       clearInterval(progressTimer);
       clearInterval(stageTimer);
     };
-  }, [loading, retryCount]);
+  }, [loading, candidateIndex, retryCount]);
 
-  // Image preloading logic
+  // Image preloading logic with automatic candidate fallback cascade
   useEffect(() => {
     if (!activeSrc) return;
     setLoading(true);
     setHasError(false);
 
     let isMounted = true;
-    let autoRetryTimer = null;
+    let watchdogTimer = null;
     const preloader = new Image();
+    preloader.referrerPolicy = 'no-referrer';
     preloader.src = activeSrc;
     preloader.decoding = 'async';
 
@@ -98,30 +135,35 @@ const ChatImage = ({ src, alt, ...props }) => {
       if (isMounted) {
         setLoading(false);
         setHasError(false);
-        autoRetryCountRef.current = 0;
       }
     };
 
-    preloader.onerror = () => {
+    const handleFailure = () => {
       if (!isMounted) return;
-      if (autoRetryCountRef.current < 2) {
-        autoRetryCountRef.current += 1;
-        autoRetryTimer = setTimeout(() => {
-          if (isMounted) {
-            setRetryCount((prev) => prev + 1);
-          }
-        }, 1600);
+      if (candidateIndex < candidates.length - 1) {
+        // Automatically cascade to next candidate engine (e.g. Turbo or Backend Proxy)
+        setCandidateIndex((prev) => prev + 1);
       } else {
         setLoading(false);
         setHasError(true);
       }
     };
 
+    preloader.onerror = handleFailure;
+
+    // Watchdog timer: If current candidate takes too long, seamlessly advance to next candidate
+    const timeoutDuration = candidateIndex === 0 ? 8000 : 7000;
+    watchdogTimer = setTimeout(() => {
+      if (isMounted && loading) {
+        handleFailure();
+      }
+    }, timeoutDuration);
+
     return () => {
       isMounted = false;
-      if (autoRetryTimer) clearTimeout(autoRetryTimer);
+      if (watchdogTimer) clearTimeout(watchdogTimer);
     };
-  }, [activeSrc]);
+  }, [activeSrc, candidateIndex, candidates.length]);
 
   // Lock body scroll when fullscreen modal is open
   useEffect(() => {
@@ -235,19 +277,37 @@ const ChatImage = ({ src, alt, ...props }) => {
 
   const handleManualRetry = (e) => {
     e.stopPropagation();
-    autoRetryCountRef.current = 0;
+    setCandidateIndex(0);
     setHasError(false);
     setLoading(true);
     setRetryCount((prev) => prev + 1);
   };
 
+  const handleForceTurbo = (e) => {
+    e.stopPropagation();
+    setCandidateIndex(1); // Jump straight to Turbo
+    setHasError(false);
+    setLoading(true);
+    setRetryCount((prev) => prev + 1);
+  };
+
+  // Safe fetch helper with automatic proxy fallback for CORS & 403 immunity
+  const fetchImageBlob = async (targetUrl) => {
+    try {
+      const res = await fetch(targetUrl);
+      if (res.ok) return await res.blob();
+    } catch {}
+    // Fallback via backend proxy
+    const proxyRes = await fetch(getProxyUrl(targetUrl));
+    return await proxyRes.blob();
+  };
+
   const handleCopy = async (e) => {
     e.stopPropagation();
     try {
-      const res = await fetch(activeSrc);
-      const blob = await res.blob();
+      const blob = await fetchImageBlob(activeSrc);
       await navigator.clipboard.write([
-        new ClipboardItem({ [blob.type]: blob })
+        new ClipboardItem({ [blob.type || 'image/jpeg']: blob })
       ]);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -256,9 +316,7 @@ const ChatImage = ({ src, alt, ...props }) => {
         await navigator.clipboard.writeText(activeSrc);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      } catch {
-        // Silently ignore if clipboard unavailable
-      }
+      } catch {}
     }
   };
 
@@ -267,8 +325,7 @@ const ChatImage = ({ src, alt, ...props }) => {
     if (downloading) return;
     setDownloading(true);
     try {
-      const res = await fetch(activeSrc);
-      const blob = await res.blob();
+      const blob = await fetchImageBlob(activeSrc);
       const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
@@ -284,7 +341,7 @@ const ChatImage = ({ src, alt, ...props }) => {
       URL.revokeObjectURL(blobUrl);
     } catch {
       const link = document.createElement('a');
-      link.href = activeSrc;
+      link.href = getProxyUrl(activeSrc);
       link.target = '_blank';
       link.download = 'florix_visual.jpg';
       link.click();
@@ -295,22 +352,30 @@ const ChatImage = ({ src, alt, ...props }) => {
 
   if (hasError) {
     return (
-      <div className="my-4 p-4 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 text-xs text-slate-700 dark:text-zinc-300 flex items-center justify-between gap-3 shadow-sm backdrop-blur-sm">
-        <div className="flex items-center gap-3 truncate">
+      <div className="my-4 p-4 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 text-xs text-slate-700 dark:text-zinc-300 flex flex-wrap items-center justify-between gap-3 shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-3 truncate max-w-sm">
           <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
             <ImageIcon size={18} className="text-amber-500" />
           </div>
           <div className="truncate">
             <p className="font-semibold text-slate-800 dark:text-zinc-200 truncate">{alt || 'Visual Illustration'}</p>
-            <p className="text-[11px] text-slate-500 dark:text-zinc-400">Image synthesis timed out</p>
+            <p className="text-[11px] text-slate-500 dark:text-zinc-400">Diffusion queue busy. Ready to synthesize.</p>
           </div>
         </div>
-        <button
-          onClick={handleManualRetry}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all active:scale-95 shadow-sm shadow-indigo-500/20 shrink-0 cursor-pointer text-xs"
-        >
-          <RefreshCw size={12} /> Retry Generation
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleForceTurbo}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all active:scale-95 shadow-sm shadow-indigo-500/20 shrink-0 cursor-pointer text-xs"
+          >
+            <Zap size={12} className="text-amber-300" /> Fast Turbo Render
+          </button>
+          <button
+            onClick={handleManualRetry}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 transition-all text-xs cursor-pointer"
+          >
+            <RefreshCw size={11} /> Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -351,11 +416,11 @@ const ChatImage = ({ src, alt, ...props }) => {
               <div className="relative z-10 max-w-sm flex flex-col items-center">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold tracking-wider uppercase mb-2">
                   <Sparkles size={11} className="text-cyan-400" />
-                  Neural Diffusion Engine
+                  {isTurboActive ? 'SDXL Turbo Engine' : 'FLUX.1 Neural Diffusion'}
                 </div>
 
                 <p className="font-medium text-xs text-zinc-200 h-5 transition-all duration-300 ease-out">
-                  {GENERATION_STAGES[stageIndex]}
+                  {candidateIndex > 0 ? 'Accelerating neural diffusion render...' : GENERATION_STAGES[stageIndex]}
                 </p>
 
                 {/* Progress Bar with Shimmer Fill */}
@@ -379,6 +444,7 @@ const ChatImage = ({ src, alt, ...props }) => {
           <img
             src={activeSrc}
             alt={alt || 'Visual representation'}
+            referrerPolicy="no-referrer"
             className={`w-full max-h-[520px] object-contain transition-all duration-700 ease-out ${
               loading ? 'opacity-0 scale-95 blur-sm' : 'opacity-100 scale-100 group-hover:scale-[1.01]'
             }`}
@@ -393,7 +459,7 @@ const ChatImage = ({ src, alt, ...props }) => {
             <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-zinc-950/80 backdrop-blur-md border border-white/10 shadow-xl opacity-90 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={handleCopy}
-                className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors relative"
+                className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors relative cursor-pointer"
                 title={copied ? 'Copied to clipboard!' : 'Copy image'}
               >
                 {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
@@ -407,7 +473,7 @@ const ChatImage = ({ src, alt, ...props }) => {
               <button
                 onClick={handleDownload}
                 disabled={downloading}
-                className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
+                className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                 title="Download High-Res Image"
               >
                 <Download size={14} className={downloading ? 'animate-bounce text-cyan-400' : ''} />
@@ -418,7 +484,7 @@ const ChatImage = ({ src, alt, ...props }) => {
                   e.stopPropagation();
                   setIsModalOpen(true);
                 }}
-                className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
+                className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                 title="Fullscreen expand"
               >
                 <Maximize2 size={14} />
@@ -440,7 +506,7 @@ const ChatImage = ({ src, alt, ...props }) => {
               <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">4K Ultra HD</span>
               <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider bg-cyan-950/70 px-2 py-0.5 rounded-md border border-cyan-800/50 flex items-center gap-1">
                 <Sparkles size={10} className="text-cyan-400" />
-                FLUX.1 Neural Render
+                {isTurboActive ? 'SDXL Turbo Render' : 'FLUX.1 Neural Render'}
               </span>
             </div>
           </div>
@@ -481,7 +547,7 @@ const ChatImage = ({ src, alt, ...props }) => {
                 <Sparkles size={15} className="text-cyan-400" />
               </div>
               <span className="hidden md:inline-block px-2.5 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-800/60 text-[10px] text-cyan-300 font-mono">
-                FLUX.1 4K Neural Render
+                {isTurboActive ? 'SDXL Turbo 4K Neural Render' : 'FLUX.1 4K Neural Render'}
               </span>
             </div>
 
@@ -582,6 +648,7 @@ const ChatImage = ({ src, alt, ...props }) => {
             <img
               src={activeSrc}
               alt={alt || 'Visual representation'}
+              referrerPolicy="no-referrer"
               draggable={false}
               className="max-w-[94vw] max-h-[84vh] object-contain rounded-xl shadow-2xl transition-transform duration-150 ease-out select-none"
               style={{

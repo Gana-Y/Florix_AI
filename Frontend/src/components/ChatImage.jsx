@@ -151,8 +151,8 @@ const ChatImage = ({ src, alt, ...props }) => {
 
     preloader.onerror = handleFailure;
 
-    // Watchdog timer: If current candidate takes too long, seamlessly advance to next candidate
-    const timeoutDuration = candidateIndex === 0 ? 8000 : 7000;
+    // Watchdog timer: Allow up to 22s for Tier 1 FLUX.1 photorealistic diffusion before falling back
+    const timeoutDuration = candidateIndex === 0 ? 22000 : 10000;
     watchdogTimer = setTimeout(() => {
       if (isMounted && loading) {
         handleFailure();

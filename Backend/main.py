@@ -7257,7 +7257,7 @@ def enhance_image_prompt(prompt: str, user_query: str = "") -> Tuple[str, str]:
     # If the user already provided an extensive, richly descriptive prompt (> 10 words)
     words = cleaned_prompt.split()
     if len(words) >= 10:
-        enhanced = f"{cleaned_prompt}, cinematic lighting, photorealistic 8k, ultra-detailed textures, masterpiece"
+        enhanced = f"{cleaned_prompt}, shot on 85mm f/1.4 lens, natural lighting, photorealistic 8k RAW photograph, ultra-detailed textures, masterpiece"
         return enhanced, display_title
 
     # Fast Domain-Specific Heuristic Enrichment Engine
@@ -7270,26 +7270,29 @@ def enhance_image_prompt(prompt: str, user_query: str = "") -> Tuple[str, str]:
         "cyborg", "robot", "mecha", "samurai", "ninja", "superhero", "darth vader", "jedi"
     ]):
         enhanced = (
-            f"Cinematic photorealistic 8k portrait of {display_title}, highly detailed armor and intricate mechanical textures, "
-            f"glowing energy effects and metallic reflections, dramatic volumetric lighting, futuristic atmospheric background, "
-            f"octane render, masterpiece, marvel cinematic style"
+            f"Cinematic 8k photorealistic portrait of {display_title}, highly detailed armor and intricate mechanical textures, "
+            f"glowing energy effects and metallic reflections, dramatic volumetric rim lighting, futuristic atmosphere, "
+            f"shot on Arri Alexa 65mm cinema lens, blockbuster movie aesthetic, masterpiece"
         )
     # Flowers, Botany & Plants
     elif any(k in subj_lower for k in [
         "rose", "flower", "lotus", "tulip", "sunflower", "lily", "orchid", "petal", "bloom", "blossom", "botanical", "plant"
     ]):
         enhanced = (
-            f"Exquisite macro photography of blooming {display_title}, crystalline morning dew drops on velvety petals, "
-            f"soft diffused natural morning sunlight, cinematic shallow depth of field, 8k ultra-high resolution, national geographic botany"
+            f"Breathtaking macro photography of blooming {display_title}, crystalline morning dew drops on velvety petals, "
+            f"soft diffused natural morning sunlight, shot on 100mm f/2.8 macro lens, cinematic shallow depth of field, "
+            f"8k ultra-high resolution, national geographic botany caliber, masterpiece"
         )
-    # Animals, Pets & Wildlife
+    # Animals, Pets & Wildlife (Dogs, Puppies, Cats, etc.)
     elif any(k in subj_lower for k in [
-        "dog", "puppy", "golden retriever", "cat", "kitten", "lion", "tiger", "leopard", "elephant", "wolf",
-        "eagle", "bird", "owl", "horse", "bear", "fox", "deer", "cheetah", "animal", "wildlife"
+        "dog", "puppy", "golden retriever", "samoyed", "husky", "labrador", "cat", "kitten", "lion", "tiger",
+        "leopard", "elephant", "wolf", "eagle", "bird", "owl", "horse", "bear", "fox", "deer", "cheetah", "animal", "wildlife"
     ]):
         enhanced = (
-            f"Award-winning 8k wildlife photography of {display_title}, pristine fur and expressive eye details, "
-            f"warm golden hour natural sunlight, lush green environment, shallow depth of field, razor-sharp focus, masterpiece"
+            f"Exquisite award-winning photorealistic 8k portrait of {display_title}, shot on professional Canon EOS R5 with 85mm f/1.4 lens, "
+            f"natural golden hour sunlight casting warm highlights, razor-sharp focus on expressive eyes with authentic daylight catchlights, "
+            f"intricate individual fur strand fidelity and texture, moist leather texture on nose, creamy shallow depth of field bokeh, "
+            f"uncompressed 8k RAW photograph, hyper-realistic animal portrait, national geographic caliber"
         )
     # Vehicles, Supercars & Spacecraft
     elif any(k in subj_lower for k in [
@@ -7297,8 +7300,8 @@ def enhance_image_prompt(prompt: str, user_query: str = "") -> Tuple[str, str]:
         "jet", "fighter jet", "airplane", "spaceship", "rocket", "hovercraft"
     ]):
         enhanced = (
-            f"Sleek 8k automotive render of {display_title}, dynamic cinematic low angle, glossy metallic reflective surfaces, "
-            f"dramatic studio rim lighting, wet asphalt reflections, hyper-realistic octane render, masterpiece"
+            f"Sleek 8k automotive photography of {display_title}, dynamic cinematic low angle, glossy metallic reflective surfaces, "
+            f"dramatic studio rim lighting, wet asphalt reflections, Hasselblad medium format optics, hyper-realistic, masterpiece"
         )
     # Architecture, Landscapes, Cities & Wonders
     elif any(k in subj_lower for k in [
@@ -7306,14 +7309,14 @@ def enhance_image_prompt(prompt: str, user_query: str = "") -> Tuple[str, str]:
         "landscape", "city", "skyline", "temple", "monument", "castle", "palace", "aurora"
     ]):
         enhanced = (
-            f"Breathtaking 8k landscape photography of {display_title}, majestic wide-angle perspective, "
+            f"Breathtaking 8k landscape photography of {display_title}, majestic wide-angle 24mm lens perspective, "
             f"spectacular golden hour lighting, atmospheric clouds, crystal clear depth, masterpiece composition"
         )
     # General / Academic / Anatomy / Scientific / Artistic
     else:
         enhanced = (
-            f"Ultra-detailed 8k high-resolution visual of {display_title}, professional studio lighting, "
-            f"crisp optical clarity, vibrant photorealistic colors, hyper-detailed textures, masterpiece composition"
+            f"Ultra-detailed 8k high-resolution photograph of {display_title}, professional studio three-point lighting, "
+            f"shot on 50mm f/1.8 lens, crisp optical clarity, vibrant photorealistic colors, hyper-detailed physical textures, masterpiece composition"
         )
 
     return enhanced, display_title
@@ -7323,13 +7326,14 @@ def agent_generate_image(prompt: str, user_query: str = "") -> str:
     """Generate a stunning, high-definition visual representation using state-of-the-art Generative AI (FLUX.1).
     1. Intelligent Prompt Enhancement (heuristic & keyword enrichment for 8K photorealism).
     2. Primary Engine: FLUX.1 Neural Diffusion Model via Pollinations.
-    3. Resilient Parameterization (unique seed, nologo=true, 1024x768 aspect ratio).
+    3. Resilient Parameterization (unique seed, 1024x768 aspect ratio).
     """
     logger.info(f"🎨 Generative AI Image Engine invoked for prompt: '{prompt[:100]}', user_query: '{user_query[:50]}'")
     enhanced_prompt, alt_label = enhance_image_prompt(prompt, user_query)
 
     seed = random.randint(10000, 999999)
-    encoded = quote(enhanced_prompt[:250])
+    # Allow rich photographic prompt up to 800 characters without mid-word truncation
+    encoded = quote(enhanced_prompt[:800])
 
     # Primary: FLUX.1 High-Fidelity Neural Diffusion (1024x768, 8K photorealism)
     ai_url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=768&seed={seed}"
@@ -7826,9 +7830,10 @@ def proxy_ai_image(url: str = Query(..., description="Target image URL to proxy 
         candidates.append(re.sub(r"[?&]model=turbo", "", clean_url))
 
     for idx, candidate_url in enumerate(candidates):
-        timeout_sec = 7 if idx == 0 and len(candidates) > 1 else 10
+        is_flux = "model=flux" in candidate_url
+        timeout_sec = 22 if is_flux else (12 if idx == 0 else 8)
         try:
-            logger.info(f"🎨 Image proxy attempting candidate {idx+1}/{len(candidates)}: {candidate_url[:90]}")
+            logger.info(f"🎨 Image proxy attempting candidate {idx+1}/{len(candidates)} (timeout={timeout_sec}s): {candidate_url[:90]}")
             resp = requests.get(candidate_url, headers=headers, timeout=timeout_sec)
             if resp.status_code == 200 and len(resp.content) > 1024:
                 final_content = resp.content

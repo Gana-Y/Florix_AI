@@ -110,7 +110,7 @@ class MistakeService:
         user: User,
         req: MistakeAnalyzeRequest,
         gemini_client: Any = None,
-        model_name: str = "gemini-3.5-flash",
+        model_name: str = "gemini-3.6-flash",
         generate_fallback_fn: Any = None,
         retriever_fn: Any = None
     ) -> MistakeAnalysisResponse:
@@ -268,7 +268,7 @@ class MistakeService:
         mistake_id: int,
         req: TargetedPracticeRequest,
         gemini_client: Any = None,
-        model_name: str = "gemini-3.5-flash",
+        model_name: str = "gemini-3.6-flash",
         generate_fallback_fn: Any = None
     ) -> TargetedPracticeResponse:
         """Generates targeted practice questions addressing the specific misconception using AssessmentEngine."""

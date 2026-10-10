@@ -287,7 +287,7 @@ Transcript Excerpt:
 {raw_transcript[:18000]}
 """
 
-    models_to_try = [model_name, "gemini-3.5-flash-lite", "gemini-flash-latest"]
+    models_to_try = [model_name, "gemini-3.6-flash", "gemini-flash-latest"]
     parsed_sections = None
 
     for attempt_model in models_to_try:

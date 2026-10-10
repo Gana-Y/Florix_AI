@@ -19,16 +19,15 @@ logger = logging.getLogger("florix.rag.generator")
 class GroundedGenerator:
     """Generates cited, grounded answers using Google Gemini with resilience fallbacks."""
 
-    def __init__(self, gemini_client, model_name: str = "gemini-3.5-flash", fallback_models: Optional[List[str]] = None):
+    def __init__(self, gemini_client, model_name: str = "gemini-3.6-flash", fallback_models: Optional[List[str]] = None):
         self.client = gemini_client
         self.model_name = model_name
         self.fallback_models = fallback_models or [
-            "gemini-3.5-flash",
-            "gemini-flash-lite-latest",
-            "gemini-3.5-flash-lite",
-            "gemini-2.5-flash",
+            "gemini-3.6-flash",
             "gemini-3-flash-preview",
-            "gemini-flash-latest"
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
         ]
 
     def generate(

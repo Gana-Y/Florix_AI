@@ -33,7 +33,7 @@ class VivaOrchestrator:
         chunks: List[Any],
         session: Optional[StudySession] = None,
         gemini_client: Any = None,
-        model_name: str = "gemini-3.5-flash",
+        model_name: str = "gemini-3.6-flash",
         generate_fallback_fn: Any = None,
     ) -> List[Dict[str, Any]]:
         """Synthesizes grounded viva oral questions using a resilient 3-tier cascade."""
@@ -224,7 +224,7 @@ Output ONLY valid JSON matching this schema:
         eval_result: Dict[str, Any],
         source_context: str = "",
         gemini_client: Any = None,
-        model_name: str = "gemini-3.5-flash",
+        model_name: str = "gemini-3.6-flash",
     ) -> Optional[Dict[str, Any]]:
         """Generates a bounded, probing follow-up question when understanding is incomplete."""
         if parent_question.follow_up_count >= parent_question.max_follow_ups:

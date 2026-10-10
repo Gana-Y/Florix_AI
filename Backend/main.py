@@ -209,14 +209,13 @@ api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is not set")
 client = genai.Client(api_key=api_key)
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 MODEL_CASCADE = [
-    "gemini-3.5-flash",
-    "gemini-flash-lite-latest",
-    "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
+    "gemini-3.6-flash",
     "gemini-3-flash-preview",
-    "gemini-flash-latest"
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
 ]
 _model_cooldowns: Dict[str, float] = {}
 

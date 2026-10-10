@@ -75,7 +75,7 @@ class VivaService:
         req: VivaCreateRequest,
         chunks: Optional[List[Any]] = None,
         gemini_client: Any = None,
-        model_name: str = "gemini-3.5-flash",
+        model_name: str = "gemini-3.6-flash",
         generate_fallback_fn: Any = None,
     ) -> VivaSessionResponse:
         """Initializes a new viva session with grounded primary questions."""
@@ -185,7 +185,7 @@ class VivaService:
         viva_id: int,
         req: VivaAnswerRequest,
         gemini_client: Any = None,
-        model_name: str = "gemini-3.5-flash",
+        model_name: str = "gemini-3.6-flash",
         generate_fallback_fn: Any = None,
     ) -> Dict[str, Any]:
         """Evaluates an oral/typed response, manages state transitions and follow-ups."""

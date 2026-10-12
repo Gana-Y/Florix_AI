@@ -526,7 +526,7 @@ const AdminPanel = () => {
               <div className="flex items-center gap-2.5">
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                 <span>
-                  <strong>Workspace Database:</strong> Local SQLite (<code>Backend/florix.db</code>) &bull; {users.length} registered accounts
+                  <strong>Connected Database:</strong> {import.meta.env.VITE_API_URL ? 'Cloud Production Backend' : 'Local SQLite (Backend/florix.db)'} &bull; {users.length} registered accounts
                 </span>
               </div>
               <button

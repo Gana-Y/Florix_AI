@@ -6,6 +6,8 @@
 
 # Databases & Vector Stores
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 florix.db

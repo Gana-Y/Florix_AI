@@ -59,38 +59,40 @@ export default function CelestialBellToggle({
       onMouseLeave={() => setIsHovered(false)}
       whileHover={{ scale: 1.08 }}
       whileTap={{ scale: 0.92 }}
-      transition={{ type: 'spring', damping: 18, stiffness: 420 }}
+      transition={{ type: 'spring', damping: 18, stiffness: 400 }}
       aria-label="Revision Reminders & Notifications"
       data-tooltip={hasDueAlert ? `${counts.due} Revision Alerts Due!` : 'Revision Reminders & Notifications'}
       data-tooltip-pos="bottom"
-      className={`relative ${sizeClasses} rounded-full overflow-hidden flex items-center justify-center cursor-pointer select-none border transition-colors duration-200 backdrop-blur-md will-change-transform ${
+      className={`relative ${sizeClasses} rounded-full flex items-center justify-center cursor-pointer select-none border transition-colors duration-300 backdrop-blur-md will-change-transform ${
         isDark
           ? isOpen
             ? 'bg-gradient-to-br from-indigo-900/95 via-slate-800/95 to-zinc-900/95 border-indigo-400 text-indigo-300 shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-500/35'
-            : 'bg-gradient-to-br from-indigo-950/95 via-slate-900/95 to-zinc-950/95 border-indigo-500/35 text-indigo-200 shadow-md shadow-indigo-950/50 hover:border-indigo-400/60'
+            : 'bg-gradient-to-br from-indigo-950/95 via-slate-900/95 to-zinc-950/95 border-indigo-500/40 text-indigo-200 shadow-md shadow-indigo-950/60 hover:border-indigo-400/80 hover:shadow-indigo-500/20'
           : isOpen
           ? 'bg-gradient-to-br from-indigo-50 via-white to-indigo-100/95 border-indigo-500 text-indigo-700 shadow-lg shadow-indigo-200/70 ring-2 ring-indigo-400/35'
-          : 'bg-gradient-to-br from-white via-indigo-50/50 to-slate-100/95 border-slate-200 text-indigo-700 shadow-md shadow-slate-200/70 hover:border-indigo-400'
+          : 'bg-gradient-to-br from-white via-indigo-50/50 to-slate-100/95 border-slate-200 text-indigo-700 shadow-md shadow-slate-200/70 hover:border-indigo-400 hover:shadow-indigo-300/30'
       } ${className}`}
       style={{ transform: 'translateZ(0)' }}
     >
-      {/* ── Atmospheric Ambient Radial Glow ── */}
-      <div
-        className={`absolute inset-0 pointer-events-none rounded-full transition-opacity duration-300 ${
-          isHovered || isOpen ? 'opacity-100' : 'opacity-60'
-        }`}
-        style={{
-          background: isDark
-            ? hasDueAlert
-              ? 'radial-gradient(circle at 50% 50%, rgba(244, 63, 94, 0.32) 0%, rgba(15, 23, 42, 0) 70%)'
-              : 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.3) 0%, rgba(15, 23, 42, 0) 70%)'
-            : hasDueAlert
-            ? 'radial-gradient(circle at 50% 50%, rgba(244, 63, 94, 0.25) 0%, rgba(255, 241, 242, 0) 70%)'
-            : 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.22) 0%, rgba(248, 250, 252, 0) 70%)',
-        }}
-      />
+      {/* ── Internal Atmospheric Radial Glow (Masked) ── */}
+      <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
+        <div
+          className={`absolute inset-0 transition-opacity duration-300 ${
+            isHovered || isOpen ? 'opacity-100' : 'opacity-65'
+          }`}
+          style={{
+            background: isDark
+              ? hasDueAlert
+                ? 'radial-gradient(circle at 50% 50%, rgba(244, 63, 94, 0.35) 0%, rgba(15, 23, 42, 0) 70%)'
+                : 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.32) 0%, rgba(15, 23, 42, 0) 70%)'
+              : hasDueAlert
+              ? 'radial-gradient(circle at 50% 50%, rgba(244, 63, 94, 0.28) 0%, rgba(255, 241, 242, 0) 70%)'
+              : 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.25) 0%, rgba(248, 250, 252, 0) 70%)',
+          }}
+        />
+      </div>
 
-      {/* ── Concentric Sonic Sound-Wave Ripple Rings ── */}
+      {/* ── Concentric Sonic Sound-Wave Ripple Rings (Radiates Unclipped) ── */}
       <AnimatePresence>
         {(isHovered || hasDueAlert) && (
           <>
@@ -98,85 +100,92 @@ export default function CelestialBellToggle({
               key={`sonic-wave-1-${chimeKey}`}
               className={`absolute inset-0 rounded-full pointer-events-none border will-change-transform ${
                 hasDueAlert
-                  ? 'border-rose-400/50'
+                  ? 'border-rose-400/60 shadow-[0_0_8px_rgba(244,63,94,0.4)]'
                   : isDark
-                  ? 'border-indigo-400/50'
-                  : 'border-indigo-500/40'
+                  ? 'border-indigo-400/60 shadow-[0_0_8px_rgba(129,140,248,0.4)]'
+                  : 'border-indigo-500/50 shadow-[0_0_8px_rgba(99,102,241,0.3)]'
               }`}
-              initial={{ scale: 0.7, opacity: 0.85 }}
-              animate={{ scale: 1.55, opacity: 0 }}
+              initial={{ scale: 0.85, opacity: 0.9 }}
+              animate={{ scale: 1.6, opacity: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.85, ease: 'easeOut' }}
+              transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
             />
             {hasDueAlert && (
               <motion.span
                 key={`sonic-wave-2-${chimeKey}`}
-                className="absolute inset-0 rounded-full pointer-events-none border border-rose-400/40 will-change-transform"
-                initial={{ scale: 0.8, opacity: 0.65 }}
-                animate={{ scale: 1.8, opacity: 0 }}
+                className="absolute inset-0 rounded-full pointer-events-none border border-rose-400/50 shadow-[0_0_10px_rgba(244,63,94,0.35)] will-change-transform"
+                initial={{ scale: 0.9, opacity: 0.7 }}
+                animate={{ scale: 1.9, opacity: 0 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 1.1, delay: 0.12, ease: 'easeOut' }}
+                transition={{ duration: 1.15, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
               />
             )}
           </>
         )}
       </AnimatePresence>
 
-      {/* ── Twinkling Acoustic Stardust Sprinkles ── */}
-      <AnimatePresence>
-        {isHovered && (
-          <>
-            {/* ✧ Acoustic Sprinkle 1: Diamond Star Sparkle (Top-Right) ✧ */}
-            <motion.div
-              key={`acoustic-star-${chimeKey}`}
-              className="absolute pointer-events-none"
-              style={{ top: '16%', right: '18%' }}
-              initial={{ scale: 0, opacity: 0, rotate: 0 }}
-              animate={{ scale: [0, 1.25, 0], opacity: [0, 1, 0], rotate: 45 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.75, ease: 'easeOut' }}
-            >
-              <svg width="6" height="6" viewBox="0 0 10 10" fill="none">
-                <path
-                  d="M5 0C5 2.76 2.76 5 0 5C2.76 5 5 7.24 5 10C5 7.24 7.24 5 10 5C7.24 5 5 2.76 5 0Z"
-                  fill={isDark ? '#E0E7FF' : '#6366F1'}
-                  className={isDark ? 'drop-shadow-[0_0_3px_#c7d2fe]' : 'drop-shadow-[0_0_3px_#818cf8]'}
-                />
-              </svg>
-            </motion.div>
+      {/* ── Twinkling Acoustic Stardust Sprinkles (Always Alive + Chime Reactivity) ── */}
+      {/* ✧ Acoustic Sprinkle 1: Diamond Star Sparkle (Top-Right) ✧ */}
+      <motion.div
+        key={`acoustic-star-${chimeKey}`}
+        className="absolute pointer-events-none"
+        style={{ top: '13%', right: '14%' }}
+        animate={
+          isHovered || hasDueAlert
+            ? { scale: [0.85, 1.4, 0.85], rotate: [0, 90, 180], opacity: [0.75, 1, 0.75] }
+            : { scale: [0.75, 1.15, 0.75], rotate: [0, 45, 90], opacity: [0.6, 0.9, 0.6] }
+        }
+        transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <svg width="8" height="8" viewBox="0 0 16 16" fill="none" style={{ filter: isDark ? 'drop-shadow(0 0 3px #c7d2fe)' : 'drop-shadow(0 0 3px #818cf8)' }}>
+          <path
+            d="M8 0C8 4.4 4.4 8 0 8C4.4 8 8 11.6 8 16C8 11.6 11.6 8 16 8C11.6 8 8 4.4 8 0Z"
+            fill={isDark ? (hasDueAlert ? '#FDA4AF' : '#FFFFFF') : (hasDueAlert ? '#E11D48' : '#6366F1')}
+          />
+        </svg>
+      </motion.div>
 
-            {/* ✨ Acoustic Sprinkle 2: Cyan Starlight Dust (Bottom-Left) ✨ */}
-            <motion.span
-              key={`acoustic-cyan-${chimeKey}`}
-              className={`absolute w-1 h-1 rounded-full pointer-events-none will-change-transform ${
-                isDark
-                  ? 'bg-cyan-200 shadow-[0_0_4px_#a5f3fc]'
-                  : 'bg-indigo-500 shadow-[0_0_4px_#6366f1]'
-              }`}
-              style={{ bottom: '22%', left: '20%' }}
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: [0, 1.35, 0], opacity: [0, 1, 0] }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.7, delay: 0.1, ease: 'easeOut' }}
-            />
+      {/* ✨ Acoustic Sprinkle 2: Glowing Cyan/Violet Crystal (Bottom-Left) ✨ */}
+      <motion.span
+        key={`acoustic-cyan-${chimeKey}`}
+        className={`absolute rounded-full pointer-events-none will-change-transform ${
+          isDark
+            ? hasDueAlert ? 'bg-rose-300 shadow-[0_0_6px_#fb7185]' : 'bg-cyan-200 shadow-[0_0_6px_#67e8f9]'
+            : hasDueAlert ? 'bg-rose-500 shadow-[0_0_6px_#f43f5e]' : 'bg-indigo-500 shadow-[0_0_6px_#6366f1]'
+        }`}
+        style={{
+          width: size === 'sm' ? 3.5 : 4,
+          height: size === 'sm' ? 3.5 : 4,
+          bottom: '16%',
+          left: '16%',
+        }}
+        animate={
+          isHovered || hasDueAlert
+            ? { scale: [0.8, 1.45, 0.8], opacity: [0.7, 1, 0.7] }
+            : { scale: [0.8, 1.2, 0.8], opacity: [0.55, 0.85, 0.55] }
+        }
+        transition={{ duration: 2.4, repeat: Infinity, delay: 0.5, ease: 'easeInOut' }}
+      />
 
-            {/* ✨ Acoustic Sprinkle 3: Indigo Micro Sparkle (Top-Left) ✨ */}
-            <motion.span
-              key={`acoustic-indigo-${chimeKey}`}
-              className={`absolute w-0.5 h-0.5 rounded-full pointer-events-none will-change-transform ${
-                isDark
-                  ? 'bg-indigo-200 shadow-[0_0_3px_#c7d2fe]'
-                  : 'bg-indigo-600 shadow-[0_0_3px_#4f46e5]'
-              }`}
-              style={{ top: '22%', left: '22%' }}
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: [0, 1.2, 0], opacity: [0, 0.9, 0] }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.65, delay: 0.15, ease: 'easeOut' }}
-            />
-          </>
-        )}
-      </AnimatePresence>
+      {/* ✧ Acoustic Sprinkle 3: Micro Starlight (Top-Left) ✧ */}
+      <motion.div
+        key={`acoustic-micro-${chimeKey}`}
+        className="absolute pointer-events-none"
+        style={{ top: '15%', left: '15%' }}
+        animate={
+          isHovered
+            ? { scale: [0.75, 1.35, 0.75], rotate: [0, -90, -180], opacity: [0.7, 1, 0.7] }
+            : { scale: [0.7, 1.1, 0.7], rotate: [0, -45, -90], opacity: [0.5, 0.85, 0.5] }
+        }
+        transition={{ duration: 2.6, repeat: Infinity, delay: 0.9, ease: 'easeInOut' }}
+      >
+        <svg width="6" height="6" viewBox="0 0 16 16" fill="none" style={{ filter: 'drop-shadow(0 0 2px #c7d2fe)' }}>
+          <path
+            d="M8 0C8 4.4 4.4 8 0 8C4.4 8 8 11.6 8 16C8 11.6 11.6 8 16 8C11.6 8 8 4.4 8 0Z"
+            fill={isDark ? '#E0E7FF' : '#818CF8'}
+          />
+        </svg>
+      </motion.div>
 
       {/* ── Pendulum Bell Engine (Harmonic Spring Physics) ── */}
       <motion.div

@@ -29,6 +29,12 @@ const Signup = () => {
   const [loading, setLoading] = useState(false);
   const [isWakingServer, setIsWakingServer] = useState(false);
 
+  // 🔮 Social OAuth States
+  const [oauthModal, setOauthModal] = useState({ show: false, provider: '' });
+  const [oauthEmail, setOauthEmail] = useState('');
+  const [oauthName, setOauthName] = useState('');
+  const [oauthLoading, setOauthLoading] = useState(false);
+
   useEffect(() => {
     let timer;
     if (loading || oauthLoading) {
@@ -38,12 +44,6 @@ const Signup = () => {
     }
     return () => clearTimeout(timer);
   }, [loading, oauthLoading]);
-
-  // 🔮 Social OAuth States
-  const [oauthModal, setOauthModal] = useState({ show: false, provider: '' });
-  const [oauthEmail, setOauthEmail] = useState('');
-  const [oauthName, setOauthName] = useState('');
-  const [oauthLoading, setOauthLoading] = useState(false);
 
   // Validation Check Rules
   const isNameValid =

@@ -125,10 +125,10 @@ api.interceptors.response.use(
         return Promise.reject(error);
       }
 
-      // No token means not logged in or token removed — dispatch session expired to clear state & route to login
+      // If there is no token, user is simply an unauthenticated visitor or guest.
+      // Suppress false "Session expired" alert.
       const token = localStorage.getItem('token');
       if (!token) {
-        window.dispatchEvent(new CustomEvent('florix:session-expired'));
         return Promise.reject(error);
       }
 

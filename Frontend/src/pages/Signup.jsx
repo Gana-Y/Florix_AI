@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import React, { useState, useContext, useEffect } from 'react';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Eye, EyeOff, ArrowLeft, Check, AlertCircle, X, ShieldAlert, Loader2 } from 'lucide-react';
+import { Brain, Eye, EyeOff, ArrowLeft, Check, AlertCircle, X, ShieldAlert, Loader2, Sparkles } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { prewarmBackend } from '../utils/api';

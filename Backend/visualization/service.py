@@ -333,44 +333,115 @@ class VisualLearningService:
             "label": clean_topic,
             "type": "concept",
             "description": f"Fundamental conceptual anchor for {clean_topic}.",
-            "source_chunk_ids": [f"chunk_0"] if chunks else []
+            "source_chunk_ids": ["chunk_0"] if chunks else []
         }]
         edges = []
 
         seen_labels = {clean_topic.lower()}
-        for idx, c in enumerate(chunks[:6]):
-            heading = (c.get("section_heading") or f"Subtopic {idx+1}").strip()
-            heading = sanitize_visual_text(heading, max_len=60)
+        extracted_concepts = []
+
+        for idx, c in enumerate(chunks[:8]):
+            txt = (c.get("text_content") or "").strip()
+            heading = (c.get("section_heading") or "").strip()
+
+            # If heading is generic or missing, extract key bold concepts or first major clause
+            if not heading or heading.lower() in ("general", "overview", "introduction") or heading.startswith("Subtopic"):
+                bold_matches = re.findall(r"\*\*([^*]{3,40})\*\*", txt)
+                if bold_matches:
+                    heading = bold_matches[0].strip()
+                else:
+                    first_sentence = re.split(r"[.\n;:]", txt)[0].strip()
+                    if 4 <= len(first_sentence) <= 50:
+                        heading = first_sentence
+                    else:
+                        heading = f"{clean_topic} Element {idx+1}"
+
+            heading = sanitize_visual_text(heading, max_len=50)
             if heading.lower() in seen_labels:
-                heading = f"{heading} Part {idx+1}"
+                heading = f"{heading} ({idx+1})"
             seen_labels.add(heading.lower())
 
             nid = f"node_{idx+1}"
-            text_snippet = (c.get("text_content") or "")[:180].strip()
-            nodes.append({
+            desc = txt[:180].strip() if txt else f"Grounded concept related to {clean_topic}."
+            node_type = "process_step" if visual_type == VisualType.PROCESS else ("definition" if idx % 2 == 0 else "concept")
+
+            extracted_concepts.append({
                 "id": nid,
                 "label": heading,
-                "type": "definition" if idx % 2 == 0 else "concept",
-                "description": text_snippet or f"Key concept related to {clean_topic}.",
+                "type": node_type,
+                "description": desc,
                 "source_chunk_ids": [f"chunk_{c.get('chunk_index', idx)}"]
             })
+
+        nodes.extend(extracted_concepts)
+
+        # Build topology based on requested visual type
+        actual_type = visual_type.value if visual_type != VisualType.AUTO else "concept_map"
+
+        if actual_type in ("process", "timeline", "flowchart"):
+            # Linear / sequential chain
+            prev_id = "node_root"
+            for n in extracted_concepts:
+                edges.append({
+                    "id": f"edge_{prev_id}_{n['id']}",
+                    "source": prev_id,
+                    "target": n["id"],
+                    "relation_type": "sequence" if actual_type == "timeline" else "leads_to",
+                    "label": "next stage" if actual_type == "process" else "develops",
+                    "is_prerequisite": False
+                })
+                prev_id = n["id"]
+        elif actual_type == "cycle" and extracted_concepts:
+            # Closed feedback loop
+            prev_id = "node_root"
+            for n in extracted_concepts:
+                edges.append({
+                    "id": f"edge_{prev_id}_{n['id']}",
+                    "source": prev_id,
+                    "target": n["id"],
+                    "relation_type": "leads_to",
+                    "label": "progresses",
+                    "is_prerequisite": False
+                })
+                prev_id = n["id"]
+            # Close the cycle loop
             edges.append({
-                "id": f"edge_root_{nid}",
-                "source": "node_root",
-                "target": nid,
-                "relation_type": "contains" if idx % 2 == 0 else "leads_to",
-                "label": "includes" if idx % 2 == 0 else "develops",
+                "id": f"edge_{prev_id}_node_root",
+                "source": prev_id,
+                "target": "node_root",
+                "relation_type": "leads_to",
+                "label": "repeats loop",
                 "is_prerequisite": False
             })
+        else:
+            # Radial / Hierarchical star with inter-node semantic bridges
+            for idx, n in enumerate(extracted_concepts):
+                edges.append({
+                    "id": f"edge_root_{n['id']}",
+                    "source": "node_root",
+                    "target": n["id"],
+                    "relation_type": "contains" if idx % 2 == 0 else "leads_to",
+                    "label": "includes" if idx % 2 == 0 else "enables",
+                    "is_prerequisite": idx == 0
+                })
+                # Add cross-link between adjacent nodes for rich network density
+                if idx > 0 and idx < len(extracted_concepts):
+                    edges.append({
+                        "id": f"edge_{extracted_concepts[idx-1]['id']}_{n['id']}",
+                        "source": extracted_concepts[idx-1]["id"],
+                        "target": n["id"],
+                        "relation_type": "related_to",
+                        "label": "correlates",
+                        "is_prerequisite": False
+                    })
 
-        actual_type = visual_type.value if visual_type != VisualType.AUTO else "concept_map"
         return {
-            "title": f"{clean_topic} Concept Map",
-            "description": f"Structured conceptual overview derived from study material.",
+            "title": f"{clean_topic} {actual_type.replace('_', ' ').title()}",
+            "description": f"Publication-grade conceptual diagram synthesized from study material.",
             "visual_type": actual_type,
             "nodes": nodes,
             "edges": edges,
-            "suggested_topics": [n["label"] for n in nodes[1:4]]
+            "suggested_topics": [n["label"] for n in nodes[1:5]]
         }
 
     # ============================================================

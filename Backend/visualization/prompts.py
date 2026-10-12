@@ -21,14 +21,14 @@ CRITICAL SECURITY & DATA INTEGRITY RULES:
    You must NEVER output HTML, CSS, JavaScript, <script>, <iframe>, <svg>, React components, Python, or shell code.
    You must produce ONLY a strict, pure JSON object conforming to the schema below.
 3. GROUNDING & CITATION INTEGRITY:
-   Every concept node and relationship MUST be derived from and grounded in the provided source chunks.
-   Every node must reference the exact chunk ID(s) where its concept is defined.
-4. ABSENT TOPIC INTEGRITY:
-   If the student requests a specific topic that has zero relevance to the provided source material, output:
-   {"status": "NOT_FOUND", "message": "I couldn't find enough source evidence for this topic in the current study session."}
-   However, if the requested topic is an overview, title, or relates to the core theme, synthesize the grounded conceptual structure from the provided chunks.
+   Every concept node and relationship should be derived from and anchored in the provided source chunks.
+   Every node should reference the available chunk ID(s) where its foundation is introduced.
+4. KNOWLEDGE SYNTHESIS & DOMAIN GROUNDING:
+   When the student requests a specific topic, concept, architecture, or workflow: Use the provided study material chunks as the authoritative grounding anchor, and apply deep academic domain knowledge to synthesize a complete, highly informative, conceptually clear visual graph.
+   Extract and detail key sub-concepts, definitions, inputs, processing steps, algorithms, and connections.
+   Produce between 5 and 15 meaningful concept nodes with clear labels, detailed 1-2 sentence academic explanations, and well-defined relationship links.
 5. GRAPH COMPLEXITY BOUNDS:
-   Generate at minimum 3 nodes and at most 20 nodes.
+   Generate at minimum 4 nodes and at most 20 nodes.
    Generate at most 30 edges.
    Do not create disconnected graphs or unreadable spiderwebs.
 """

@@ -7597,23 +7597,28 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
             "   - For monetary amounts, write `$50` or `USD 50` naturally without math formatting.\n"
             "   - ALWAYS verify that both opening and closing dollar delimiters are present.\n\n"
             "5. MULTI-MODAL VISUALS & DIAGRAMS PROTOCOL:\n"
-            "   - When the student asks for a visual, picture, photo, illustration, or diagram, choose the appropriate visual medium:\n"
-            "     a) HIGH-FIDELITY AI VISUAL GENERATION (FLUX.1 NEURAL DIFFUSION ENGINE):\n"
-            "        - You are equipped with a state-of-the-art FLUX.1 generative AI model capable of generating ANYTHING requested: fictional/movie characters (Iron Man, Batman, anime, superheroes), real-world objects, animals (dogs, wildlife), botany (flowers, plants), landscapes, historical figures, vehicles, sci-fi concepts, or artistic illustrations.\n"
-            "        - STRICT RULE: NEVER apologize, NEVER claim 'my interface operates purely as a text-and-code assistant', NEVER claim 'I cannot directly render image pixels', and NEVER recommend opening third-party SVG viewers like SVGViewer.dev! You have the live tool `generate_image` which renders directly on the student's screen!\n"
-            "        - When the student asks to generate, draw, create, or see an image of ANY subject (or says your previous image was wrong/lego), call:\n"
-            "          [CALL_TOOL: generate_image(\"detailed descriptive visual prompt\")]\n"
-            "        - Example: [CALL_TOOL: generate_image(\"Iron Man in cinematic red and gold armor with glowing arc reactor\")]\n"
-            "        - Example: [CALL_TOOL: generate_image(\"cute golden retriever puppy sitting in green grass\")]\n"
-            "        - Example: [CALL_TOOL: generate_image(\"blooming red rose flower with morning dew drops\")]\n"
-            "     b) SYSTEM ARCHITECTURES, ALGORITHMS & LOGICAL WORKFLOWS:\n"
-            "        - For software architectures, data pipelines, algorithms, state machines, and technical processes (e.g. RAG pipeline, OAuth flow, binary search tree, compiler stages), provide a clean, publication-grade Mermaid flowchart (```mermaid ... ```) accompanied by a structured technical walkthrough.\n"
+            "   A) STRICT RULE FOR ARCHITECTURE DIAGRAMS, FLOWCHARTS, SYSTEM DESIGNS & BOXES/LINES:\n"
+            "      - When the student asks for an architecture diagram, system design, flowchart, workflow, process flow, sequence diagram, ER diagram, class diagram, mind map, schema, or 'diagram with boxes and lines':\n"
+            "        * ABSOLUTELY NEVER call [CALL_TOOL: generate_image(...)]! Neural diffusion models CANNOT render legible text, boxes, connectors, or architectural pipelines. Calling generate_image for diagrams is STRICTLY FORBIDDEN.\n"
+            "        * NEVER output markdown image links for diagrams!\n"
+            "        * You MUST output a clean, syntactically valid, publication-grade Mermaid.js code block (```mermaid ... ```).\n"
+            "        * Use subgraphs to partition components (e.g. `subgraph ClientTier [\"🖥️ Client / Frontend Tier\"]`, `subgraph APITier [\"⚡ API & Gateway Tier\"]`, `subgraph StorageTier [\"💾 Persistence & Vector Tier\"]`).\n"
+            "        * Use styled boxes with clear labels, emojis, and directional arrows with protocols/actions (`A[\"🌐 React 19 Frontend\"] -->|HTTP / REST| B[\"⚡ FastAPI Gateway\"]`).\n"
+            "        * Follow every Mermaid diagram with an in-depth, structured technical walkthrough explaining each layer, data flow, failure recovery, and architectural rationale.\n\n"
+            "   B) PHOTOREALISTIC IMAGES, CHARACTERS & ARTWORK (FLUX.1 ENGINE):\n"
+            "      - You are equipped with a state-of-the-art FLUX.1 generative AI model capable of generating photorealistic visuals of: fictional/movie characters (Iron Man, Batman, anime, superheroes), real-world objects, animals (dogs, wildlife), botany (flowers, plants), landscapes, historical figures, vehicles, sci-fi concepts, or artistic illustrations.\n"
+            "      - Call [CALL_TOOL: generate_image(\"detailed descriptive visual prompt\")] EXCLUSIVELY when the student asks to see a PHOTO, PICTURE, PORTRAIT, WALLPAPER, ARTWORK, ANIMAL, CHARACTER, or physical object render.\n"
+            "      - NEVER use generate_image for code, diagrams, flowcharts, architectures, or schemas!\n"
+            "      - STRICT RULE: NEVER apologize, NEVER claim 'my interface operates purely as a text-and-code assistant', NEVER claim 'I cannot directly render image pixels', and NEVER recommend opening third-party SVG viewers like SVGViewer.dev! When an image is requested, call `generate_image` directly!\n"
+            "      - Example: [CALL_TOOL: generate_image(\"Iron Man in cinematic red and gold armor with glowing arc reactor\")]\n"
+            "      - Example: [CALL_TOOL: generate_image(\"cute golden retriever puppy sitting in green grass\")]\n"
+            "      - Example: [CALL_TOOL: generate_image(\"blooming red rose flower with morning dew drops\")]\n\n"
             "   - PRONOUN & CONTEXT RESOLUTION: Always inspect the preceding conversation history to resolve pronouns ('it', 'that', 'this'). If the user previously asked about a topic and then asks 'show me an image of it', resolve the pronoun to that exact topic.\n\n"
             "6. AVAILABLE TOOLS:\n"
             "   - [CALL_TOOL: search_user_library(\"search_query\")] -> Search the user's uploaded study materials\n"
             "   - [CALL_TOOL: get_session_details(session_id_integer)] -> Retrieve detailed content and quiz history of a specific session\n"
             "   - [CALL_TOOL: get_user_learning_stats()] -> Retrieve user's study metrics, quiz stats, and bookmarks\n"
-            "   - [CALL_TOOL: generate_image(\"subject or descriptive visual prompt\")] -> Generate stunning photorealistic 8K visuals, artwork, characters, objects, or nature using FLUX.1 neural diffusion\n"
+            "   - [CALL_TOOL: generate_image(\"subject or descriptive visual prompt\")] -> Generate stunning photorealistic 8K visuals, artwork, characters, objects, or nature using FLUX.1 neural diffusion (NOT FOR DIAGRAMS/FLOWCHARTS)\n"
             "   - [CALL_TOOL: generate_video(\"subject or descriptive motion prompt\")] -> Generate or stream high-definition video visual demonstration\n\n"
             "7. STRICT TOOL CALLING EXECUTION RULES:\n"
             "   - If you need to use a tool, emit ONLY the tool command on its own line: [CALL_TOOL: tool_name(...)].\n"
@@ -7650,9 +7655,17 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
                     res = agent_get_user_learning_stats(current_user.id, db)
                 elif tool_name == "generate_image":
                     prompt_arg = tool_args_raw.strip("\"'")
-                    res = agent_generate_image(prompt_arg, user_query=message)
-                    if res.startswith("!["):
-                        generated_images.append(res)
+                    is_diagram_query = bool(re.search(
+                        r'(?i)\b(diagram|architecture|flowchart|flow\s*chart|boxes\s*and\s*lines|box\s*and\s*line|mind\s*map|mindmap|workflow|pipeline|schema|sequence\s*diagram|er\s*diagram|class\s*diagram|uml|data\s*flow|block\s*diagram|concept\s*map|system\s*design|process\s*flow)\b',
+                        message + " " + prompt_arg
+                    ))
+                    if is_diagram_query:
+                        logger.warning("Agent attempted generate_image for architecture/diagram; redirecting to Mermaid.js.")
+                        res = "ERROR: Do NOT use generate_image for diagrams or system architecture. The student asked for an architecture diagram with boxes and lines. Output a clean, publication-grade Mermaid.js code block (```mermaid ... ```) with subgraphs, styled nodes, and directional arrows instead."
+                    else:
+                        res = agent_generate_image(prompt_arg, user_query=message)
+                        if res.startswith("!["):
+                            generated_images.append(res)
                 elif tool_name == "generate_video":
                     prompt_arg = tool_args_raw.strip("\"'")
                     res = agent_generate_video(prompt_arg, user_query=message)
@@ -7691,15 +7704,28 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
         r"misunderstanding[!,.]* Because my interface operates purely as a text",
     ]
 
-    has_refusal = any(re.search(p, reply, re.IGNORECASE) for p in canned_refusal_patterns)
-    user_explicitly_wants_image = bool(re.search(
-        r'(?i)\b(generate|create|draw|make|show me|give me|render|produce|paint)\b.*?\b(image|picture|photo|illustration|render|visual|portrait|drawing|iron man|flower|dog)\b'
-        r'|\b(image|picture|photo|illustration|render|visual)\b.*?\b(of|depicting|showing|for)\b'
-        r'|\b(iron man|flower|dog|rose)\b.*?\b(image|photo|picture)\b',
+    is_diagram_request = bool(re.search(
+        r'(?i)\b(diagram|architecture|flowchart|flow\s*chart|boxes\s*and\s*lines|box\s*and\s*line|mind\s*map|mindmap|workflow|pipeline|schema|sequence\s*diagram|er\s*diagram|class\s*diagram|uml|data\s*flow|block\s*diagram|concept\s*map|system\s*design|process\s*flow|network\s*topology|wireframe|layout|plot|plotting|graph|chart)\b',
         message
     ))
 
-    if has_refusal or (user_explicitly_wants_image and not generated_images):
+    has_refusal = any(re.search(p, reply, re.IGNORECASE) for p in canned_refusal_patterns)
+
+    if is_diagram_request:
+        # Diagrams are strictly Mermaid.js vector components — NEVER diffusion images
+        has_refusal = False
+        user_explicitly_wants_image = False
+        # Filter out any hallucinated diffusion images from diagram response
+        generated_images = [img for img in generated_images if not any(kw in str(img).lower() for kw in ['diagram', 'architecture', 'flowchart', 'boxes', 'pipeline', 'workflow'])]
+    else:
+        user_explicitly_wants_image = bool(re.search(
+            r'(?i)\b(generate|create|draw|make|show me|give me|render|produce|paint)\b.*?\b(image|picture|photo|illustration|render|portrait|drawing|iron man|flower|dog)\b'
+            r'|\b(image|picture|photo|illustration|render)\b.*?\b(of|depicting|showing|for)\b'
+            r'|\b(iron man|flower|dog|rose)\b.*?\b(image|photo|picture)\b',
+            message
+        ))
+
+    if not is_diagram_request and (has_refusal or (user_explicitly_wants_image and not generated_images)):
         logger.warning("Detected canned image refusal or missing requested image; synthesizing via FLUX.1 dynamically.")
         prev_user_msgs = [m.content for m in recent if m.role == "user"]
         all_user_text = " ".join([message] + prev_user_msgs[-2:])

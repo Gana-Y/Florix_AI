@@ -32,14 +32,20 @@ import {
   Brain,
   GitBranch,
   Columns,
-  RefreshCw
+  RefreshCw,
+  Download,
+  Code2,
+  Search,
+  Copy,
+  Check
 } from 'lucide-react';
 import api from '../utils/api';
 import {
   VISUAL_FORMATS,
   calculateVisualLayout,
   calculateFitToView,
-  generateConnectorPath
+  generateConnectorPath,
+  convertVisualDocToMermaid
 } from '../utils/visualLayoutEngine';
 
 const VISUAL_TYPES = VISUAL_FORMATS;
@@ -66,6 +72,39 @@ const NODE_TYPES = [
   { id: 'note', label: 'Note', color: '#64748b' },
 ];
 
+const splitLabelIntoLines = (label, maxCharsPerLine = 19) => {
+  if (!label) return [''];
+  if (label.length <= maxCharsPerLine) return [label];
+  const words = label.split(' ');
+  if (words.length === 1) {
+    return [
+      label.slice(0, maxCharsPerLine),
+      label.slice(maxCharsPerLine, maxCharsPerLine * 2 - 1) + (label.length > maxCharsPerLine * 2 ? '…' : '')
+    ];
+  }
+  let l1 = '';
+  let l2 = '';
+  let atL2 = false;
+  for (const w of words) {
+    if (!atL2) {
+      if ((l1 + ' ' + w).trim().length <= maxCharsPerLine) {
+        l1 = (l1 + ' ' + w).trim();
+      } else {
+        atL2 = true;
+        l2 = w;
+      }
+    } else {
+      if ((l2 + ' ' + w).trim().length <= maxCharsPerLine - 1) {
+        l2 = (l2 + ' ' + w).trim();
+      } else {
+        l2 = (l2 + ' ' + w).trim().slice(0, maxCharsPerLine - 2) + '…';
+        break;
+      }
+    }
+  }
+  return [l1, l2 || ''];
+};
+
 const VisualLearningWorkspace = ({
   session,
   initialSnippet,
@@ -84,6 +123,10 @@ const VisualLearningWorkspace = ({
   const [savedVisuals, setSavedVisuals] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
   const [editMode, setEditMode] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [showMermaidModal, setShowMermaidModal] = useState(false);
+  const [mermaidCode, setMermaidCode] = useState('');
+  const [copiedMermaid, setCopiedMermaid] = useState(false);
 
   // Edge cases & validation state
   const [inputError, setInputError] = useState(null);
@@ -393,6 +436,65 @@ const VisualLearningWorkspace = ({
     setPan(fit.pan);
     setZoom(fit.zoom);
     addToast('Canvas centered & fit to screen', 'info');
+  };
+
+  // Export as SVG
+  const handleExportSVG = () => {
+    if (!svgRef.current || !visualDoc) return;
+    try {
+      const svgClone = svgRef.current.cloneNode(true);
+      const svgString = new XMLSerializer().serializeToString(svgClone);
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(visualDoc.title || 'diagram').toLowerCase().replace(/\s+/g, '_')}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast('SVG vector diagram exported successfully!', 'success');
+    } catch {
+      addToast('Failed to export SVG diagram.', 'error');
+    }
+  };
+
+  // Export as PNG
+  const handleExportPNG = () => {
+    if (!svgRef.current || !visualDoc) return;
+    try {
+      const svgElement = svgRef.current;
+      const svgString = new XMLSerializer().serializeToString(svgElement);
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1200, containerSize.width * 2);
+        canvas.height = Math.max(800, containerSize.height * 2);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(2, 2);
+        ctx.fillStyle = isDarkMode ? '#09090b' : '#f8fafc';
+        ctx.fillRect(0, 0, containerSize.width, containerSize.height);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = `${(visualDoc.title || 'diagram').toLowerCase().replace(/\s+/g, '_')}.png`;
+        a.click();
+        addToast('High-resolution PNG exported!', 'success');
+      };
+      img.src = url;
+    } catch {
+      addToast('Failed to export PNG image.', 'error');
+    }
+  };
+
+  // View / Export as Mermaid
+  const handleViewMermaid = () => {
+    if (!visualDoc) return;
+    const code = convertVisualDocToMermaid(visualDoc);
+    setMermaidCode(code);
+    setShowMermaidModal(true);
   };
 
   // 6. Save current visual artifact
@@ -811,6 +913,57 @@ const VisualLearningWorkspace = ({
             )}
           </div>
 
+          {/* Concept Search Filter */}
+          {visualDoc && (
+            <div className="relative hidden lg:flex items-center">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Find concept..."
+                className="w-32 focus:w-44 text-[11px] bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 pl-7 pr-2 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-sm"
+              />
+            </div>
+          )}
+
+          {/* Export Dropdown (PNG, SVG, Mermaid) */}
+          {visualDoc && (
+            <div className="relative group">
+              <button
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-all cursor-pointer shadow-sm"
+                title="Export diagram"
+              >
+                <Download size={13} className="text-indigo-500" />
+                <span>Export</span>
+                <ChevronDown size={11} />
+              </button>
+              <div className="absolute right-0 mt-1 w-44 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl p-1.5 hidden group-hover:block z-50 animate-fadeIn">
+                <button
+                  onClick={handleExportPNG}
+                  className="w-full flex items-center gap-2 p-2 rounded-xl text-xs text-left hover:bg-slate-50 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 cursor-pointer transition-colors"
+                >
+                  <Download size={13} className="text-emerald-500" />
+                  <span>Export PNG Image</span>
+                </button>
+                <button
+                  onClick={handleExportSVG}
+                  className="w-full flex items-center gap-2 p-2 rounded-xl text-xs text-left hover:bg-slate-50 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 cursor-pointer transition-colors"
+                >
+                  <Download size={13} className="text-blue-500" />
+                  <span>Export Vector SVG</span>
+                </button>
+                <button
+                  onClick={handleViewMermaid}
+                  className="w-full flex items-center gap-2 p-2 rounded-xl text-xs text-left hover:bg-slate-50 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 cursor-pointer transition-colors"
+                >
+                  <Code2 size={13} className="text-purple-500" />
+                  <span>View Mermaid Code</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* New Map / Reset Button */}
           {visualDoc && (
             <button
@@ -820,6 +973,7 @@ const VisualLearningWorkspace = ({
                 setSelectedNode(null);
                 setCustomTopic('');
                 setInputError(null);
+                setSearchFilter('');
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-all cursor-pointer shadow-sm"
               title="Create a new visual map or change topic"
@@ -1168,6 +1322,61 @@ const VisualLearningWorkspace = ({
                   transition: isPanning || draggingNodeId ? 'none' : 'transform 0.05s ease-out'
                 }}
               >
+                {/* ── ARCHITECTURE PATTERN: Multi-Tier Layered Background Bands ── */}
+                {selectedVisualType === 'architecture' && visualDoc.meta?.architectureTiers && (
+                  <g className="architecture-tiers animate-fadeIn">
+                    {visualDoc.meta.architectureTiers.map((tier, i) => (
+                      <g key={i} transform={`translate(600, ${tier.y})`}>
+                        <rect
+                          x="-550"
+                          y="-65"
+                          width="1100"
+                          height="130"
+                          rx="20"
+                          fill={isDarkMode ? 'rgba(30, 27, 75, 0.28)' : 'rgba(238, 242, 255, 0.65)'}
+                          stroke={isDarkMode ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.25)'}
+                          strokeWidth="1.5"
+                          strokeDasharray="6,6"
+                        />
+                        <text
+                          x="-525"
+                          y="-44"
+                          fill={isDarkMode ? '#a5b4fc' : '#4f46e5'}
+                          fontSize="10.5"
+                          fontWeight="800"
+                          letterSpacing="0.08em"
+                        >
+                          {tier.label.toUpperCase()}
+                        </text>
+                      </g>
+                    ))}
+                  </g>
+                )}
+
+                {/* ── QUADRANT PATTERN: Axes & Labels ── */}
+                {selectedVisualType === 'quadrant' && visualDoc.meta?.quadrantAxes && (
+                  <g className="quadrant-axes animate-fadeIn">
+                    <line
+                      x1={visualDoc.meta.quadrantAxes.centerX}
+                      y1={visualDoc.meta.quadrantAxes.centerY - 320}
+                      x2={visualDoc.meta.quadrantAxes.centerX}
+                      y2={visualDoc.meta.quadrantAxes.centerY + 320}
+                      stroke={isDarkMode ? '#3f3f46' : '#cbd5e1'}
+                      strokeWidth="2"
+                      strokeDasharray="6,6"
+                    />
+                    <line
+                      x1={visualDoc.meta.quadrantAxes.centerX - 500}
+                      y1={visualDoc.meta.quadrantAxes.centerY}
+                      x2={visualDoc.meta.quadrantAxes.centerX + 500}
+                      y2={visualDoc.meta.quadrantAxes.centerY}
+                      stroke={isDarkMode ? '#3f3f46' : '#cbd5e1'}
+                      strokeWidth="2"
+                      strokeDasharray="6,6"
+                    />
+                  </g>
+                )}
+
                 {/* ── TIMELINE PATTERN: Central Glowing Horizontal Spine ── */}
                 {selectedVisualType === 'timeline' && visualDoc.meta?.timelineSpine && (
                   <g className="timeline-feature animate-fadeIn">
@@ -1355,6 +1564,12 @@ const VisualLearningWorkspace = ({
                   const typeInfo = NODE_TYPES.find((t) => t.id === node.type) || NODE_TYPES[0];
                   const isDragging = draggingNodeId === node.id;
 
+                  const isSearchMatch = Boolean(
+                    searchFilter &&
+                    node.label?.toLowerCase().includes(searchFilter.toLowerCase().trim())
+                  );
+                  const [line1, line2] = splitLabelIntoLines(node.label, 19);
+
                   return (
                     <g
                       key={node.id}
@@ -1367,14 +1582,29 @@ const VisualLearningWorkspace = ({
                       onMouseDown={(e) => handleStartNodeDrag(e, node)}
                       className={`cursor-pointer group/node ${isDragging ? 'opacity-90' : ''}`}
                     >
+                      {/* Search Match Halo */}
+                      {isSearchMatch && (
+                        <rect
+                          x="-91"
+                          y="-38"
+                          width="182"
+                          height="76"
+                          rx="18"
+                          fill="none"
+                          stroke="#10b981"
+                          strokeWidth="2.5"
+                          className="animate-pulse"
+                        />
+                      )}
+
                       {/* Selected glow */}
                       {isSelected && (
                         <rect
-                          x="-74"
-                          y="-34"
-                          width="148"
-                          height="68"
-                          rx="16"
+                          x="-89"
+                          y="-36"
+                          width="178"
+                          height="72"
+                          rx="17"
                           fill="none"
                           stroke="#6366f1"
                           strokeWidth="3"
@@ -1386,15 +1616,17 @@ const VisualLearningWorkspace = ({
 
                       {/* Node Card Background */}
                       <rect
-                        x="-70"
-                        y="-30"
-                        width="140"
-                        height="60"
+                        x="-85"
+                        y="-32"
+                        width="170"
+                        height="64"
                         rx="14"
                         fill={isDarkMode ? '#18181b' : '#ffffff'}
                         stroke={
                           isSelected
                             ? '#6366f1'
+                            : isSearchMatch
+                            ? '#10b981'
                             : node.mastery_status === 'struggling'
                             ? '#f43f5e'
                             : node.mastery_status === 'mastered'
@@ -1403,16 +1635,16 @@ const VisualLearningWorkspace = ({
                             ? '#27272a'
                             : '#e2e8f0'
                         }
-                        strokeWidth={isSelected ? '2' : '1.5'}
+                        strokeWidth={isSelected || isSearchMatch ? '2' : '1.5'}
                         filter="drop-shadow(0 4px 6px rgba(0,0,0,0.08))"
                         className="transition-all"
                       />
 
                       {/* Node Type Top Indicator Bar */}
                       <rect
-                        x="-70"
-                        y="-30"
-                        width="140"
+                        x="-85"
+                        y="-32"
+                        width="170"
                         height="5"
                         rx="2"
                         fill={typeInfo.color}
@@ -1420,7 +1652,7 @@ const VisualLearningWorkspace = ({
 
                       {/* Process Step Badge (if process pattern) */}
                       {selectedVisualType === 'process' && node.processStep && (
-                        <g transform="translate(-62, -22)">
+                        <g transform="translate(-77, -24)">
                           <rect x="0" y="0" width="22" height="13" rx="6" fill="#6366f1" />
                           <text x="11" y="7" textAnchor="middle" dominantBaseline="central" fill="#ffffff" fontSize="8" fontWeight="800">
                             {node.processStep < 10 ? `0${node.processStep}` : node.processStep}
@@ -1428,37 +1660,77 @@ const VisualLearningWorkspace = ({
                         </g>
                       )}
 
-                      {/* Node Label (Centered, truncated) */}
-                      <text
-                        x="0"
-                        y="-6"
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill={isDarkMode ? '#f4f4f5' : '#0f172a'}
-                        fontSize="11"
-                        fontWeight="700"
-                        fontFamily="Inter, sans-serif"
-                      >
-                        {node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label}
-                      </text>
-
-                      {/* Node Type / Citations Pill */}
-                      <text
-                        x="0"
-                        y="14"
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill={isDarkMode ? '#a1a1aa' : '#64748b'}
-                        fontSize="9"
-                        fontWeight="500"
-                      >
-                        {node.citations?.length > 0 ? `📑 [${node.citations.length} sources]` : typeInfo.label}
-                      </text>
+                      {/* Multi-Line Node Label (Centered, fully legible) */}
+                      {line2 ? (
+                        <>
+                          <text
+                            x="0"
+                            y="-8"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill={isDarkMode ? '#f4f4f5' : '#0f172a'}
+                            fontSize="11"
+                            fontWeight="700"
+                            fontFamily="Inter, sans-serif"
+                          >
+                            {line1}
+                          </text>
+                          <text
+                            x="0"
+                            y="6"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill={isDarkMode ? '#f4f4f5' : '#0f172a'}
+                            fontSize="11"
+                            fontWeight="700"
+                            fontFamily="Inter, sans-serif"
+                          >
+                            {line2}
+                          </text>
+                          <text
+                            x="0"
+                            y="21"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill={isDarkMode ? '#a1a1aa' : '#64748b'}
+                            fontSize="8.5"
+                            fontWeight="500"
+                          >
+                            {node.citations?.length > 0 ? `📑 [${node.citations.length} sources]` : typeInfo.label}
+                          </text>
+                        </>
+                      ) : (
+                        <>
+                          <text
+                            x="0"
+                            y="-4"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill={isDarkMode ? '#f4f4f5' : '#0f172a'}
+                            fontSize="11.5"
+                            fontWeight="700"
+                            fontFamily="Inter, sans-serif"
+                          >
+                            {line1}
+                          </text>
+                          <text
+                            x="0"
+                            y="15"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill={isDarkMode ? '#a1a1aa' : '#64748b'}
+                            fontSize="9"
+                            fontWeight="500"
+                          >
+                            {node.citations?.length > 0 ? `📑 [${node.citations.length} sources]` : typeInfo.label}
+                          </text>
+                        </>
+                      )}
 
                       {/* Mastery Status Circle Indicator at Top Right */}
                       {node.mastery_status && node.mastery_status !== 'untested' && (
                         <circle
-                          cx="60"
+                          cx="74"
                           cy="-22"
                           r="4"
                           fill={
@@ -1826,6 +2098,50 @@ const VisualLearningWorkspace = ({
                 className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 cursor-pointer"
               >
                 Create Link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: VIEW / EXPORT MERMAID CODE ── */}
+      {showMermaidModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl p-5 border border-slate-200 dark:border-zinc-800 shadow-2xl flex flex-col max-h-[82vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Code2 size={16} className="text-indigo-500" />
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Mermaid.js Diagram Architecture Code
+                </h4>
+              </div>
+              <button
+                onClick={() => setShowMermaidModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-2 mb-3">
+              Standard Mermaid vector architecture definition of your visual map. You can paste this in Markdown docs, GitHub READMEs, or chat!
+            </p>
+            <div className="flex-1 overflow-auto rounded-2xl bg-slate-950 p-3.5 border border-zinc-800">
+              <pre className="text-xs font-mono text-emerald-400 whitespace-pre-wrap select-all">
+                <code>{mermaidCode}</code>
+              </pre>
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(mermaidCode);
+                  setCopiedMermaid(true);
+                  setTimeout(() => setCopiedMermaid(false), 2000);
+                  addToast('Mermaid code copied to clipboard!', 'success');
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer shadow-md shadow-indigo-600/30 transition-all"
+              >
+                {copiedMermaid ? <Check size={14} className="text-emerald-300" /> : <Copy size={14} />}
+                <span>{copiedMermaid ? 'Copied!' : 'Copy Mermaid Code'}</span>
               </button>
             </div>
           </div>

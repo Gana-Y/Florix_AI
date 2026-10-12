@@ -6,14 +6,16 @@
  */
 
 export const VISUAL_FORMATS = [
-  { id: 'timeline', label: '⏳ Timeline', desc: 'Chronological progression with milestone spine', icon: 'Clock' },
-  { id: 'mind_map', label: '🧠 Mind Map', desc: 'Dual-wing radiating organic concept tree', icon: 'Brain' },
+  { id: 'architecture', label: '🏗️ Architecture', desc: 'Layered multi-tier system & data pipeline', icon: 'Layers' },
   { id: 'flowchart', label: '🔀 Flowchart', desc: 'Top-down algorithmic decision and sequence graph', icon: 'GitBranch' },
   { id: 'concept_map', label: '🕸️ Concept Map', desc: 'Cross-linked semantic knowledge network', icon: 'Network' },
+  { id: 'mind_map', label: '🧠 Mind Map', desc: 'Dual-wing radiating organic concept tree', icon: 'Brain' },
   { id: 'process', label: '➡️ Process', desc: 'Step-by-step sequential linear workflow', icon: 'ArrowRight' },
+  { id: 'timeline', label: '⏳ Timeline', desc: 'Chronological progression with milestone spine', icon: 'Clock' },
   { id: 'hierarchy', label: '🌳 Hierarchy', desc: 'Structured classification pyramid tree', icon: 'GitMerge' },
   { id: 'comparison', label: '⚖️ Comparison', desc: 'Side-by-side comparative column matrix', icon: 'Columns' },
   { id: 'cycle', label: '🔄 Cycle Loop', desc: 'Circular closed feedback loop system', icon: 'RefreshCw' },
+  { id: 'quadrant', label: '📊 2x2 Matrix', desc: 'Four-quadrant matrix classification', icon: 'Grid' },
 ];
 
 /**
@@ -46,6 +48,46 @@ export function calculateVisualLayout(nodes = [], edges = [], visualType = 'conc
   };
 
   switch (visualType) {
+    // ── 0. ARCHITECTURE (Multi-Tier Layered Pipeline: Client, Gateway, Services, Data) ──
+    case 'architecture': {
+      const tierCount = count <= 4 ? 2 : count <= 8 ? 3 : 4;
+      const tierLabels = [
+        '🖥️ Client & Frontend Interface',
+        '⚡ API Gateway & Ingress Tier',
+        '⚙️ Core Logic & Microservices Tier',
+        '💾 Persistence, Vector & Cache Tier'
+      ].slice(0, tierCount);
+
+      const tiers = Array.from({ length: tierCount }, () => []);
+      clonedNodes.forEach((node, i) => {
+        const tierIdx = Math.min(tierCount - 1, Math.floor((i / count) * tierCount));
+        tiers[tierIdx].push(node);
+      });
+
+      const tierHeight = Math.max(160, Math.min(210, 680 / tierCount));
+      const startY = CENTER_Y - ((tierCount - 1) * tierHeight) / 2;
+
+      meta.architectureTiers = tiers.map((tierNodes, tIdx) => {
+        const y = startY + tIdx * tierHeight;
+        const bCount = tierNodes.length;
+        const stepX = Math.max(220, Math.min(280, 1100 / Math.max(bCount, 1)));
+        const startX = CENTER_X - ((bCount - 1) * stepX) / 2;
+
+        tierNodes.forEach((node, idx) => {
+          node.x = startX + idx * stepX;
+          node.y = y;
+          node.architectureTier = tIdx;
+        });
+
+        return {
+          label: tierLabels[tIdx],
+          y,
+          tierIndex: tIdx
+        };
+      });
+      break;
+    }
+
     // ── 1. TIMELINE (Napkin AI Horizontal Milestone Spine) ──
     case 'timeline': {
       const stepX = Math.max(180, Math.min(240, 1000 / Math.max(count, 1)));
@@ -262,7 +304,42 @@ export function calculateVisualLayout(nodes = [], edges = [], visualType = 'conc
       break;
     }
 
-    // ── 7. CONCEPT MAP / AUTO (Semantic Balanced Radial Network) ──
+    // ── 7. QUADRANT (2x2 Matrix Classification) ──
+    case 'quadrant': {
+      const qSize = Math.max(1, Math.ceil(count / 4));
+      meta.quadrantAxes = {
+        centerX: CENTER_X,
+        centerY: CENTER_Y,
+        labels: {
+          top: 'High Strategic Impact',
+          bottom: 'Low Strategic Impact',
+          left: 'Low Complexity / Foundational',
+          right: 'High Complexity / Advanced'
+        }
+      };
+
+      const qOffsets = [
+        { dx: -240, dy: -140 }, // Q1: Top-Left
+        { dx: 240, dy: -140 },  // Q2: Top-Right
+        { dx: -240, dy: 140 },  // Q3: Bottom-Left
+        { dx: 240, dy: 140 }    // Q4: Bottom-Right
+      ];
+
+      clonedNodes.forEach((node, i) => {
+        const qIdx = Math.min(3, Math.floor(i / qSize));
+        const idxInQ = i % qSize;
+        const offset = qOffsets[qIdx];
+        const step = 110;
+        const jitterX = (idxInQ - (qSize - 1) / 2) * step;
+
+        node.x = CENTER_X + offset.dx + jitterX;
+        node.y = CENTER_Y + offset.dy;
+        node.quadrantIndex = qIdx + 1;
+      });
+      break;
+    }
+
+    // ── 8. CONCEPT MAP / AUTO (Semantic Balanced Radial Network) ──
     case 'concept_map':
     default: {
       // Root at center
@@ -274,7 +351,7 @@ export function calculateVisualLayout(nodes = [], edges = [], visualType = 'conc
       if (outerNodes.length > 0) {
         if (outerNodes.length <= 6) {
           // Single outer orbit
-          const radius = Math.min(300, 180 + outerNodes.length * 15);
+          const radius = Math.min(320, 190 + outerNodes.length * 18);
           outerNodes.forEach((node, i) => {
             const angle = (i * 2 * Math.PI) / outerNodes.length - Math.PI / 2;
             node.x = CENTER_X + radius * Math.cos(angle);
@@ -285,14 +362,14 @@ export function calculateVisualLayout(nodes = [], edges = [], visualType = 'conc
           const innerRing = outerNodes.slice(0, Math.ceil(outerNodes.length / 2));
           const outerRing = outerNodes.slice(Math.ceil(outerNodes.length / 2));
 
-          const r1 = 210;
+          const r1 = 220;
           innerRing.forEach((node, i) => {
             const angle = (i * 2 * Math.PI) / innerRing.length - Math.PI / 2;
             node.x = CENTER_X + r1 * Math.cos(angle);
             node.y = CENTER_Y + r1 * Math.sin(angle);
           });
 
-          const r2 = 360;
+          const r2 = 380;
           outerRing.forEach((node, i) => {
             const angle = (i * 2 * Math.PI) / outerRing.length - Math.PI / 4;
             node.x = CENTER_X + r2 * Math.cos(angle);
@@ -322,10 +399,10 @@ export function calculateFitToView(nodes = [], containerWidth = 1000, containerH
 
   nodes.forEach((n) => {
     if (n.x != null && n.y != null) {
-      minX = Math.min(minX, n.x - 75);
-      maxX = Math.max(maxX, n.x + 75);
-      minY = Math.min(minY, n.y - 35);
-      maxY = Math.max(maxY, n.y + 35);
+      minX = Math.min(minX, n.x - 90);
+      maxX = Math.max(maxX, n.x + 90);
+      minY = Math.min(minY, n.y - 45);
+      maxY = Math.max(maxY, n.y + 45);
     }
   });
 
@@ -343,7 +420,7 @@ export function calculateFitToView(nodes = [], containerWidth = 1000, containerH
 
   const zoomX = availWidth / graphWidth;
   const zoomY = availHeight / graphHeight;
-  const optimalZoom = Math.max(0.4, Math.min(1.4, Math.min(zoomX, zoomY)));
+  const optimalZoom = Math.max(0.35, Math.min(1.4, Math.min(zoomX, zoomY)));
 
   // Pan places graphCenterX, graphCenterY directly at container center
   const panX = containerWidth / 2 - graphCenterX * optimalZoom;
@@ -372,8 +449,8 @@ export function generateConnectorPath(src, tgt, visualType = 'concept_map') {
     return `M ${src.x} ${src.y} C ${midX} ${src.y}, ${midX} ${tgt.y}, ${tgt.x} ${tgt.y}`;
   }
 
-  // 2. Flowchart / Hierarchy: Vertical layered orthogonal curve
-  if (visualType === 'flowchart' || visualType === 'hierarchy') {
+  // 2. Flowchart / Hierarchy / Architecture: Vertical layered orthogonal curve
+  if (visualType === 'flowchart' || visualType === 'hierarchy' || visualType === 'architecture') {
     const midY = (src.y + tgt.y) / 2;
     return `M ${src.x} ${src.y} C ${src.x} ${midY}, ${tgt.x} ${midY}, ${tgt.x} ${tgt.y}`;
   }
@@ -382,7 +459,6 @@ export function generateConnectorPath(src, tgt, visualType = 'concept_map') {
   if (visualType === 'cycle') {
     const midX = (src.x + tgt.x) / 2;
     const midY = (src.y + tgt.y) / 2;
-    // Gentle perpendicular arc bend
     const norm = Math.sqrt(dx * dx + dy * dy) || 1;
     const bend = 30;
     const ctrlX = midX - (dy / norm) * bend;
@@ -390,6 +466,40 @@ export function generateConnectorPath(src, tgt, visualType = 'concept_map') {
     return `M ${src.x} ${src.y} Q ${ctrlX} ${ctrlY} ${tgt.x} ${tgt.y}`;
   }
 
-  // 4. Default / Process / Timeline / Concept Map: Straight line
+  // 4. Default / Process / Timeline / Concept Map / Quadrant: Straight line
   return `M ${src.x} ${src.y} L ${tgt.x} ${tgt.y}`;
+}
+
+/**
+ * Converts any visual document into standard, publication-grade Mermaid.js code.
+ */
+export function convertVisualDocToMermaid(visualDoc) {
+  if (!visualDoc || !Array.isArray(visualDoc.nodes) || visualDoc.nodes.length === 0) {
+    return 'flowchart TD\n  Empty["No concepts found"]';
+  }
+
+  const vType = visualDoc.visual_type || 'concept_map';
+  let chartType = 'flowchart TD';
+  if (vType === 'process' || vType === 'timeline') chartType = 'flowchart LR';
+
+  let code = `${chartType}\n`;
+
+  // Define nodes
+  visualDoc.nodes.forEach((n) => {
+    const cleanLabel = (n.label || '').replace(/"/g, "'").trim();
+    const nid = (n.id || '').replace(/[^a-zA-Z0-9_]/g, '_');
+    code += `  ${nid}["${cleanLabel}"]\n`;
+  });
+
+  // Define edges
+  if (Array.isArray(visualDoc.edges)) {
+    visualDoc.edges.forEach((e) => {
+      const srcId = (e.source || '').replace(/[^a-zA-Z0-9_]/g, '_');
+      const tgtId = (e.target || '').replace(/[^a-zA-Z0-9_]/g, '_');
+      const lbl = e.label ? `|"${e.label.replace(/"/g, "'")}"| ` : '';
+      code += `  ${srcId} -->${lbl}${tgtId}\n`;
+    });
+  }
+
+  return code;
 }

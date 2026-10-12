@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Shield, Loader2, User, Calendar, CreditCard, AlertCircle, Search, Globe, Users, Key, Hash, Mail, MessageSquare, Copy, Trash2, Bug, Sparkles, ExternalLink } from 'lucide-react';
+import { Check, X, Shield, Loader2, User, Calendar, CreditCard, AlertCircle, Search, Globe, Users, Key, Hash, Mail, MessageSquare, Copy, Trash2, Bug, Sparkles, ExternalLink, Database, Cloud, RefreshCw, Info } from 'lucide-react';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
 import { AuthContext } from '../context/AuthContext';
@@ -30,12 +31,14 @@ const AdminPanel = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [feedbackStatusFilter, setFeedbackStatusFilter] = useState('all');
   const [feedbackTypeFilter, setFeedbackTypeFilter] = useState('all');
+  const [dbSource, setDbSource] = useState(import.meta.env.VITE_API_URL ? 'cloud' : 'local'); // 'local' | 'cloud'
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     fetchPayments();
-    fetchUsers();
+    fetchUsers(dbSource);
     fetchFeedbacks();
-  }, []);
+  }, [dbSource]);
 
   const fetchPayments = async () => {
     setLoading(true);
@@ -50,16 +53,43 @@ const AdminPanel = () => {
     }
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (source = dbSource) => {
     setUsersLoading(true);
     try {
-      const res = await api.get('/admin/users');
-      setUsers(res.data);
+      if (source === 'cloud') {
+        const token = localStorage.getItem('token');
+        const res = await axios.get('https://florix-backend-ynjr.onrender.com/admin/users', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          timeout: 25000,
+        });
+        setUsers(res.data);
+      } else {
+        const res = await api.get('/admin/users');
+        setUsers(res.data);
+      }
     } catch (err) {
       if (err.response?.status === 401) return;
-      addToast(err.response?.data?.detail || 'Failed to load user list', 'error');
+      if (source === 'cloud' && err.response?.status === 403) {
+        addToast('Cloud Admin access requires administrator permissions on Render. Click "Sync from Cloud" to sync automatically via backend.', 'error');
+      } else {
+        addToast(err.response?.data?.detail || `Failed to load ${source === 'cloud' ? 'Cloud Production' : 'Local'} user list`, 'error');
+      }
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  const handleSyncFromCloud = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await api.post('/admin/sync-from-cloud', {});
+      addToast(res.data?.message || 'Successfully synchronized accounts from Cloud Production!', 'success');
+      await fetchUsers('local');
+      setDbSource('local');
+    } catch (err) {
+      addToast(err.response?.data?.detail || 'Cloud sync failed. Make sure your Render backend service is awake.', 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -521,21 +551,76 @@ const AdminPanel = () => {
               Registered Accounts
             </h3>
 
-            {/* Database Environment Banner & Cleanup Action */}
-            <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs mb-5">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span>
-                  <strong>Connected Database:</strong> {import.meta.env.VITE_API_URL ? 'Cloud Production Backend' : 'Local SQLite (Backend/florix.db)'} &bull; {users.length} registered accounts
-                </span>
+            {/* Database Environment Control & Synchronization Bar */}
+            <div className="bg-slate-50 dark:bg-zinc-950/60 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-4.5 space-y-3.5 mb-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                {/* Source Switcher Segmented Control */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 dark:text-zinc-400 mr-1 flex items-center gap-1">
+                    <Database size={13} className="text-indigo-500" /> Source:
+                  </span>
+                  <div className="flex bg-slate-200/70 dark:bg-zinc-900 p-1 rounded-xl border border-slate-300/40 dark:border-zinc-800 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setDbSource('local')}
+                      className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        dbSource === 'local'
+                          ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-200'
+                      }`}
+                    >
+                      <Database size={12} /> Local (localhost:8000)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDbSource('cloud')}
+                      className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        dbSource === 'cloud'
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-200'
+                      }`}
+                    >
+                      <Cloud size={12} /> Cloud Production (Render)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Actions: Sync from Cloud & Cleanup */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSyncFromCloud}
+                    disabled={isSyncing}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 text-xs shrink-0 cursor-pointer disabled:opacity-50"
+                    title="Import registered accounts from the deployed Render Cloud backend into your local SQLite database"
+                  >
+                    {isSyncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    Sync Cloud Users to Local
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCleanupTestAccounts}
+                    className="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs shrink-0 cursor-pointer"
+                    title="Purge all automated test accounts"
+                  >
+                    <Trash2 size={13} /> Clean Test Accounts
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={handleCleanupTestAccounts}
-                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 text-xs shrink-0 cursor-pointer"
-                title="Purge all automated test and auditor accounts"
-              >
-                <Trash2 size={13} /> Clean Up Test Accounts
-              </button>
+
+              {/* Informative Guidance Banner */}
+              <div className="flex items-start gap-2.5 pt-2 border-t border-slate-200/60 dark:border-zinc-800/80 text-[11px] text-slate-500 dark:text-zinc-400">
+                <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p>
+                    <strong className="text-slate-700 dark:text-zinc-200">Where do friends register?</strong> Anyone who signs up via your public Vercel link (<code>florix-4rkmoj877-ganesh-y-s-projects.vercel.app</code>) is registered on the <strong>Cloud Production Backend</strong> (Render).
+                  </p>
+                  <p>
+                    Currently viewing: <span className="font-bold text-indigo-600 dark:text-indigo-400">{dbSource === 'cloud' ? 'Cloud Production Backend (Live Users)' : 'Local Machine Database (Backend/florix.db)'}</span> &bull; {users.length} accounts listed.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* 🔍 Search Bar */}

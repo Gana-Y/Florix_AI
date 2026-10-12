@@ -72,8 +72,23 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
 
-    # Edge Case Safeguard: Check if Premium/Pro plan has expired
-    if user.plan and user.plan != "free" and user.plan_expires_at:
+    # ── Auto-Elevation for Configured Administrator Accounts ──
+    admin_emails = {"ganesh1@gmail.com", "ganeshyandigeri1@gmail.com"}
+    _env_admins = os.getenv("ADMIN_EMAILS", "")
+    if _env_admins:
+        for _e in _env_admins.split(","):
+            if _e.strip():
+                admin_emails.add(_e.strip().lower())
+
+    if user.email and user.email.lower() in admin_emails:
+        if not getattr(user, "is_admin", False) or user.plan != "premium":
+            user.is_admin = True
+            user.plan = "premium"
+            db.commit()
+            db.refresh(user)
+
+    # Edge Case Safeguard: Check if Premium/Pro plan has expired (non-admin only)
+    if not getattr(user, "is_admin", False) and user.plan and user.plan != "free" and user.plan_expires_at:
         # Check naive UTC datetimes
         if user.plan_expires_at < datetime.utcnow():
             old_plan = user.plan

@@ -204,6 +204,14 @@ logger = logging.getLogger("florix")
 
 load_dotenv()
 
+# ── Administrator Access Registry ────────────────────────────────────────────
+ADMIN_EMAILS = {"ganesh1@gmail.com", "ganeshyandigeri1@gmail.com"}
+_env_admins = os.getenv("ADMIN_EMAILS", "")
+if _env_admins:
+    for _e in _env_admins.split(","):
+        if _e.strip():
+            ADMIN_EMAILS.add(_e.strip().lower())
+
 # ── Gemini client ──────────────────────────────────────────────────────────────
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -355,6 +363,27 @@ async def lifespan(app: FastAPI):
         db.commit()
         logger.info("Database migration: Added onboarding_info column to users table.")
     except Exception:
+        db.rollback()
+
+    try:
+        db.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0;"))
+        db.commit()
+        logger.info("Database migration: Added is_admin column to users table.")
+    except Exception:
+        db.rollback()
+
+    # Verify and auto-elevate administrator privileges for configured admin accounts
+    try:
+        for admin_email in ADMIN_EMAILS:
+            admin_user = db.query(User).filter(func.lower(User.email) == admin_email).first()
+            if admin_user:
+                if not getattr(admin_user, "is_admin", False) or admin_user.plan != "premium":
+                    admin_user.is_admin = True
+                    admin_user.plan = "premium"
+                    db.commit()
+                    logger.info(f"👑 Verified administrator privileges for {admin_email}")
+    except Exception as e:
+        logger.warning(f"Admin auto-elevation check error: {e}")
         db.rollback()
     finally:
         db.close()
@@ -2399,25 +2428,27 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     if not re.search(special_chars, password_val):
         raise HTTPException(status_code=400, detail="Password must contain at least one special character (e.g. !@#$%^&*)")
 
+    is_admin_user = email_clean.lower() in ADMIN_EMAILS
     new_user = User(
         name=name_clean,
         email=email_clean.lower(),
         hashed_password=get_password_hash(password_val),
-        plan="free",
+        plan="premium" if is_admin_user else "free",
+        is_admin=is_admin_user,
     )
     db.add(new_user)
     db.flush()
     log_activity(db, new_user.id, "Account Created", f"Welcome to Florix AI, {new_user.name}!")
     db.commit()
     db.refresh(new_user)
-    logger.info(f"New user registered: {new_user.email}")
+    logger.info(f"New user registered: {new_user.email} (is_admin: {new_user.is_admin})")
 
     token = create_access_token(
         data={"sub": new_user.email},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return {"access_token": token, "token_type": "bearer", "user": {
-        "id": new_user.id, "name": new_user.name, "email": new_user.email, "plan": new_user.plan, "is_admin": False,
+        "id": new_user.id, "name": new_user.name, "email": new_user.email, "plan": new_user.plan, "is_admin": new_user.is_admin,
         "onboarding_completed": False
     }}
 
@@ -2455,6 +2486,14 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
     # Successful login — clear attempt history for this IP
     _login_attempts.pop(client_ip, None)
     logger.info(f"User logged in: {db_user.email}")
+
+    # Auto-elevate configured admin accounts on login
+    if db_user.email.lower() in ADMIN_EMAILS and (not getattr(db_user, "is_admin", False) or db_user.plan != "premium"):
+        db_user.is_admin = True
+        db_user.plan = "premium"
+        db.commit()
+        db.refresh(db_user)
+
     token = create_access_token(
         data={"sub": db_user.email},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
@@ -3213,6 +3252,79 @@ def get_admin_users(
         }
         for u in users
     ]
+
+
+class CloudSyncRequest(BaseModel):
+    cloud_url: Optional[str] = "https://florix-backend-ynjr.onrender.com"
+    email: Optional[str] = "ganesh1@gmail.com"
+    password: Optional[str] = None
+    cloud_token: Optional[str] = None
+
+@app.post("/admin/sync-from-cloud", tags=["Admin"])
+def sync_users_from_cloud(
+    req: CloudSyncRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Sync registered users from production Render cloud backend into local database."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(status_code=403, detail="Unauthorized access. Admin only.")
+
+    target_url = (req.cloud_url or "https://florix-backend-ynjr.onrender.com").rstrip("/")
+    token = req.cloud_token
+
+    # If no token provided, try to login to cloud using credentials or create local JWT
+    if not token:
+        token = create_access_token(data={"sub": current_user.email})
+
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        import requests
+        resp = requests.get(f"{target_url}/admin/users", headers=headers, timeout=15)
+        if (resp.status_code == 401 or resp.status_code == 403) and req.password:
+            login_resp = requests.post(f"{target_url}/login", json={"email": current_user.email, "password": req.password}, timeout=15)
+            if login_resp.status_code == 200:
+                token = login_resp.json().get("access_token")
+                headers["Authorization"] = f"Bearer {token}"
+                resp = requests.get(f"{target_url}/admin/users", headers=headers, timeout=15)
+
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=f"Cloud backend returned status {resp.status_code}: {resp.text}")
+
+        cloud_users = resp.json()
+        synced_count = 0
+        for cu in cloud_users:
+            c_email = cu.get("email", "").lower().strip()
+            if not c_email:
+                continue
+            existing = db.query(User).filter(func.lower(User.email) == c_email).first()
+            if not existing:
+                new_u = User(
+                    name=cu.get("name", "Student"),
+                    email=c_email,
+                    hashed_password=get_password_hash("FlorixSync@2026!"),
+                    plan=cu.get("plan", "free"),
+                    is_admin=bool(cu.get("is_admin", False)),
+                    country=cu.get("country", "Unknown"),
+                    onboarding_info=cu.get("onboarding_info", {})
+                )
+                db.add(new_u)
+                synced_count += 1
+            else:
+                if not existing.country or existing.country == "Unknown":
+                    existing.country = cu.get("country", "Unknown")
+                if not existing.onboarding_info:
+                    existing.onboarding_info = cu.get("onboarding_info", {})
+
+        db.commit()
+        return {
+            "status": "success",
+            "synced_count": synced_count,
+            "total_cloud_users": len(cloud_users),
+            "message": f"Successfully synced {synced_count} new accounts from Cloud Production ({len(cloud_users)} total in cloud)."
+        }
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with cloud backend: {str(e)}")
 
 
 class AdminPlanUpdateRequest(BaseModel):

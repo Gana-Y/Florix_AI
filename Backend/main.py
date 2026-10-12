@@ -6975,6 +6975,18 @@ def list_conversations(
     elif standalone is True:
         query = query.filter(ChatConversation.project_id.is_(None))
     convs = query.order_by(ChatConversation.is_pinned.desc(), ChatConversation.updated_at.desc()).all()
+    # Prune duplicate empty 'New Chat' drafts (keep at most 1 empty draft)
+    empty_drafts = [c for c in convs if len(c.messages) == 0 and c.title == "New Chat"]
+    if len(empty_drafts) > 1:
+        stale_drafts = empty_drafts[1:]
+        for sd in stale_drafts:
+            db.delete(sd)
+        try:
+            db.commit()
+            convs = [c for c in convs if c not in stale_drafts]
+        except Exception:
+            db.rollback()
+
     return [
         {
             "id": c.id,

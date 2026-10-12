@@ -655,14 +655,23 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
     try {
       const res = await api.get('/conversations');
       const data = res.data || [];
-      setConversations(data);
+      let seenEmpty = false;
+      const deduplicated = data.filter(c => {
+        if ((!c.message_count || c.message_count === 0) && (c.title === 'New Chat' || !c.title)) {
+          if (seenEmpty) return false;
+          seenEmpty = true;
+          return true;
+        }
+        return true;
+      });
+      setConversations(deduplicated);
       const currentActive = activeConvIdRef.current;
-      if (initialConvId && data.some(c => c.id === initialConvId)) {
+      if (initialConvId && deduplicated.some(c => c.id === initialConvId)) {
         setActiveConvId(initialConvId);
-      } else if (currentActive && data.some(c => c.id === currentActive)) {
+      } else if (currentActive && deduplicated.some(c => c.id === currentActive)) {
         // Current active chat still exists, retain it
-      } else if (data.length > 0) {
-        setActiveConvId(data[0].id);
+      } else if (deduplicated.length > 0) {
+        setActiveConvId(deduplicated[0].id);
       } else {
         // All chats deleted or empty: reset active chat and clear message view
         setActiveConvId(null);
@@ -684,19 +693,30 @@ const ChatPage = ({ initialConvId, activeSpaceId, onClearSpace }) => {
     }
   };
 
-  const createNewConversation = async () => {
-    try {
-      const res = await api.post('/conversations', {
-        title: 'New Chat',
-        project_id: activeSpaceId || null
-      });
-      setConversations((p) => [res.data, ...p]);
-      setActiveConvId(res.data.id);
+  const createNewConversation = () => {
+    // 1. If currently in an empty conversation, simply keep it and focus input
+    if (messages.length === 0 && (!activeConvId || conversations.find(c => c.id === activeConvId)?.title === 'New Chat')) {
+      if (window.innerWidth < 768) setShowSidebar(false);
+      setTimeout(() => inputRef.current?.focus(), 100);
+      return;
+    }
+
+    // 2. Check if an unused empty conversation already exists in our list
+    const existingEmpty = conversations.find(c => (!c.message_count || c.message_count === 0) && (c.title === 'New Chat' || !c.title));
+    if (existingEmpty) {
+      setActiveConvId(existingEmpty.id);
       setMessages([]);
       if (window.innerWidth < 768) setShowSidebar(false);
       setTimeout(() => inputRef.current?.focus(), 100);
-      window.dispatchEvent(new CustomEvent('florix:conversation-updated', { detail: { chatId: res.data.id, title: res.data.title } }));
-    } catch (e) { console.error(e); }
+      return;
+    }
+
+    // 3. Otherwise transition to clean draft state (like ChatGPT)
+    // The DB row is created dynamically on first message send in handleSend
+    setActiveConvId(null);
+    setMessages([]);
+    if (window.innerWidth < 768) setShowSidebar(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const handleTogglePin = async (e, convId, currentPinned) => {

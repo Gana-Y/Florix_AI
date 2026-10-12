@@ -56,8 +56,8 @@ const InteractiveBotAvatar = ({
         const deltaY = e.clientY - avatarCenterY;
         const distance = Math.hypot(deltaX, deltaY);
 
-        // Normalize and clamp eye offset within [-2.2, 2.2] pixels
-        const maxOffset = 2.2;
+        // Normalize and clamp eye offset within [-1.3, 1.3] units to stay centered in socket
+        const maxOffset = 1.3;
         if (distance > 0) {
           const clampedDistance = Math.min(distance / 200, 1);
           const angle = Math.atan2(deltaY, deltaX);
@@ -191,48 +191,46 @@ const InteractiveBotAvatar = ({
           {/* Left Eye Socket Background */}
           <circle cx="8.5" cy="12" r="2.2" fill="#0f172a" fillOpacity="0.8" />
 
-          {/* Left Eye Pupil (Animated) */}
-          <motion.circle
-            cx="8.5"
-            cy="12"
-            r={isTyping ? "1.6" : "1.4"}
-            fill={isLoading ? "#38bdf8" : isTyping ? "#22d3ee" : "#38bdf8"}
-            animate={eyeMotion}
-            style={{
-              filter: 'drop-shadow(0px 0px 2.5px rgba(56, 189, 248, 0.95))'
-            }}
-          />
-          {/* Left Eye Glint Highlight */}
-          <motion.circle
-            cx="7.9"
-            cy="11.4"
-            r="0.5"
-            fill="white"
-            animate={eyeMotion}
-          />
+          {/* Left Eye Pupil Group (Animated Tracking) */}
+          <motion.g animate={eyeMotion}>
+            <circle
+              cx="8.5"
+              cy="12"
+              r={isTyping ? "1.6" : "1.4"}
+              fill={isLoading ? "#38bdf8" : isTyping ? "#22d3ee" : "#38bdf8"}
+              style={{
+                filter: 'drop-shadow(0px 0px 2.5px rgba(56, 189, 248, 0.95))'
+              }}
+            />
+            <circle
+              cx="7.9"
+              cy="11.4"
+              r="0.5"
+              fill="white"
+            />
+          </motion.g>
 
           {/* Right Eye Socket Background */}
           <circle cx="15.5" cy="12" r="2.2" fill="#0f172a" fillOpacity="0.8" />
 
-          {/* Right Eye Pupil (Animated) */}
-          <motion.circle
-            cx="15.5"
-            cy="12"
-            r={isTyping ? "1.6" : "1.4"}
-            fill={isLoading ? "#38bdf8" : isTyping ? "#22d3ee" : "#38bdf8"}
-            animate={eyeMotion}
-            style={{
-              filter: 'drop-shadow(0px 0px 2.5px rgba(56, 189, 248, 0.95))'
-            }}
-          />
-          {/* Right Eye Glint Highlight */}
-          <motion.circle
-            cx="14.9"
-            cy="11.4"
-            r="0.5"
-            fill="white"
-            animate={eyeMotion}
-          />
+          {/* Right Eye Pupil Group (Animated Tracking) */}
+          <motion.g animate={eyeMotion}>
+            <circle
+              cx="15.5"
+              cy="12"
+              r={isTyping ? "1.6" : "1.4"}
+              fill={isLoading ? "#38bdf8" : isTyping ? "#22d3ee" : "#38bdf8"}
+              style={{
+                filter: 'drop-shadow(0px 0px 2.5px rgba(56, 189, 248, 0.95))'
+              }}
+            />
+            <circle
+              cx="14.9"
+              cy="11.4"
+              r="0.5"
+              fill="white"
+            />
+          </motion.g>
         </motion.g>
 
         {/* Robot Mouth Grill / Smile */}

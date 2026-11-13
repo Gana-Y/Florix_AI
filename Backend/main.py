@@ -374,14 +374,35 @@ async def lifespan(app: FastAPI):
 
     # Verify and auto-elevate administrator privileges for configured admin accounts
     try:
+        default_admin_email = "ganeshyandigeri2029@gmail.com"
+        admin_user = db.query(User).filter(func.lower(User.email) == default_admin_email).first()
+        if not admin_user:
+            admin_user = User(
+                name="Ganesh",
+                email=default_admin_email,
+                hashed_password=get_password_hash("Ganesh@#2029"),
+                plan="premium",
+                is_admin=True,
+                onboarding_completed=True
+            )
+            db.add(admin_user)
+            db.commit()
+            logger.info(f"👑 Permanent administrator {default_admin_email} auto-seeded successfully!")
+        else:
+            admin_user.is_admin = True
+            admin_user.plan = "premium"
+            if not verify_password("Ganesh@#2029", admin_user.hashed_password):
+                admin_user.hashed_password = get_password_hash("Ganesh@#2029")
+            db.commit()
+            logger.info(f"👑 Permanent administrator {default_admin_email} verified & synchronized.")
+
         for admin_email in ADMIN_EMAILS:
-            admin_user = db.query(User).filter(func.lower(User.email) == admin_email).first()
-            if admin_user:
-                if not getattr(admin_user, "is_admin", False) or admin_user.plan != "premium":
-                    admin_user.is_admin = True
-                    admin_user.plan = "premium"
+            if admin_email != default_admin_email:
+                a_user = db.query(User).filter(func.lower(User.email) == admin_email).first()
+                if a_user:
+                    a_user.is_admin = True
+                    a_user.plan = "premium"
                     db.commit()
-                    logger.info(f"👑 Verified administrator privileges for {admin_email}")
     except Exception as e:
         logger.warning(f"Admin auto-elevation check error: {e}")
         db.rollback()

@@ -94,14 +94,15 @@ function AppInner() {
       return;
     }
 
-    const welcomed = localStorage.getItem(`florix_welcomed_${user.id}`);
+    const welcomed = localStorage.getItem(`florix_welcomed_${user.id}`) || user?.onboarding_completed;
     if (!welcomed) {
-      if (currentView === 'dashboard') {
-        localStorage.setItem(`florix_welcomed_${user.id}`, 'true');
-      } else if (currentView !== 'onboarding' && currentView !== 'welcome' && currentView !== 'landing') {
-        navigate('/dashboard');
+      if (currentView !== 'onboarding' && currentView !== 'welcome' && currentView !== 'landing') {
+        navigate('/onboarding');
       }
     } else {
+      if (!localStorage.getItem(`florix_welcomed_${user.id}`)) {
+        localStorage.setItem(`florix_welcomed_${user.id}`, 'true');
+      }
       // Welcomed user: prevent navigating back to auth, onboarding, or welcome screens
       if (['login', 'signup', 'onboarding', 'welcome'].includes(currentView)) {
         navigate('/dashboard');

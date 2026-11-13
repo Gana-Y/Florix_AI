@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronLeft, Check, Brain, Sparkles, Activity, ShieldCheck, Zap } from 'lucide-react';
@@ -65,14 +65,6 @@ const OnboardingFlow = ({ onComplete }) => {
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [answers, setAnswers] = useState({ role: '', domain: '', source: '' });
-  const videoRef = useRef(null);
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = 0.55;
-    }
-  }, []);
-
   const currentStep = STEPS[step];
   const selected = answers[currentStep.field];
   const isLast = step === STEPS.length - 1;
@@ -100,79 +92,119 @@ const OnboardingFlow = ({ onComplete }) => {
     }
   };
 
-
-
   return (
-    <div className="fixed inset-0 z-[90] bg-[#02040a] text-white overflow-hidden flex flex-col lg:flex-row">
+    <div className="fixed inset-0 z-[90] bg-[#04060e] text-white overflow-hidden flex flex-col lg:flex-row">
+      
+      {/* ── LEFT HALF: AUTHENTIC 4K LASER BEAM & FLORIX AI APP DECK ── */}
+      <div className="hidden lg:flex lg:w-1/2 relative h-full overflow-hidden items-center justify-center bg-[#04060e] select-none">
+        {/* Authentic 4K Laser Beam Video with integrated black box, waterfall flare, and thundering atmospheric clouds */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute max-w-none pointer-events-none"
+            style={{
+              width: '146%',
+              height: 'auto',
+              left: '-19%',
+              top: '-3%',
+              filter: 'contrast(1.18) brightness(1.06) saturate(1.15)',
+            }}
+          >
+            <source src="/videos/onboarding-beam.webm" type="video/webm" />
+            <source src="/videos/onboarding-beam.mp4" type="video/mp4" />
+          </video>
+        </div>
 
-      {/* 🌌 FULL-SCREEN CINEMATIC BLACK HOLE BACKGROUND (100% UNBROKEN VIEW) 🌌 */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <video
-          ref={videoRef}
-          autoPlay
-          loop
-          muted
-          playsInline
-          onLoadedMetadata={(e) => { e.currentTarget.playbackRate = 0.55; }}
-          onPlay={(e) => { e.currentTarget.playbackRate = 0.55; }}
-          className="w-full h-full object-cover scale-[1.02] pointer-events-none"
-          style={{
-            filter: 'brightness(0.96) contrast(1.12) saturate(1.22)',
+        {/* Ambient Atmospheric Lightning Flash across Upper Clouds */}
+        <motion.div
+          animate={{
+            opacity: [0.05, 0.25, 0.05, 0.5, 0.1, 0.05],
           }}
-        >
-          <source src="/videos/SpaceVideo.mp4" type="video/mp4" />
-        </video>
-        {/* Soft edge-only vignette (no center splits or vertical dividers) */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: 'radial-gradient(ellipse at 40% 50%, transparent 45%, rgba(2,4,10,0.55) 100%)' }}
+          transition={{
+            duration: 6,
+            repeat: Infinity,
+            times: [0, 0.42, 0.45, 0.48, 0.52, 1],
+            ease: "easeInOut",
+          }}
+          className="absolute inset-0 bg-gradient-to-b from-indigo-500/15 via-transparent to-transparent mix-blend-screen pointer-events-none"
         />
-      </div>
 
-      {/* ── TOP-LEFT ORBITAL BRAND HUD ── */}
-      <div className="absolute top-6 left-6 sm:top-8 sm:left-8 z-30 flex items-center gap-3 select-none">
-        <div className="p-2.5 bg-black/45 backdrop-blur-md rounded-2xl border border-white/20 shadow-[0_0_25px_rgba(0,0,0,0.8)]">
-          <Brain size={24} className="text-cyan-400" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-black tracking-widest uppercase text-white block">FLORIX AI</span>
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 font-mono tracking-wider">ORBITAL STATION</span>
+        {/* Atmospheric Edge Vignettes */}
+        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[#04060e] to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#04060e] to-transparent pointer-events-none" />
+        <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#04060e] to-transparent pointer-events-none" />
+        <div className="absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-[#04060e] to-transparent pointer-events-none" />
+
+        {/* Brand Header */}
+        <div className="absolute top-8 left-8 z-20 flex items-center gap-3">
+          <div className="p-2.5 bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/20 shadow-2xl">
+            <Brain size={24} className="text-indigo-400" />
           </div>
-          <span className="text-[10px] tracking-wider text-indigo-200/80 font-medium block">DEEP COGNITIVE CALIBRATION</span>
+          <div>
+            <span className="text-sm font-black tracking-widest uppercase text-white block">FLORIX AI</span>
+            <span className="text-[10px] tracking-wider text-indigo-300/70 font-semibold block">INTELLIGENT ACADEMIC WORKSPACE</span>
+          </div>
+        </div>
+
+        {/* DIRECT FLORIX LETTERS INSIDE THE BLACK BOX (Direct typography, no extra nested boxes) */}
+        <div
+          className="absolute z-20 pointer-events-none flex flex-col items-center justify-center text-center"
+          style={{ left: '6%', width: '72%', top: '48%', height: '32%' }}
+        >
+          <div className="flex items-center gap-4 mb-2">
+            <div className="w-8 h-[1px] bg-gradient-to-r from-transparent to-cyan-400/40" />
+            <span className="text-[11px] tracking-[0.35em] text-cyan-300/80 font-bold uppercase">
+              INTELLIGENT WORKSPACE
+            </span>
+            <div className="w-8 h-[1px] bg-gradient-to-l from-transparent to-cyan-400/40" />
+          </div>
+
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8 }}
+            className="text-4xl sm:text-5xl font-black tracking-tight text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)]"
+            style={{
+              textShadow: '0 2px 20px rgba(0,0,0,0.9), 0 0 40px rgba(99,102,241,0.25)',
+            }}
+          >
+            FLORIX
+          </motion.h1>
+
+          <p className="text-xs text-zinc-300 tracking-[0.2em] uppercase font-medium mt-2 drop-shadow">
+            Next-Gen Academic Engine
+          </p>
+
+          <div className="flex items-center gap-3 mt-4">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-[10px] font-semibold text-zinc-200 shadow-lg">
+              <Zap size={11} className="text-yellow-400" /> AI Grounded
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-[10px] font-semibold text-zinc-200 shadow-lg">
+              <ShieldCheck size={11} className="text-emerald-400" /> Private & Verified
+            </span>
+          </div>
+        </div>
+
+        {/* Ambient Bottom Right Glow from waterfall flare */}
+        <div className="absolute bottom-6 right-6 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
+          <Activity size={12} className="text-cyan-400 animate-pulse" />
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-300">SYSTEM ARBITER LIVE</span>
         </div>
       </div>
 
-
-
-      {/* ── LEFT HALF: UNOBSTRUCTED VISTA OF GARGANTUA / BLACK HOLE ── */}
-      <div className="hidden lg:flex lg:w-5/12 relative h-full pointer-events-none z-10" />
-
-      {/* ── MOBILE HEADER (< lg) ── */}
-      <div className="lg:hidden relative w-full pt-6 px-6 pb-2 shrink-0 z-20 flex items-center gap-2">
-        <div className="p-1.5 bg-black/40 backdrop-blur-md rounded-xl border border-white/20">
-          <Brain size={18} className="text-cyan-400" />
-        </div>
-        <span className="text-xs font-black tracking-wider uppercase text-white">FLORIX AI</span>
-      </div>
-
-      {/* ── RIGHT HALF: FLOATING HOLOGRAPHIC COCKPIT CONSOLE (ZERO SCROLLBARS, ZERO LINES) ── */}
-      <div
-        data-lenis-prevent="true"
-        className="flex-1 h-full flex flex-col justify-between p-4 sm:p-6 lg:p-7 overflow-y-auto no-scrollbar scroll-smooth relative z-20 bg-transparent"
-        style={{
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        }}
-      >
-
-        {/* Top Progress & Telemetry */}
+      {/* ── RIGHT HALF: ONBOARDING STEPS ── */}
+      <div className="flex-1 h-full flex flex-col justify-between p-6 sm:p-10 lg:p-12 overflow-y-auto custom-scrollbar relative z-10 bg-[#04060e]">
+        
+        {/* Top Progress & Header */}
         <div className="max-w-xl w-full mx-auto">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-400">MISSION STEP {step + 1}</span>
-              <span className="text-zinc-500">/</span>
-              <span className="text-xs text-zinc-300 font-medium">03</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">Step {step + 1}</span>
+              <span className="text-zinc-600">/</span>
+              <span className="text-xs text-zinc-400 font-medium">Setup</span>
             </div>
 
             <button
@@ -182,15 +214,15 @@ const OnboardingFlow = ({ onComplete }) => {
               Skip to Workspace →
             </button>
 
-            {/* Glowing Segmented Space Progress Bar */}
+            {/* Glowing Segmented Progress Bar */}
             <div className="flex items-center gap-2">
               {STEPS.map((_, i) => (
                 <motion.div
                   key={i}
                   animate={{
-                    width: i === step ? 36 : 10,
-                    backgroundColor: i <= step ? '#38bdf8' : 'rgba(255,255,255,0.15)',
-                    boxShadow: i === step ? '0 0 16px rgba(56,189,248,0.7)' : 'none',
+                    width: i === step ? 32 : 10,
+                    backgroundColor: i <= step ? '#818cf8' : 'rgba(255,255,255,0.12)',
+                    boxShadow: i === step ? '0 0 12px rgba(129,140,248,0.5)' : 'none',
                   }}
                   transition={{ duration: 0.3 }}
                   className="h-2 rounded-full"
@@ -200,8 +232,8 @@ const OnboardingFlow = ({ onComplete }) => {
           </div>
         </div>
 
-        {/* Floating Holographic Console Box */}
-        <div className="max-w-xl w-full mx-auto my-auto py-1">
+        {/* Step Content Area */}
+        <div className="max-w-xl w-full mx-auto my-auto py-4">
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={step}
@@ -211,27 +243,17 @@ const OnboardingFlow = ({ onComplete }) => {
               animate="center"
               exit="exit"
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="relative p-5 sm:p-7 rounded-3xl bg-black/45 border border-white/15 backdrop-blur-md shadow-[0_20px_70px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.15)] select-none"
             >
-              {/* Sci-Fi HUD Corner Reticles */}
-              <div className="absolute top-3 left-3 w-3 h-3 border-t-2 border-l-2 border-cyan-400/60 rounded-tl" />
-              <div className="absolute top-3 right-3 w-3 h-3 border-t-2 border-r-2 border-cyan-400/60 rounded-tr" />
-              <div className="absolute bottom-3 left-3 w-3 h-3 border-b-2 border-l-2 border-cyan-400/60 rounded-bl" />
-              <div className="absolute bottom-3 right-3 w-3 h-3 border-b-2 border-r-2 border-cyan-400/60 rounded-br" />
-
-              <div className="mb-4 sm:mb-5">
-                <span className="text-[10px] tracking-[0.25em] text-cyan-400 font-mono uppercase block mb-1">
-                  ✦ COGNITIVE PROFILE TELEMETRY
-                </span>
-                <h2 className="text-2xl sm:text-3xl lg:text-[34px] font-black text-white tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)] mb-1.5">
+              <div className="mb-6">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight mb-2">
                   {currentStep.title}
                 </h2>
-                <p className="text-zinc-300 text-xs sm:text-sm leading-relaxed drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]">
+                <p className="text-zinc-400 text-sm sm:text-base leading-relaxed">
                   {currentStep.subtitle}
                 </p>
               </div>
 
-              {/* Options Grid: Holographic Interactive Pads */}
+              {/* Options Grid: Sleek, horizontal cards that never squish or clip */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {currentStep.options.map((opt) => {
                   const isSelected = selected === opt.label;
@@ -241,21 +263,21 @@ const OnboardingFlow = ({ onComplete }) => {
                       onClick={() => handleSelect(opt.label)}
                       whileHover={{ scale: 1.02, y: -1 }}
                       whileTap={{ scale: 0.98 }}
-                      className={`relative flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl border text-left transition-all duration-200 cursor-pointer backdrop-blur-md ${
+                      className={`relative flex items-center gap-3 p-3 sm:p-3.5 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
                         isSelected
-                          ? 'bg-cyan-500/25 border-cyan-400 text-white shadow-[0_0_25px_rgba(34,211,238,0.4)] ring-1 ring-cyan-400/60'
-                          : 'bg-black/50 border-white/15 text-zinc-200 hover:border-cyan-400/50 hover:text-white hover:bg-black/70 hover:shadow-[0_0_15px_rgba(34,211,238,0.15)]'
+                          ? 'bg-gradient-to-r from-indigo-600/30 to-purple-600/20 border-indigo-400 text-white shadow-[0_0_25px_rgba(99,102,241,0.25)] ring-1 ring-indigo-400/50'
+                          : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25 hover:text-white hover:bg-white/[0.07]'
                       }`}
                     >
-                      <span className="text-lg sm:text-xl shrink-0 p-1.5 rounded-xl bg-white/[0.08] border border-white/10">{opt.emoji}</span>
-                      <span className="text-xs sm:text-sm font-semibold leading-tight flex-1 truncate drop-shadow">{opt.label}</span>
+                      <span className="text-xl shrink-0 p-1 rounded-xl bg-white/[0.05] border border-white/5">{opt.emoji}</span>
+                      <span className="text-xs sm:text-sm font-semibold leading-tight flex-1 truncate">{opt.label}</span>
                       {isSelected && (
                         <motion.div
                           initial={{ scale: 0 }}
                           animate={{ scale: 1 }}
-                          className="w-5 h-5 bg-cyan-400 rounded-full flex items-center justify-center shrink-0 shadow-md shadow-cyan-400/50"
+                          className="w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/50"
                         >
-                          <Check size={12} className="text-black" strokeWidth={3} />
+                          <Check size={12} className="text-white" strokeWidth={3} />
                         </motion.div>
                       )}
                     </motion.button>
@@ -267,16 +289,16 @@ const OnboardingFlow = ({ onComplete }) => {
         </div>
 
         {/* Bottom Actions Area */}
-        <div className="max-w-xl w-full mx-auto pt-4">
+        <div className="max-w-xl w-full mx-auto pt-6">
           <div className="flex items-center justify-between gap-4">
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={handleBack}
-              className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-black/45 border border-white/20 text-zinc-300 font-semibold text-xs sm:text-sm hover:border-white/40 hover:text-white transition-all cursor-pointer backdrop-blur-sm shadow-lg hover:bg-black/65"
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl border border-white/15 text-zinc-400 font-semibold text-xs sm:text-sm hover:border-white/30 hover:text-white transition-all cursor-pointer"
             >
               <ChevronLeft size={16} />
-              <span>{step === 0 ? 'Exit to Home' : 'Back'}</span>
+              <span>{step === 0 ? 'Home' : 'Back'}</span>
             </motion.button>
 
             <motion.button
@@ -284,19 +306,19 @@ const OnboardingFlow = ({ onComplete }) => {
               whileTap={{ scale: selected ? 0.98 : 1 }}
               onClick={handleNext}
               disabled={!selected}
-              className={`flex-1 flex items-center justify-center gap-2 px-7 py-3.5 rounded-2xl font-bold text-xs sm:text-sm text-white transition-all cursor-pointer shadow-xl ${
+              className={`flex-1 flex items-center justify-center gap-2 px-7 py-3.5 rounded-2xl font-bold text-xs sm:text-sm text-white transition-all cursor-pointer ${
                 selected
-                  ? 'bg-gradient-to-r from-cyan-500 via-indigo-600 to-purple-600 shadow-cyan-500/25 hover:shadow-cyan-500/40 hover:brightness-110 ring-1 ring-cyan-400/50'
+                  ? 'bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 shadow-xl shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:brightness-110'
                   : 'bg-white/10 cursor-not-allowed opacity-35'
               }`}
             >
-              <span>{isLast ? 'Initiate Workspace 🚀' : 'Confirm & Proceed'}</span>
+              <span>{isLast ? 'Get Started 🚀' : 'Continue'}</span>
               {!isLast && <ChevronRight size={16} />}
             </motion.button>
           </div>
 
-          <p className="text-center text-zinc-400 text-[11px] mt-4 font-mono font-medium drop-shadow">
-            SECTOR 0{step + 1} OF 0{STEPS.length} // FLORIX COGNITIVE TELEMETRY
+          <p className="text-center text-zinc-500 text-[11px] mt-4 font-medium">
+            Step {step + 1} of {STEPS.length} • Powered by Florix Intelligence
           </p>
         </div>
 

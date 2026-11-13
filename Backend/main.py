@@ -3065,20 +3065,20 @@ def submit_payment(
     if data.plan not in ("pro", "premium"):
         raise HTTPException(status_code=400, detail="Invalid plan chosen.")
 
-    # Clean transaction reference ID
-    tx_id_cleaned = re.sub(r"\s+", "", data.transaction_id).strip()
+    # Clean transaction reference ID and normalize to uppercase
+    tx_id_cleaned = re.sub(r"\s+", "", data.transaction_id).strip().upper()
 
     # Edge case: Validate pattern and length of reference ID to block spam and fraud.
     # Accepts 8 to 18 character alphanumeric codes with no special characters.
-    if not tx_id_cleaned or not re.match(r"^[A-Za-z0-9]{8,18}$", tx_id_cleaned):
+    if not tx_id_cleaned or not re.match(r"^[A-Z0-9]{8,18}$", tx_id_cleaned):
         raise HTTPException(
             status_code=400,
             detail="Invalid Transaction Reference ID. UTR must be an 8 to 18 character alphanumeric code with no spaces or special symbols."
         )
 
-    # Check if this transaction ID has already been submitted
+    # Check if this transaction ID has already been submitted (case-insensitive check)
     existing = db.query(PaymentSubmission).filter(
-        PaymentSubmission.transaction_id == tx_id_cleaned
+        func.upper(PaymentSubmission.transaction_id) == tx_id_cleaned
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail="This Transaction ID (UTR) has already been submitted.")

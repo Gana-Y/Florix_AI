@@ -255,8 +255,8 @@ const PricingTab = () => {
     e.preventDefault();
     if (!upiPlanId || !upiTransactionId.trim()) return;
 
-    const cleanedTx = upiTransactionId.trim().replace(/\s+/g, '');
-    if (!/^[A-Za-z0-9]{8,18}$/.test(cleanedTx)) {
+    const cleanedTx = upiTransactionId.trim().replace(/\s+/g, '').toUpperCase();
+    if (!/^[A-Z0-9]{8,18}$/.test(cleanedTx)) {
       addToast('Invalid UTR / Transaction ID. Must be an 8-18 character alphanumeric code with no spaces.', 'error');
       return;
     }

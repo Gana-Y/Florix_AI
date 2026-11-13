@@ -425,19 +425,27 @@ if RATE_LIMITING_ENABLED:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:3000")
-if raw_origins.strip() == "*":
-    ALLOWED_ORIGINS = ["*"]
-    cors_credentials = False
+STANDARD_ORIGINS = [
+    "https://florix-ai.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+if raw_origins and raw_origins.strip() != "*":
+    extra_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    ALLOWED_ORIGINS = list(dict.fromkeys(STANDARD_ORIGINS + extra_origins))
 else:
-    ALLOWED_ORIGINS = [o.strip() for o in raw_origins.split(",") if o.strip()]
-    cors_credentials = True
+    ALLOWED_ORIGINS = STANDARD_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app" if cors_credentials else None,
-    allow_credentials=cors_credentials,
+    allow_origin_regex=r"^https:\/\/([a-zA-Z0-9-]+\.)*vercel\.app$",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -3106,6 +3114,24 @@ def submit_payment(
 
     # Official plan pricing in INR (₹799 for Pro, ₹1,599 for Premium)
     amount = 799 if data.plan == "pro" else 1599
+
+    # Edge case: If user already has a pending payment, update it to avoid queue flooding
+    existing_pending = db.query(PaymentSubmission).filter(
+        PaymentSubmission.user_id == current_user.id,
+        PaymentSubmission.status == "pending"
+    ).first()
+    if existing_pending:
+        existing_pending.plan = data.plan
+        existing_pending.amount = amount
+        existing_pending.payment_method = data.payment_method
+        existing_pending.transaction_id = tx_id_cleaned
+        existing_pending.created_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing_pending)
+        return {
+            "message": "Payment reference updated successfully! Admin will verify and activate your plan.",
+            "id": existing_pending.id
+        }
 
     submission = PaymentSubmission(
         plan=data.plan,

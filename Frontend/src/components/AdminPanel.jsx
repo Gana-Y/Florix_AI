@@ -40,23 +40,32 @@ const AdminPanel = () => {
     fetchFeedbacks(dbSource);
   }, [dbSource]);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const getTargetBase = (source) => {
+    if (source === 'cloud') return 'https://florix-backend-ynjr.onrender.com';
+    return api.defaults.baseURL || 'http://127.0.0.1:8000';
+  };
+
   const fetchPayments = async (source = dbSource) => {
     setLoading(true);
     try {
-      if (source === 'cloud') {
-        const token = localStorage.getItem('token');
-        const res = await axios.get('https://florix-backend-ynjr.onrender.com/admin/payments', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          timeout: 25000,
-        });
-        setPayments(res.data);
-      } else {
-        const res = await api.get('/admin/payments');
-        setPayments(res.data);
-      }
+      const res = await api.get('/admin/payments', {
+        baseURL: getTargetBase(source),
+        headers: getAuthHeaders(),
+        timeout: 45000,
+      });
+      setPayments(res.data);
     } catch (err) {
       if (err.response?.status === 401) return;
-      addToast(err.response?.data?.detail || 'Failed to load payments', 'error');
+      if (!err.response) {
+        console.warn('Backend server waking up or connecting:', err);
+      } else {
+        addToast(err.response?.data?.detail || 'Failed to load payments', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -65,20 +74,17 @@ const AdminPanel = () => {
   const fetchUsers = async (source = dbSource) => {
     setUsersLoading(true);
     try {
-      if (source === 'cloud') {
-        const token = localStorage.getItem('token');
-        const res = await axios.get('https://florix-backend-ynjr.onrender.com/admin/users', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          timeout: 25000,
-        });
-        setUsers(res.data);
-      } else {
-        const res = await api.get('/admin/users');
-        setUsers(res.data);
-      }
+      const res = await api.get('/admin/users', {
+        baseURL: getTargetBase(source),
+        headers: getAuthHeaders(),
+        timeout: 45000,
+      });
+      setUsers(res.data);
     } catch (err) {
       if (err.response?.status === 401) return;
-      if (source === 'cloud' && err.response?.status === 403) {
+      if (!err.response) {
+        console.warn('Backend server waking up or connecting:', err);
+      } else if (source === 'cloud' && err.response?.status === 403) {
         addToast('Cloud Admin access requires administrator permissions on Render. Click "Sync from Cloud" to sync automatically via backend.', 'error');
       } else {
         addToast(err.response?.data?.detail || `Failed to load ${source === 'cloud' ? 'Cloud Production' : 'Local'} user list`, 'error');
@@ -105,17 +111,12 @@ const AdminPanel = () => {
   const fetchFeedbacks = async (source = dbSource) => {
     setFeedbackLoading(true);
     try {
-      if (source === 'cloud') {
-        const token = localStorage.getItem('token');
-        const res = await axios.get('https://florix-backend-ynjr.onrender.com/admin/feedback', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          timeout: 25000,
-        });
-        setFeedbacks(res.data);
-      } else {
-        const res = await api.get('/admin/feedback');
-        setFeedbacks(res.data);
-      }
+      const res = await api.get('/admin/feedback', {
+        baseURL: getTargetBase(source),
+        headers: getAuthHeaders(),
+        timeout: 45000,
+      });
+      setFeedbacks(res.data);
     } catch (err) {
       console.error('Failed to load feedback:', err);
     } finally {
@@ -125,15 +126,11 @@ const AdminPanel = () => {
 
   const handleUpdateFeedbackStatus = async (feedbackId, status) => {
     try {
-      if (dbSource === 'cloud') {
-        const token = localStorage.getItem('token');
-        await axios.patch(`https://florix-backend-ynjr.onrender.com/admin/feedback/${feedbackId}`, { status }, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          timeout: 25000,
-        });
-      } else {
-        await api.patch(`/admin/feedback/${feedbackId}`, { status });
-      }
+      await api.patch(`/admin/feedback/${feedbackId}`, { status }, {
+        baseURL: getTargetBase(dbSource),
+        headers: getAuthHeaders(),
+        timeout: 45000,
+      });
       setFeedbacks(prev => prev.map(f => f.id === feedbackId ? { ...f, status } : f));
       addToast(`Feedback marked as ${status}`, 'success');
     } catch (err) {
@@ -144,15 +141,11 @@ const AdminPanel = () => {
   const handleDeleteFeedback = async (feedbackId) => {
     if (!window.confirm('Are you sure you want to delete this feedback?')) return;
     try {
-      if (dbSource === 'cloud') {
-        const token = localStorage.getItem('token');
-        await axios.delete(`https://florix-backend-ynjr.onrender.com/admin/feedback/${feedbackId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          timeout: 25000,
-        });
-      } else {
-        await api.delete(`/admin/feedback/${feedbackId}`);
-      }
+      await api.delete(`/admin/feedback/${feedbackId}`, {
+        baseURL: getTargetBase(dbSource),
+        headers: getAuthHeaders(),
+        timeout: 45000,
+      });
       setFeedbacks(prev => prev.filter(f => f.id !== feedbackId));
       addToast('Feedback deleted', 'success');
     } catch (err) {
@@ -160,19 +153,14 @@ const AdminPanel = () => {
     }
   };
 
-
   const handleAction = async (id, action) => {
     setActioningId(id);
     try {
-      if (dbSource === 'cloud') {
-        const token = localStorage.getItem('token');
-        await axios.post(`https://florix-backend-ynjr.onrender.com/admin/payments/${id}/${action}`, {}, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          timeout: 25000,
-        });
-      } else {
-        await api.post(`/admin/payments/${id}/${action}`);
-      }
+      await api.post(`/admin/payments/${id}/${action}`, {}, {
+        baseURL: getTargetBase(dbSource),
+        headers: getAuthHeaders(),
+        timeout: 45000,
+      });
       addToast(`Payment successfully ${action === 'approve' ? 'approved & upgraded!' : 'rejected'}`, 'success');
       await fetchPayments(dbSource);
       if (action === 'approve' && refreshUser) {

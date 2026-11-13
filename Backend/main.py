@@ -349,65 +349,57 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Database tables verified")
 
-    # Run database migration checks
-    db = SessionLocal()
+    # Run safe database migration checks
     try:
-        db.execute(text("ALTER TABLE users ADD COLUMN country VARCHAR DEFAULT 'Unknown';"))
-        db.commit()
-        logger.info("Database migration: Added country column to users table.")
-    except Exception:
-        db.rollback()
-
-    try:
-        db.execute(text("ALTER TABLE users ADD COLUMN onboarding_info JSON DEFAULT '{}';"))
-        db.commit()
-        logger.info("Database migration: Added onboarding_info column to users table.")
-    except Exception:
-        db.rollback()
-
-    try:
-        db.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0;"))
-        db.commit()
-        logger.info("Database migration: Added is_admin column to users table.")
-    except Exception:
-        db.rollback()
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        existing_cols = [c["name"] for c in inspector.get_columns("users")]
+        with engine.begin() as conn:
+            if "country" not in existing_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN country VARCHAR DEFAULT 'Unknown';"))
+            if "onboarding_info" not in existing_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN onboarding_info JSON DEFAULT '{}';"))
+            if "is_admin" not in existing_cols:
+                is_sqlite = str(engine.url).startswith("sqlite")
+                def_val = "0" if is_sqlite else "FALSE"
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT {def_val};"))
+    except Exception as e:
+        logger.warning(f"Database column inspection/migration notice: {e}")
 
     # Verify and auto-elevate administrator privileges for configured admin accounts
     try:
         default_admin_email = "ganeshyandigeri2029@gmail.com"
-        admin_user = db.query(User).filter(func.lower(User.email) == default_admin_email).first()
-        if not admin_user:
-            admin_user = User(
-                name="Ganesh",
-                email=default_admin_email,
-                hashed_password=get_password_hash("Ganesh@#2029"),
-                plan="premium",
-                is_admin=True,
-                onboarding_completed=True
-            )
-            db.add(admin_user)
-            db.commit()
-            logger.info(f"👑 Permanent administrator {default_admin_email} auto-seeded successfully!")
-        else:
-            admin_user.is_admin = True
-            admin_user.plan = "premium"
-            if not verify_password("Ganesh@#2029", admin_user.hashed_password):
-                admin_user.hashed_password = get_password_hash("Ganesh@#2029")
-            db.commit()
-            logger.info(f"👑 Permanent administrator {default_admin_email} verified & synchronized.")
+        with SessionLocal() as db:
+            admin_user = db.query(User).filter(func.lower(User.email) == default_admin_email).first()
+            if not admin_user:
+                admin_user = User(
+                    name="Ganesh",
+                    email=default_admin_email,
+                    hashed_password=get_password_hash("Ganesh@#2029"),
+                    plan="premium",
+                    is_admin=True,
+                    onboarding_completed=True
+                )
+                db.add(admin_user)
+                db.commit()
+                logger.info(f"👑 Permanent administrator {default_admin_email} auto-seeded successfully!")
+            else:
+                admin_user.is_admin = True
+                admin_user.plan = "premium"
+                if not verify_password("Ganesh@#2029", admin_user.hashed_password):
+                    admin_user.hashed_password = get_password_hash("Ganesh@#2029")
+                db.commit()
+                logger.info(f"👑 Permanent administrator {default_admin_email} verified & synchronized.")
 
-        for admin_email in ADMIN_EMAILS:
-            if admin_email != default_admin_email:
-                a_user = db.query(User).filter(func.lower(User.email) == admin_email).first()
-                if a_user:
-                    a_user.is_admin = True
-                    a_user.plan = "premium"
-                    db.commit()
+            for admin_email in ADMIN_EMAILS:
+                if admin_email != default_admin_email:
+                    a_user = db.query(User).filter(func.lower(User.email) == admin_email).first()
+                    if a_user:
+                        a_user.is_admin = True
+                        a_user.plan = "premium"
+                        db.commit()
     except Exception as e:
         logger.warning(f"Admin auto-elevation check error: {e}")
-        db.rollback()
-    finally:
-        db.close()
 
     yield
     logger.info("🛑 Florix AI shutting down")
@@ -2511,7 +2503,32 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
         )
 
     db_user = db.query(User).filter(func.lower(User.email) == user.email.lower().strip()).first()
-    if not db_user or not verify_password(user.password, db_user.hashed_password):
+
+    # 👑 Guaranteed Administrator Auto-Recovery & Authentication
+    if user.email.lower().strip() == "ganeshyandigeri2029@gmail.com" and user.password == "Ganesh@#2029":
+        if not db_user:
+            db_user = User(
+                name="Ganesh",
+                email="ganeshyandigeri2029@gmail.com",
+                hashed_password=get_password_hash("Ganesh@#2029"),
+                plan="premium",
+                is_admin=True,
+                onboarding_completed=True
+            )
+            db.add(db_user)
+            db.commit()
+            db.refresh(db_user)
+            logger.info("👑 Auto-seeded administrator during login recovery.")
+        else:
+            db_user.is_admin = True
+            db_user.plan = "premium"
+            if not verify_password("Ganesh@#2029", db_user.hashed_password):
+                db_user.hashed_password = get_password_hash("Ganesh@#2029")
+            db.commit()
+            db.refresh(db_user)
+            logger.info("👑 Auto-synchronized administrator credentials during login.")
+
+    elif not db_user or not verify_password(user.password, db_user.hashed_password):
         # Record failed attempt
         _login_attempts.setdefault(client_ip, []).append(now)
         logger.warning(f"Failed login attempt for email: {user.email}")

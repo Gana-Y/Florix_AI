@@ -295,7 +295,7 @@ If you find Florix AI's multimodal RAG architecture, spaced repetition engine, o
 
 Maintained with ❤️ by **[Ganesh Yandigeri](https://github.com/Gana-Y)**
 
-- 🌐 **Portfolio:** [ganesh-y.vercel.app](https://ganesh-y.vercel.app)
+- 🌐 **Portfolio:** [ganesh-portfolio-silk-five.vercel.app](https://ganesh-portfolio-silk-five.vercel.app)
 - 💼 **LinkedIn:** [linkedin.com/in/ganesh-yandigeri](https://linkedin.com/in/ganesh-yandigeri)
 - 🐙 **GitHub:** [@Gana-Y](https://github.com/Gana-Y)
 

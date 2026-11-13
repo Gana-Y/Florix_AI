@@ -140,9 +140,10 @@ class StudySession(Base):
     learning_events = relationship("LearningEvent", back_populates="session", cascade="all, delete-orphan")
     visual_artifacts = relationship("VisualArtifact", back_populates="session", cascade="all, delete-orphan")
     reminders = relationship("Reminder", back_populates="session", cascade="all, delete-orphan")
-    study_plan_tasks = relationship("StudyPlanTask", back_populates="session")
-    exams = relationship("Exam", back_populates="session")
-    mistakes = relationship("MistakeRecord", back_populates="session")
+    conversations = relationship("ChatConversation", back_populates="session", cascade="all, delete-orphan")
+    study_plan_tasks = relationship("StudyPlanTask", back_populates="session", cascade="all, delete-orphan")
+    exams = relationship("Exam", back_populates="session", cascade="all, delete-orphan")
+    mistakes = relationship("MistakeRecord", back_populates="session", cascade="all, delete-orphan")
     viva_sessions = relationship("VivaSession", back_populates="session")
 
 class DocumentChunk(Base):
@@ -170,8 +171,8 @@ class QuizResult(Base):
     details = Column(JSON, default=lambda: [])
     date_taken = Column(DateTime, default=datetime.utcnow)
 
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_id = Column(Integer, ForeignKey("study_sessions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False)
 
     student = relationship("User", back_populates="quiz_results")
     session = relationship("StudySession", back_populates="quizzes")
@@ -182,13 +183,14 @@ class ChatConversation(Base):
     title = Column(String, default="New Chat")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_id = Column(Integer, ForeignKey("study_sessions.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     is_pinned = Column(Boolean, default=False)
 
     user = relationship("User", back_populates="conversations")
     project = relationship("Project", back_populates="conversations")
+    session = relationship("StudySession", back_populates="conversations")
     messages = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
 
 class ChatMessage(Base):
@@ -219,8 +221,8 @@ class Bookmark(Base):
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_id = Column(Integer, ForeignKey("study_sessions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False)
 
     user = relationship("User", back_populates="bookmarks")
     session = relationship("StudySession", back_populates="bookmarks")
@@ -264,8 +266,8 @@ class FlashcardProgress(Base):
     last_quality = Column(Integer, default=3)       # 0-5 quality rating
     updated_at = Column(DateTime, default=datetime.utcnow)
 
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_id = Column(Integer, ForeignKey("study_sessions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False)
 
     user = relationship("User", back_populates="flashcard_progress")
     session = relationship("StudySession", back_populates="flashcard_progress")

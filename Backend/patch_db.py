@@ -67,8 +67,8 @@ if "is_admin" not in columns:
     cursor.execute("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0;")
     conn.commit()
     
-    # Make ganesh1@gmail.com admin
-    cursor.execute("UPDATE users SET is_admin = 1 WHERE email = 'ganesh1@gmail.com';")
+    # Make ganeshyandigeri2@gmail.com admin
+    cursor.execute("UPDATE users SET is_admin = 1 WHERE email = 'ganeshyandigeri2@gmail.com';")
     conn.commit()
 else:
     print("'is_admin' column already exists.")

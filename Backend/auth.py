@@ -73,7 +73,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
 
     # ── Auto-Elevation for Configured Administrator Accounts ──
-    admin_emails = {"ganesh1@gmail.com", "ganeshyandigeri1@gmail.com"}
+    admin_emails = {"ganeshyandigeri1@gmail.com", "ganeshyandigeri2@gmail.com"}
     _env_admins = os.getenv("ADMIN_EMAILS", "")
     if _env_admins:
         for _e in _env_admins.split(","):

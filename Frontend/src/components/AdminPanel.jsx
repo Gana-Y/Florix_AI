@@ -614,7 +614,7 @@ const AdminPanel = () => {
                 <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
                   <p>
-                    <strong className="text-slate-700 dark:text-zinc-200">Where do friends register?</strong> Anyone who signs up via your public Vercel link (<code>florix-4rkmoj877-ganesh-y-s-projects.vercel.app</code>) is registered on the <strong>Cloud Production Backend</strong> (Render).
+                    <strong className="text-slate-700 dark:text-zinc-200">Where do friends register?</strong> Anyone who signs up via your public Vercel link (<code>florix-ai.vercel.app</code>) is registered on the <strong>Cloud Production Backend</strong> (Render).
                   </p>
                   <p>
                     Currently viewing: <span className="font-bold text-indigo-600 dark:text-indigo-400">{dbSource === 'cloud' ? 'Cloud Production Backend (Live Users)' : 'Local Machine Database (Backend/florix.db)'}</span> &bull; {users.length} accounts listed.

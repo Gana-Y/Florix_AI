@@ -638,6 +638,17 @@ class TestPasteRAGTraceabilityAndIsolation:
         assert cit_dict["source_type"] == "text"
 
     def test_deterministic_e2e_paste_rag_chat_grounding(self, client, premium_auth_headers, db_session):
+        # Clean up any previous session/chunks for this user to ensure fresh end-to-end execution
+        prem_user = db_session.query(User).filter(User.email == "audit5_premium@florix.test").first()
+        if prem_user:
+            db_session.query(DocumentChunk).filter(
+                DocumentChunk.session_id.in_(
+                    db_session.query(StudySession.id).filter(StudySession.user_id == prem_user.id)
+                )
+            ).delete(synchronize_session=False)
+            db_session.query(StudySession).filter(StudySession.user_id == prem_user.id).delete(synchronize_session=False)
+            db_session.commit()
+
         # Deterministic unique tokens
         unique_token = "PASTE_TOKEN_OMEGA_9941"
         material = f"""# Advanced Aerospace Propulsion

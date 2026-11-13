@@ -163,7 +163,7 @@ class TestPdfEdgeCases:
             assert r2.json()["id"] == id1
 
     def test_upload_unsupported_format_rejected(self, client, test_users):
-        files = {"file": ("document.docx", io.BytesIO(b"fake docx binary content"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+        files = {"file": ("archive.zip", io.BytesIO(b"fake zip binary content"), "application/zip")}
         headers = {"Authorization": f"Bearer {test_users['token1']}"}
         resp = client.post("/upload", files=files, headers=headers)
         assert resp.status_code == 400

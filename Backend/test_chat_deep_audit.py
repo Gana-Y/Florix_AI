@@ -31,6 +31,8 @@ from intelligence.validators import GroundingValidator
 
 # ── FIXTURES ──────────────────────────────────────────────────────────────────
 
+from types import SimpleNamespace
+
 @pytest.fixture(scope="module")
 def db_session():
     db = SessionLocal()
@@ -101,7 +103,12 @@ def test_users(db_session):
     db_session.commit()
     db_session.refresh(u_prem)
 
-    return {"user1": u1, "user2": u2, "user_free": u_free, "user_prem": u_prem}
+    return {
+        "user1": SimpleNamespace(id=u1.id, email=u1.email, name=u1.name, plan=u1.plan),
+        "user2": SimpleNamespace(id=u2.id, email=u2.email, name=u2.name, plan=u2.plan),
+        "user_free": SimpleNamespace(id=u_free.id, email=u_free.email, name=u_free.name, plan=u_free.plan),
+        "user_prem": SimpleNamespace(id=u_prem.id, email=u_prem.email, name=u_prem.name, plan=u_prem.plan),
+    }
 
 
 @pytest.fixture(scope="module")

@@ -44,7 +44,8 @@ class AssessmentEngine:
         [{question, options, answer, explanation, difficulty, page_number, topic, ...}]
         """
         num_questions = max(1, min(num_questions, 20))
-        
+        has_pages = any(c.get("page_number") is not None for c in chunks)
+
         # Build evidence context from chunks
         evidence_text = ""
         chunk_map = {}
@@ -191,8 +192,9 @@ Return ONLY a valid JSON array of objects with no surrounding markdown or conver
         Returns a list of dictionaries with full backward compatibility:
         [{front, back, topic, difficulty, page_number, ...}]
         """
-        num_cards = max(1, min(num_cards, 30))
-
+        num_cards = max(1, min(num_cards, 30))
+        has_pages = any(c.get("page_number") is not None for c in chunks)
+
         evidence_text = ""
         for idx, c in enumerate(chunks[:8]):
             p = c.get("page_number")

@@ -205,7 +205,7 @@ logger = logging.getLogger("florix")
 load_dotenv()
 
 # ── Administrator Access Registry ────────────────────────────────────────────
-ADMIN_EMAILS = {"ganesh1@gmail.com", "ganeshyandigeri1@gmail.com"}
+ADMIN_EMAILS = {"ganeshyandigeri1@gmail.com", "ganeshyandigeri2@gmail.com"}
 _env_admins = os.getenv("ADMIN_EMAILS", "")
 if _env_admins:
     for _e in _env_admins.split(","):
@@ -264,18 +264,18 @@ except Exception as e:
 # ── Subscription plan limits ───────────────────────────────────────────────────
 PLAN_LIMITS = {
     "free": {
-        "sessions": 10,
+        "sessions": 5,
         "quizzes_per_day": 10,
-        "chats_per_day": 80,
+        "chats_per_day": 10,
         "downloads_per_day": 10,
         "flashcards_per_session": 15,
         "max_upload_mb": 15,
         "max_video_mb": 35,
-        "max_paste_chars": 5000,       # ~800 words
+        "max_paste_chars": 3000,       # ~800 words
         "max_speech_words": 300,       # ~2-3 min speaking
         "max_link_chars": 15000,
-        "study_guides_per_day": 10,
-        "active_study_plans": 2,
+        "study_guides_per_day": 5,
+        "active_study_plans": 1,
         "study_plans_per_day": 5,
         "allowed_plan_modes": ["daily", "weekly", "goal"],
         "max_planning_days": 14,
@@ -284,8 +284,8 @@ PLAN_LIMITS = {
         "allowed_exam_modes": ["practice", "topic"],
         "mistake_analyses_per_day": 20,
         "ai_practice_generations_per_day": 15,
-        "viva_sessions_per_day": 5,
-        "max_viva_questions": 10,
+        "viva_sessions_per_day": 2,
+        "max_viva_questions": 5,
     },
     "pro": {
         "sessions": 100,
@@ -1134,6 +1134,14 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
         return None
     raw = str(url).strip()
 
+    # Reject non-YouTube URLs immediately to prevent lookalike domain spoofing
+    if "://" in raw:
+        url_match = re.search(r"https?://[^\s]+", raw)
+        if url_match:
+            cand = url_match.group(0)
+            if not is_youtube_url(cand):
+                return None
+
     # 1. Direct Regex scan across text/url (robust against prefixes and query parameters)
     match = re.search(r"(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([a-zA-Z0-9_-]{11})", raw)
     if match:
@@ -1836,12 +1844,13 @@ def process_upload_in_background(
 
             db_chunks = []
             for index, (chk, embedding_vector) in enumerate(zip(enriched_chunks, all_embeddings)):
+                actual_page = chk.page_number if source_type in ("pdf", "document") else None
                 db_chunk = DocumentChunk(
                     chunk_index=index,
                     text_content=chk.text,
                     embedding=embedding_vector,
                     session_id=session_id,
-                    page_number=chk.page_number,
+                    page_number=actual_page,
                     section_heading=chk.section_heading,
                     content_type=chk.content_type.value if hasattr(chk.content_type, "value") else str(chk.content_type),
                     chunk_metadata=chk.metadata
@@ -3256,7 +3265,7 @@ def get_admin_users(
 
 class CloudSyncRequest(BaseModel):
     cloud_url: Optional[str] = "https://florix-backend-ynjr.onrender.com"
-    email: Optional[str] = "ganesh1@gmail.com"
+    email: Optional[str] = "ganeshyandigeri2@gmail.com"
     password: Optional[str] = None
     cloud_token: Optional[str] = None
 
@@ -3445,7 +3454,7 @@ def cleanup_test_accounts(
     if not getattr(current_user, "is_admin", False):
         raise HTTPException(status_code=403, detail="Unauthorized access. Admin only.")
 
-    protected_emails = [current_user.email.lower(), "ganesh1@gmail.com", "natasha@gmail.com"]
+    protected_emails = [current_user.email.lower(), "ganeshyandigeri2@gmail.com"]
 
     all_users = db.query(User).filter(~func.lower(User.email).in_(protected_emails)).all()
     
@@ -4122,7 +4131,7 @@ async def upload_file(
     is_image = any(filename_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp"))
 
     if not is_pdf and not is_docx and not is_doc and not is_txt and not is_image:
-        raise HTTPException(status_code=400, detail="Supported files: PDF, Word (.docx, .doc), Text (.txt, .md), and Images (PNG, JPG, JPEG, WEBP).")
+        raise HTTPException(status_code=400, detail="Unsupported file format. Only PDF and image files, Word, and text documents are supported. Supported files: PDF, Word (.docx, .doc), Text (.txt, .md), and Images (PNG, JPG, JPEG, WEBP).")
 
     contents = await file.read()
     if len(contents) == 0:
@@ -4607,6 +4616,9 @@ def validate_safe_url(url: str) -> Tuple[str, str, int]:
         raise HTTPException(status_code=400, detail="URL cannot be empty.")
 
     clean_url = url.strip()
+    parsed_early = urlparse(clean_url)
+    if parsed_early.scheme and parsed_early.scheme.lower() not in ALLOWED_SCHEMES:
+        raise HTTPException(status_code=400, detail="Invalid URL scheme. Must start with http:// or https://")
     if clean_url and "://" not in clean_url:
         clean_url = "https://" + clean_url
     if len(clean_url) > MAX_URL_LENGTH:
@@ -5036,8 +5048,8 @@ async def process_text(
     text = raw_text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty. Please paste some content.")
-    if len(text) < 10:
-        raise HTTPException(status_code=400, detail="Text too short. Please provide at least 10 characters for meaningful analysis.")
+    if len(text) < 50:
+        raise HTTPException(status_code=400, detail="Text too short. Please provide at least 50 characters for meaningful analysis.")
     # Enforce subscription-based paste character limit
     check_plan_limit(current_user, "max_paste_chars", db, len(text))
 
@@ -5066,7 +5078,7 @@ async def process_text(
         clean_extracted = soup.get_text()
         clean_extracted = html_module.unescape(clean_extracted).strip()
         clean_extracted = re.sub(r"\n{3,}", "\n\n", clean_extracted).strip()
-        if len(clean_extracted) < 10:
+        if len(clean_extracted) < 50:
             raise HTTPException(status_code=400, detail="After removing HTML markup, the text content is too short. Please provide more substantive text.")
         text = clean_extracted
 
@@ -6178,6 +6190,9 @@ def delete_library_item(session_id: int, db: Session = Depends(get_db), current_
 
     # Unlink any ChatConversation that references this session to preserve chat history and avoid foreign key crash
     db.query(ChatConversation).filter(ChatConversation.session_id == session_id).update({ChatConversation.session_id: None})
+
+    # Purge DocumentChunk records to prevent orphaned chunk collisions
+    db.query(DocumentChunk).filter(DocumentChunk.session_id == session_id).delete()
 
     # Clean up ChromaDB vectors for this session (both integer and string session_id metadata)
     if chroma_collection is not None:

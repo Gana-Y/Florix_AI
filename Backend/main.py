@@ -205,7 +205,7 @@ logger = logging.getLogger("florix")
 load_dotenv()
 
 # ── Administrator Access Registry ────────────────────────────────────────────
-ADMIN_EMAILS = {"ganeshyandigeri1@gmail.com", "ganeshyandigeri2@gmail.com"}
+ADMIN_EMAILS = {"ganeshyandigeri2029@gmail.com"}
 _env_admins = os.getenv("ADMIN_EMAILS", "")
 if _env_admins:
     for _e in _env_admins.split(","):
@@ -3265,7 +3265,7 @@ def get_admin_users(
 
 class CloudSyncRequest(BaseModel):
     cloud_url: Optional[str] = "https://florix-backend-ynjr.onrender.com"
-    email: Optional[str] = "ganeshyandigeri2@gmail.com"
+    email: Optional[str] = "ganeshyandigeri2029@gmail.com"
     password: Optional[str] = None
     cloud_token: Optional[str] = None
 
@@ -3454,7 +3454,7 @@ def cleanup_test_accounts(
     if not getattr(current_user, "is_admin", False):
         raise HTTPException(status_code=403, detail="Unauthorized access. Admin only.")
 
-    protected_emails = [current_user.email.lower(), "ganeshyandigeri2@gmail.com"]
+    protected_emails = [current_user.email.lower(), "ganeshyandigeri2029@gmail.com"]
 
     all_users = db.query(User).filter(~func.lower(User.email).in_(protected_emails)).all()
     

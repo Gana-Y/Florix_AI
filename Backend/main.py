@@ -378,7 +378,7 @@ async def lifespan(app: FastAPI):
                     hashed_password=get_password_hash("Ganesh@#2029"),
                     plan="premium",
                     is_admin=True,
-                    onboarding_completed=True
+                    onboarding_info={"role": "Admin", "domain": "Engineering", "source": "Direct"}
                 )
                 db.add(admin_user)
                 db.commit()
@@ -2513,7 +2513,7 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
                 hashed_password=get_password_hash("Ganesh@#2029"),
                 plan="premium",
                 is_admin=True,
-                onboarding_completed=True
+                onboarding_info={"role": "Admin", "domain": "Engineering", "source": "Direct"}
             )
             db.add(db_user)
             db.commit()

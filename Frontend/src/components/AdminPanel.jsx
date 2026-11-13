@@ -35,16 +35,25 @@ const AdminPanel = () => {
   const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
-    fetchPayments();
+    fetchPayments(dbSource);
     fetchUsers(dbSource);
-    fetchFeedbacks();
+    fetchFeedbacks(dbSource);
   }, [dbSource]);
 
-  const fetchPayments = async () => {
+  const fetchPayments = async (source = dbSource) => {
     setLoading(true);
     try {
-      const res = await api.get('/admin/payments');
-      setPayments(res.data);
+      if (source === 'cloud') {
+        const token = localStorage.getItem('token');
+        const res = await axios.get('https://florix-backend-ynjr.onrender.com/admin/payments', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          timeout: 25000,
+        });
+        setPayments(res.data);
+      } else {
+        const res = await api.get('/admin/payments');
+        setPayments(res.data);
+      }
     } catch (err) {
       if (err.response?.status === 401) return;
       addToast(err.response?.data?.detail || 'Failed to load payments', 'error');
@@ -93,11 +102,20 @@ const AdminPanel = () => {
     }
   };
 
-  const fetchFeedbacks = async () => {
+  const fetchFeedbacks = async (source = dbSource) => {
     setFeedbackLoading(true);
     try {
-      const res = await api.get('/admin/feedback');
-      setFeedbacks(res.data);
+      if (source === 'cloud') {
+        const token = localStorage.getItem('token');
+        const res = await axios.get('https://florix-backend-ynjr.onrender.com/admin/feedback', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          timeout: 25000,
+        });
+        setFeedbacks(res.data);
+      } else {
+        const res = await api.get('/admin/feedback');
+        setFeedbacks(res.data);
+      }
     } catch (err) {
       console.error('Failed to load feedback:', err);
     } finally {
@@ -107,7 +125,15 @@ const AdminPanel = () => {
 
   const handleUpdateFeedbackStatus = async (feedbackId, status) => {
     try {
-      await api.patch(`/admin/feedback/${feedbackId}`, { status });
+      if (dbSource === 'cloud') {
+        const token = localStorage.getItem('token');
+        await axios.patch(`https://florix-backend-ynjr.onrender.com/admin/feedback/${feedbackId}`, { status }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          timeout: 25000,
+        });
+      } else {
+        await api.patch(`/admin/feedback/${feedbackId}`, { status });
+      }
       setFeedbacks(prev => prev.map(f => f.id === feedbackId ? { ...f, status } : f));
       addToast(`Feedback marked as ${status}`, 'success');
     } catch (err) {
@@ -118,7 +144,15 @@ const AdminPanel = () => {
   const handleDeleteFeedback = async (feedbackId) => {
     if (!window.confirm('Are you sure you want to delete this feedback?')) return;
     try {
-      await api.delete(`/admin/feedback/${feedbackId}`);
+      if (dbSource === 'cloud') {
+        const token = localStorage.getItem('token');
+        await axios.delete(`https://florix-backend-ynjr.onrender.com/admin/feedback/${feedbackId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          timeout: 25000,
+        });
+      } else {
+        await api.delete(`/admin/feedback/${feedbackId}`);
+      }
       setFeedbacks(prev => prev.filter(f => f.id !== feedbackId));
       addToast('Feedback deleted', 'success');
     } catch (err) {
@@ -130,9 +164,17 @@ const AdminPanel = () => {
   const handleAction = async (id, action) => {
     setActioningId(id);
     try {
-      await api.post(`/admin/payments/${id}/${action}`);
+      if (dbSource === 'cloud') {
+        const token = localStorage.getItem('token');
+        await axios.post(`https://florix-backend-ynjr.onrender.com/admin/payments/${id}/${action}`, {}, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          timeout: 25000,
+        });
+      } else {
+        await api.post(`/admin/payments/${id}/${action}`);
+      }
       addToast(`Payment successfully ${action === 'approve' ? 'approved & upgraded!' : 'rejected'}`, 'success');
-      await fetchPayments();
+      await fetchPayments(dbSource);
       if (action === 'approve' && refreshUser) {
         await refreshUser();
       }

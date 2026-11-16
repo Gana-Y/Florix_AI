@@ -21,8 +21,11 @@ export const AuthProvider = ({ children }) => {
           scheduleSessionWarning(token);
         } catch (error) {
           console.error('Failed to fetch user', error);
-          localStorage.removeItem('token');
-          clearSessionTimers();
+          // Only clear token on explicit 401 Unauthorized — never on network timeout or server waking up
+          if (error.response?.status === 401) {
+            localStorage.removeItem('token');
+            clearSessionTimers();
+          }
         }
       }
       setLoading(false);

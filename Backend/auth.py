@@ -68,7 +68,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             raise credentials_exception
     except jwt.PyJWTError:
         raise credentials_exception
-    user = db.query(User).filter(User.email == email).first()
+    from sqlalchemy import func
+    user = db.query(User).filter(func.lower(User.email) == email.lower().strip()).first()
     if user is None:
         raise credentials_exception
 

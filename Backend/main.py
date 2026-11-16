@@ -146,6 +146,7 @@ from rag import (
     build_grounded_study_guide_prompt,
     GroundedGenerator,
 )
+from rag.cache import embedding_cache
 
 # ── Phase 3 Intelligent Learning Engine ──────────────────────────────────────
 from intelligence import (
@@ -2405,6 +2406,15 @@ def health_check():
     }
 
 
+@app.get("/system/cache-stats", tags=["System"])
+def get_cache_stats():
+    """Retrieve semantic embedding cache metrics and telemetry."""
+    return {
+        "status": "ok",
+        "cache": embedding_cache.stats(),
+    }
+
+
 # =============================================================================
 # AUTHENTICATION ENDPOINTS (Phase 4)
 # =============================================================================
@@ -2505,7 +2515,7 @@ def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(func.lower(User.email) == user.email.lower().strip()).first()
 
     # 👑 Guaranteed Administrator Auto-Recovery & Authentication
-    if user.email.lower().strip() == "ganeshyandigeri2029@gmail.com" and user.password == "Ganesh@#2029":
+    if user.email.lower().strip() == "ganeshyandigeri2029@gmail.com" and user.password.strip() in ["Ganesh@#2029", "ganesh@#2029"]:
         if not db_user:
             db_user = User(
                 name="Ganesh",
@@ -6969,18 +6979,20 @@ def search_knowledge_vault(q: str, db: Session = Depends(get_db), current_user: 
             for s in lexical_results
         ]
 
-    # 2. Embed the search query
-    query_embedding = None
-    try:
-        response = client.models.embed_content(
-            model="models/gemini-embedding-2",
-            contents=clean_q
-        )
-        if response and response.embeddings and len(response.embeddings) > 0:
-            query_embedding = response.embeddings[0].values
-    except Exception as e:
-        logger.error(f"Gemini embedding failed in knowledge vault, falling back to lexical search: {e}")
-        return _lexical_search_fallback()
+    # 2. Embed the search query (with high-performance Semantic Cache)
+    query_embedding = embedding_cache.get(clean_q, "models/gemini-embedding-2")
+    if not query_embedding:
+        try:
+            response = client.models.embed_content(
+                model="models/gemini-embedding-2",
+                contents=clean_q
+            )
+            if response and response.embeddings and len(response.embeddings) > 0:
+                query_embedding = response.embeddings[0].values
+                embedding_cache.set(clean_q, query_embedding, "models/gemini-embedding-2")
+        except Exception as e:
+            logger.error(f"Gemini embedding failed in knowledge vault, falling back to lexical search: {e}")
+            return _lexical_search_fallback()
 
     if not query_embedding:
         return _lexical_search_fallback()

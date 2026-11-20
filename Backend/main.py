@@ -7910,7 +7910,7 @@ def send_message(conv_id: int, data: MessageCreate, db: Session = Depends(get_db
     is_diagram_request = bool(re.search(
         r'(?i)\b(diagram|architecture|flowchart|flow\s*chart|boxes\s*and\s*lines|box\s*and\s*line|mind\s*map|mindmap|workflow|pipeline|schema|sequence\s*diagram|er\s*diagram|class\s*diagram|uml|data\s*flow|block\s*diagram|concept\s*map|system\s*design|process\s*flow|network\s*topology|wireframe|layout|plot|plotting|graph|chart)\b',
         message
-    ))
+    )) or ("```mermaid" in reply)
 
     has_refusal = any(re.search(p, reply, re.IGNORECASE) for p in canned_refusal_patterns)
 

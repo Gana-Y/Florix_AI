@@ -49,3 +49,9 @@ desktop.ini
 *.swo
 
 graphify-out/
+
+# Internal local files and backup artifacts
+gemini.md
+commands.txt
+*.savepoint.*
+*.backup.*
